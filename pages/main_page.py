@@ -6,9 +6,10 @@ from PySide6.QtCore import Qt
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
-    TitleBar, ResizableContainer,
+    TitleBar, ResizableContainer, make_card,
 )
-from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
+from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR
+from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 
 MAX_COLUMNS = 4
 
@@ -54,34 +55,53 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
         root.addWidget(content, 1)
 
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
         self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
-        outer.addWidget(self.connection_bar, alignment=Qt.AlignLeft)
+        top_row.addWidget(self.connection_bar, alignment=Qt.AlignTop)
+
+        controls_card = make_card("Controls", icon="fa5s.sliders-h")
+        controls_card.setMaximumWidth(320)
 
         status_row = QHBoxLayout()
         self.status_label = QLabel("Not connected.")
-        self.status_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
         self.rescan_btn = QPushButton("Rescan")
         self.rescan_btn.setToolTip("Scan again for newly-connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
         status_row.addWidget(self.rescan_btn)
-        outer.addLayout(status_row)
+        controls_card.body_layout.addLayout(status_row)
 
         bulk_row = QHBoxLayout()
-        bulk_caption = QLabel("Set all channels:")
+        bulk_caption = QLabel("Set all:")
         bulk_caption.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         bulk_row.addWidget(bulk_caption)
         self.bulk_buttons = []
         for level in range(4):
-            btn = QPushButton(f"L{level}")
-            btn.setFixedWidth(40)
+            btn = QPushButton(LEVEL_LABELS[level])
+            btn.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
+            btn.setFixedWidth(48)
             btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
             btn.clicked.connect(lambda _checked, lv=level: self.app.channels.set_all_level(lv))
             bulk_row.addWidget(btn)
             self.bulk_buttons.append(btn)
         bulk_row.addStretch()
-        outer.addLayout(bulk_row)
+        controls_card.body_layout.addLayout(bulk_row)
+
+        top_row.addWidget(controls_card, alignment=Qt.AlignTop)
+
+        emergency_card = make_card("Emergency", icon="fa5s.exclamation-triangle", accent=STATUS_ERROR)
+        emergency_card.setMaximumWidth(220)
+        self.stop_btn = EmergencyStopButton()
+        self.stop_btn.clicked.connect(self._on_emergency_stop)
+        emergency_card.body_layout.addWidget(self.stop_btn)
+        top_row.addWidget(emergency_card, alignment=Qt.AlignTop)
+
+        top_row.addStretch()
+        outer.addLayout(top_row)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -91,10 +111,6 @@ class MainWindow(QMainWindow):
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
         outer.addWidget(scroll)
-
-        self.stop_btn = EmergencyStopButton()
-        self.stop_btn.clicked.connect(self._on_emergency_stop)
-        outer.addWidget(self.stop_btn)
 
         self.setCentralWidget(central)
 

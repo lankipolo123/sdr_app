@@ -80,12 +80,14 @@ class TitleBar(QWidget):
         self._window = window
         self._restore_geometry = None
 
-        self.setFixedHeight(32)
+        # 32 for the content row (matches the caption buttons' own fixed
+        # 32px height) + 2 for the separator below it.
+        self.setFixedHeight(34)
         self.setStyleSheet(f"background: {SURFACE};")
 
-        # A separate 1px-tall strip below the content row, not a border on
-        # the row itself - a border drawn "under" the icon/title labels
-        # gets painted over by them (children always paint after their
+        # A separate strip below the content row, not a border on the row
+        # itself - a border drawn "under" the icon/title labels gets
+        # painted over by them (children always paint after their
         # parent in Qt, and once the app has a global stylesheet active,
         # plain QLabels get an opaque background fill too). Giving the
         # line its own row means nothing can ever sit on top of it.
@@ -123,8 +125,11 @@ class TitleBar(QWidget):
 
         outer.addWidget(row, 1)
 
+        # Matches Card's own border weight+color (components/card.py:
+        # "border: 2px solid {BORDER_SUBTLE}") so the header's divider
+        # reads as the same visual language as the cards below it.
         separator = QWidget()
-        separator.setFixedHeight(1)
+        separator.setFixedHeight(2)
         separator.setStyleSheet(f"background: {BORDER_SUBTLE};")
         outer.addWidget(separator)
 

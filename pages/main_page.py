@@ -25,8 +25,14 @@ class MainWindow(QMainWindow):
         self.resize(900, 640)
         # No native OS title bar - a custom one (styled to match the rest
         # of the app) replaces it entirely; see components/window_chrome.py
-        # for the drag-to-move / edge-resize logic that replicates.
+        # for the drag-to-move logic that replicates.
         self.setWindowFlag(Qt.FramelessWindowHint)
+        # Windows still tries to draw its own drop shadow around a
+        # frameless window using its actual rectangular bounds, which
+        # doesn't line up with our rounded-corner mask (ResizableContainer)
+        # - shows up as a dark sliver near a corner that doesn't match the
+        # visible content. Telling it not to draw one at all avoids that.
+        self.setWindowFlag(Qt.NoDropShadowWindowHint)
         # Makes the top-level window itself transparent so only
         # ResizableContainer's rounded card is visible - without this the
         # window would still be a plain square (or show Windows' own

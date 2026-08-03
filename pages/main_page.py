@@ -1,0 +1,151 @@
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QScrollArea, QToolButton, QPushButton
+)
+from PySide6.QtCore import Qt, QSize
+import qtawesome as qta
+
+from components import ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog
+from styles.theme_colors import TEXT_MUTED, STATUS_ERROR, BORDER_SUBTLE
+
+MAX_COLUMNS = 4
+
+
+class MainWindow(QMainWindow):
+    """One screen: a connection bar up top, then a grid of per-channel
+    cards. No Dashboard/Device Control/Communication pages, no sidebar,
+    no Module Address field anywhere."""
+
+    def __init__(self, app_controller):
+        super().__init__()
+        self.app = app_controller
+        self.setWindowTitle("SDR App")
+        self.resize(900, 640)
+
+        central = QWidget()
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setSpacing(12)
+
+        top_row = QHBoxLayout()
+        top_row.addStretch()
+        self.exit_btn = QToolButton()
+        self.exit_btn.setIcon(qta.icon("fa5s.power-off", color=STATUS_ERROR))
+        self.exit_btn.setIconSize(QSize(16, 16))
+        self.exit_btn.setToolTip("Exit app")
+        self.exit_btn.setAutoRaise(True)
+        self.exit_btn.clicked.connect(self._on_exit_clicked)
+        top_row.addWidget(self.exit_btn)
+        outer.addLayout(top_row)
+
+        self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
+        outer.addWidget(self.connection_bar, alignment=Qt.AlignLeft)
+
+        status_row = QHBoxLayout()
+        self.status_label = QLabel("Not connected.")
+        self.status_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        status_row.addWidget(self.status_label)
+        status_row.addStretch()
+        self.rescan_btn = QPushButton("Rescan")
+        self.rescan_btn.setToolTip("Scan again for newly-connected channels")
+        self.rescan_btn.clicked.connect(self._on_rescan)
+        status_row.addWidget(self.rescan_btn)
+        outer.addLayout(status_row)
+
+        bulk_row = QHBoxLayout()
+        bulk_caption = QLabel("Set all channels:")
+        bulk_caption.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        bulk_row.addWidget(bulk_caption)
+        self.bulk_buttons = []
+        for level in range(4):
+            btn = QPushButton(f"L{level}")
+            btn.setFixedWidth(40)
+            btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+            btn.clicked.connect(lambda _checked, lv=level: self.app.channels.set_all_level(lv))
+            bulk_row.addWidget(btn)
+            self.bulk_buttons.append(btn)
+        bulk_row.addStretch()
+        outer.addLayout(bulk_row)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        grid_container = QWidget()
+        self.grid = QGridLayout(grid_container)
+        self.grid.setSpacing(12)
+        self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        scroll.setWidget(grid_container)
+        outer.addWidget(scroll)
+
+        self.stop_btn = EmergencyStopButton()
+        self.stop_btn.clicked.connect(self._on_emergency_stop)
+        outer.addWidget(self.stop_btn)
+
+        self.setCentralWidget(central)
+
+        self._cards = {}
+        self.app.channels.channel_added.connect(self._on_channel_added)
+        self.app.channels.discovery_progress.connect(self._on_discovery_progress)
+        self.app.channels.discovery_finished.connect(self._on_discovery_finished)
+        self.app.connection.connected_changed.connect(self._on_connected_changed)
+
+    def _on_connected_changed(self, connected: bool):
+        if connected:
+            self.status_label.setText("Scanning for connected channels…")
+            self.app.channels.start_discovery()
+        else:
+            self.status_label.setText("Not connected.")
+
+    def _on_discovery_progress(self, current: int, total: int):
+        self.status_label.setText(f"Scanning… checked address {current}/{total}")
+
+    def _on_discovery_finished(self):
+        count = len(self._cards)
+        self.status_label.setText(
+            f"{count} channel(s) found." if count else
+            "No channels responded. Check wiring and power."
+        )
+
+    def _on_rescan(self):
+        if not self.app.connection.is_connected():
+            self.status_label.setText("Connect first before rescanning.")
+            return
+        self.status_label.setText("Rescanning… checking for new channels")
+        self.app.channels.start_discovery()
+
+    def _on_channel_added(self, address: int):
+        controller = self.app.channels.get_controller(address)
+        state = self.app.channels.get_state(address)
+        card = ChannelCard(controller, state)
+        self._cards[address] = card
+        index = len(self._cards) - 1
+        self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+
+    def closeEvent(self, event):
+        self.app.shutdown()
+        event.accept()
+
+    def _on_emergency_stop(self):
+        confirmed = ConfirmDialog.ask(
+            self,
+            "Emergency Stop",
+            "Immediately turn off every channel's output?",
+            confirm_text="Turn Off",
+            cancel_text="Cancel",
+            danger=True,
+        )
+        if not confirmed:
+            return
+        self.app.channels.turn_off_all()
+
+    def _on_exit_clicked(self):
+        confirmed = ConfirmDialog.ask(
+            self,
+            "Exit App",
+            "Close the app? Channel power states are left as they are - "
+            "this does not turn anything off.",
+            confirm_text="Exit",
+            cancel_text="Cancel",
+        )
+        if not confirmed:
+            return
+        self.close()

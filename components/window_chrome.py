@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QToolButton
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QToolButton
 from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QGuiApplication
 
@@ -88,15 +88,20 @@ class TitleBar(QWidget):
         self._restore_geometry = None
 
         self.setFixedHeight(32)
-        # Just the background here - a bare (selector-less) setStyleSheet()
-        # call cascades to child widgets in Qt, so a border-bottom set this
-        # way ends up redrawn individually by whichever child happens to
-        # stretch full height (the title label) instead of spanning the
-        # whole bar. The full-width line is drawn explicitly in
-        # paintEvent() below instead.
         self.setStyleSheet(f"background: {SURFACE};")
 
-        layout = QHBoxLayout(self)
+        # A separate 1px-tall strip below the content row, not a border on
+        # the row itself - a border drawn "under" the icon/title labels
+        # gets painted over by them (children always paint after their
+        # parent in Qt, and once the app has a global stylesheet active,
+        # plain QLabels get an opaque background fill too). Giving the
+        # line its own row means nothing can ever sit on top of it.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        row = QWidget()
+        layout = QHBoxLayout(row)
         layout.setContentsMargins(10, 0, 0, 0)
         layout.setSpacing(8)
 
@@ -123,13 +128,12 @@ class TitleBar(QWidget):
         for btn in (self.min_btn, self.max_btn, self.close_btn):
             layout.addWidget(btn)
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setPen(QPen(QColor(BORDER_SUBTLE)))
-        y = self.height() - 1
-        painter.drawLine(0, y, self.width() - 1, y)
-        painter.end()
+        outer.addWidget(row, 1)
+
+        separator = QWidget()
+        separator.setFixedHeight(1)
+        separator.setStyleSheet(f"background: {BORDER_SUBTLE};")
+        outer.addWidget(separator)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

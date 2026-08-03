@@ -6,7 +6,7 @@ from .connection_bar import ConnectionBar
 from .channel_card import ChannelCard
 from .confirm_dialog import ConfirmDialog
 from .emergency_stop_button import EmergencyStopButton
-from .window_chrome import TitleBar, ResizableContainer, RESIZE_MARGIN
+from .window_chrome import TitleBar, ResizableContainer
 
 __all__ = [
     "Card",
@@ -20,5 +20,4 @@ __all__ = [
     "EmergencyStopButton",
     "TitleBar",
     "ResizableContainer",
-    "RESIZE_MARGIN",
 ]

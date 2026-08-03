@@ -1,15 +1,8 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QToolButton
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QGuiApplication
+from PySide6.QtGui import QPainter, QPainterPath, QPen, QColor, QIcon, QGuiApplication, QRegion
 
 from styles.theme_colors import TEXT_DARK, TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR, SURFACE
-
-# Thin border reserved purely for edge/corner resize grabbing - the
-# frameless window has no OS-drawn frame to grab, so this margin (kept
-# free of any child widget) is what ResizableContainer hit-tests against.
-# Kept >= WINDOW_RADIUS so the rounded corner's curve always falls inside
-# this margin band, never under the (square-cornered) title bar/content.
-RESIZE_MARGIN = 8
 
 # Corner radius of the window's rounded outline.
 WINDOW_RADIUS = 8
@@ -168,65 +161,29 @@ class TitleBar(QWidget):
 
 
 class ResizableContainer(QWidget):
-    """The frameless window's central widget. Its layout leaves a thin
-    RESIZE_MARGIN border around the title bar + content; mouse activity in
-    that border (the only place with no child widget to swallow it) turns
-    into a native OS resize via startSystemResize(), so edge/corner
-    resizing keeps working without the window having an actual frame.
+    """The frameless window's central widget - fills the window edge to
+    edge (no inset margin), so the title bar and its separator line sit
+    genuinely flush with the real window edges, not stopped short by a
+    gap. Rounded corners are done with a mask (setMask in resizeEvent)
+    that clips everything - background and all children - to the rounded
+    shape, rather than relying on an inset margin to keep square-cornered
+    children clear of the curve. Requires the top-level window to have
+    WA_TranslucentBackground set (see MainWindow), so the clipped-away
+    corner pixels read as transparent instead of a leftover square.
 
-    Also draws the window's actual rounded outline - just corner
-    rounding on the fill, no separate border stroke, so it doesn't read
-    as a card "containing" the content. Requires the top-level window to
-    have WA_TranslucentBackground set (see MainWindow), otherwise this
-    rounded fill would sit inside a still-square, still-opaque window."""
+    Not resizable by dragging its edges - that needs empty space around
+    the content for hit-testing, which is exactly the gap this trades
+    away. Minimize / full screen / close (the title bar's three buttons)
+    are the only window-size controls."""
 
     def __init__(self, window, parent=None):
         super().__init__(parent)
         self._window = window
-        self.setMouseTracking(True)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(f"background: {SURFACE}; border-radius: {WINDOW_RADIUS}px;")
 
-    def _edges_at(self, pos):
-        edges = Qt.Edges()
-        if pos.x() <= RESIZE_MARGIN:
-            edges |= Qt.LeftEdge
-        elif pos.x() >= self.width() - RESIZE_MARGIN:
-            edges |= Qt.RightEdge
-        if pos.y() <= RESIZE_MARGIN:
-            edges |= Qt.TopEdge
-        elif pos.y() >= self.height() - RESIZE_MARGIN:
-            edges |= Qt.BottomEdge
-        return edges
-
-    def _cursor_for(self, edges) -> Qt.CursorShape:
-        left, right = bool(edges & Qt.LeftEdge), bool(edges & Qt.RightEdge)
-        top, bottom = bool(edges & Qt.TopEdge), bool(edges & Qt.BottomEdge)
-        if (left and top) or (right and bottom):
-            return Qt.SizeFDiagCursor
-        if (right and top) or (left and bottom):
-            return Qt.SizeBDiagCursor
-        if left or right:
-            return Qt.SizeHorCursor
-        if top or bottom:
-            return Qt.SizeVerCursor
-        return Qt.ArrowCursor
-
-    def mouseMoveEvent(self, event):
-        edges = self._edges_at(event.position().toPoint())
-        self.setCursor(self._cursor_for(edges))
-        super().mouseMoveEvent(event)
-
-    def mousePressEvent(self, event):
-        edges = self._edges_at(event.position().toPoint())
-        if edges and event.button() == Qt.LeftButton:
-            handle = self._window.windowHandle()
-            if handle is not None:
-                handle.startSystemResize(edges)
-                event.accept()
-                return
-        super().mousePressEvent(event)
-
-    def leaveEvent(self, event):
-        self.unsetCursor()
-        super().leaveEvent(event)
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), WINDOW_RADIUS, WINDOW_RADIUS)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))

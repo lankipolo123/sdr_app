@@ -27,6 +27,11 @@ class MainWindow(QMainWindow):
         # of the app) replaces it entirely; see components/window_chrome.py
         # for the drag-to-move / edge-resize logic that replicates.
         self.setWindowFlag(Qt.FramelessWindowHint)
+        # Makes the top-level window itself transparent so only
+        # ResizableContainer's rounded card is visible - without this the
+        # window would still be a plain square (or show Windows' own
+        # square frame/shadow) behind the rounding.
+        self.setAttribute(Qt.WA_TranslucentBackground)
 
         central = ResizableContainer(self)
         root = QVBoxLayout(central)

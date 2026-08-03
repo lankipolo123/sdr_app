@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
-    TitleBar, ResizableContainer, RESIZE_MARGIN,
+    TitleBar, ResizableContainer,
 )
 from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
 
@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
 
         central = ResizableContainer(self)
         root = QVBoxLayout(central)
-        root.setContentsMargins(RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         self.title_bar = TitleBar(self, "SDR App", icon=self.windowIcon())

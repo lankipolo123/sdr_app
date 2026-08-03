@@ -20,20 +20,20 @@ class _CaptionButton(QToolButton):
         super().__init__(parent)
         self.kind = kind
         self.setFixedSize(46, 32)
-        self.setAutoRaise(True)
         self.setFocusPolicy(Qt.NoFocus)
         self.setCursor(Qt.ArrowCursor)
-        hover_bg = STATUS_ERROR if kind == "close_app" else "rgba(0, 0, 0, 20)"
-        self.setStyleSheet(
-            f"QToolButton {{ background: transparent; border: none; }}"
-            f"QToolButton:hover {{ background: {hover_bg}; }}"
-        )
+        self.setStyleSheet("QToolButton { background: transparent; border: none; }")
 
     def paintEvent(self, event):
-        super().paintEvent(event)
+        # No super().paintEvent() call - that's what draws Fusion's
+        # autoRaise hover panel (the misaligned box). Hovering only ever
+        # changes the icon's own line color below, never a background.
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        color = "#FFFFFF" if (self.kind == "close_app" and self.underMouse()) else TEXT_MUTED
+        if self.kind == "close_app":
+            color = STATUS_ERROR if self.underMouse() else TEXT_MUTED
+        else:
+            color = TEXT_DARK if self.underMouse() else TEXT_MUTED
         pen = QPen(QColor(color))
         pen.setWidthF(1.3)
         painter.setPen(pen)
@@ -55,6 +55,14 @@ class _CaptionButton(QToolButton):
             painter.drawArc(rect, 105 * 16, 330 * 16)
             painter.drawLine(cx, cy - s - 1, cx, cy - 1)
         painter.end()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.update()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.update()
 
 
 class TitleBar(QWidget):

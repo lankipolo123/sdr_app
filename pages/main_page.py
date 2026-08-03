@@ -5,7 +5,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize
 import qtawesome as qta
 
-from components import ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog
+from components import (
+    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
+    TitleBar, ResizableContainer, RESIZE_MARGIN,
+)
 from styles.theme_colors import TEXT_MUTED, STATUS_ERROR, BORDER_SUBTLE
 
 MAX_COLUMNS = 4
@@ -21,11 +24,24 @@ class MainWindow(QMainWindow):
         self.app = app_controller
         self.setWindowTitle("SDR App")
         self.resize(900, 640)
+        # No native OS title bar - a custom one (styled to match the rest
+        # of the app) replaces it entirely; see components/window_chrome.py
+        # for the drag-to-move / edge-resize logic that replicates.
+        self.setWindowFlag(Qt.FramelessWindowHint)
 
-        central = QWidget()
-        outer = QVBoxLayout(central)
+        central = ResizableContainer(self)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN)
+        root.setSpacing(0)
+
+        self.title_bar = TitleBar(self, "SDR App", icon=self.windowIcon())
+        root.addWidget(self.title_bar)
+
+        content = QWidget()
+        outer = QVBoxLayout(content)
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
+        root.addWidget(content, 1)
 
         top_row = QHBoxLayout()
         top_row.addStretch()

@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QToolButton
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QGuiApplication
 
 from styles.theme_colors import TEXT_DARK, TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR, SURFACE
@@ -11,8 +11,12 @@ RESIZE_MARGIN = 6
 
 
 class _CaptionButton(QToolButton):
-    """One Windows-style caption button (minimize/maximize/restore/close),
-    hand-drawn so it doesn't depend on any icon font having the right glyphs."""
+    """One title-bar caption button (minimize/maximize/restore/close-app),
+    hand-drawn so it doesn't depend on any icon font having the right glyphs.
+
+    There is deliberately no bare OS-style "X" - the close button uses a
+    power-style glyph instead and always goes through the same
+    confirm-before-exit flow as everything else that quits the app."""
 
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
@@ -21,7 +25,7 @@ class _CaptionButton(QToolButton):
         self.setAutoRaise(True)
         self.setFocusPolicy(Qt.NoFocus)
         self.setCursor(Qt.ArrowCursor)
-        hover_bg = STATUS_ERROR if kind == "close" else "rgba(0, 0, 0, 20)"
+        hover_bg = STATUS_ERROR if kind == "close_app" else "rgba(0, 0, 0, 20)"
         self.setStyleSheet(
             f"QToolButton {{ background: transparent; border: none; }}"
             f"QToolButton:hover {{ background: {hover_bg}; }}"
@@ -31,7 +35,7 @@ class _CaptionButton(QToolButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        color = "#FFFFFF" if (self.kind == "close" and self.underMouse()) else TEXT_MUTED
+        color = "#FFFFFF" if (self.kind == "close_app" and self.underMouse()) else TEXT_MUTED
         pen = QPen(QColor(color))
         pen.setWidthF(1.3)
         painter.setPen(pen)
@@ -45,9 +49,13 @@ class _CaptionButton(QToolButton):
         elif self.kind == "restore":
             painter.drawRect(cx - s + 3, cy - s - 1, s * 2 - 3, s * 2 - 3)
             painter.drawRect(cx - s - 1, cy - s + 3, s * 2 - 3, s * 2 - 3)
-        elif self.kind == "close":
-            painter.drawLine(cx - s, cy - s, cx + s, cy + s)
-            painter.drawLine(cx - s, cy + s, cx + s, cy - s)
+        elif self.kind == "close_app":
+            # power-style glyph: a broken ring + a vertical tick through
+            # the gap - same idea as the fa5s.power-off icon used
+            # elsewhere in the app, just hand-drawn to match its siblings.
+            rect = QRectF(cx - s, cy - s + 1, s * 2, s * 2 - 1)
+            painter.drawArc(rect, 105 * 16, 330 * 16)
+            painter.drawLine(cx, cy - s - 1, cx, cy - 1)
         painter.end()
 
 
@@ -60,7 +68,14 @@ class TitleBar(QWidget):
     Dragging moves the real window via QWindow.startSystemMove() (the
     OS's own move behavior - snapping etc. still works), rather than
     hand-rolled mouse-delta math.
+
+    Three buttons only: minimize, full screen, and close app - there is no
+    bare OS-style X. The caller is responsible for running the same
+    confirm-before-exit flow it already uses elsewhere (see
+    close_app_requested).
     """
+
+    close_app_requested = Signal()
 
     def __init__(self, window, title: str, icon: QIcon | None = None, parent=None):
         super().__init__(parent)
@@ -87,10 +102,13 @@ class TitleBar(QWidget):
 
         self.min_btn = _CaptionButton("minimize")
         self.max_btn = _CaptionButton("maximize")
-        self.close_btn = _CaptionButton("close")
+        self.close_btn = _CaptionButton("close_app")
+        self.min_btn.setToolTip("Minimize")
+        self.max_btn.setToolTip("Full Screen")
+        self.close_btn.setToolTip("Close App")
         self.min_btn.clicked.connect(self._window.showMinimized)
         self.max_btn.clicked.connect(self._toggle_maximize)
-        self.close_btn.clicked.connect(self._window.close)
+        self.close_btn.clicked.connect(self.close_app_requested.emit)
         for btn in (self.min_btn, self.max_btn, self.close_btn):
             layout.addWidget(btn)
 
@@ -111,6 +129,7 @@ class TitleBar(QWidget):
             screen = self._window.screen() or QGuiApplication.primaryScreen()
             self._window.setGeometry(screen.availableGeometry())
         self.max_btn.kind = "restore" if self._is_maximized() else "maximize"
+        self.max_btn.setToolTip("Restore" if self._is_maximized() else "Full Screen")
         self.max_btn.update()
 
     def mousePressEvent(self, event):

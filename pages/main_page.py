@@ -1,15 +1,14 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QToolButton, QPushButton
+    QScrollArea, QPushButton
 )
-from PySide6.QtCore import Qt, QSize
-import qtawesome as qta
+from PySide6.QtCore import Qt
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, RESIZE_MARGIN,
 )
-from styles.theme_colors import TEXT_MUTED, STATUS_ERROR, BORDER_SUBTLE
+from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
 
 MAX_COLUMNS = 4
 
@@ -35,6 +34,7 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         self.title_bar = TitleBar(self, "SDR App", icon=self.windowIcon())
+        self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
         root.addWidget(self.title_bar)
 
         content = QWidget()
@@ -42,17 +42,6 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
         root.addWidget(content, 1)
-
-        top_row = QHBoxLayout()
-        top_row.addStretch()
-        self.exit_btn = QToolButton()
-        self.exit_btn.setIcon(qta.icon("fa5s.power-off", color=STATUS_ERROR))
-        self.exit_btn.setIconSize(QSize(16, 16))
-        self.exit_btn.setToolTip("Exit app")
-        self.exit_btn.setAutoRaise(True)
-        self.exit_btn.clicked.connect(self._on_exit_clicked)
-        top_row.addWidget(self.exit_btn)
-        outer.addLayout(top_row)
 
         self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
         outer.addWidget(self.connection_bar, alignment=Qt.AlignLeft)
@@ -153,13 +142,13 @@ class MainWindow(QMainWindow):
             return
         self.app.channels.turn_off_all()
 
-    def _on_exit_clicked(self):
+    def _on_close_app_clicked(self):
         confirmed = ConfirmDialog.ask(
             self,
-            "Exit App",
+            "Close App",
             "Close the app? Channel power states are left as they are - "
             "this does not turn anything off.",
-            confirm_text="Exit",
+            confirm_text="Close",
             cancel_text="Cancel",
         )
         if not confirmed:

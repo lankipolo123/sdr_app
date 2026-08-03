@@ -88,7 +88,13 @@ class TitleBar(QWidget):
         self._restore_geometry = None
 
         self.setFixedHeight(32)
-        self.setStyleSheet(f"background: {SURFACE}; border-bottom: 1px solid {BORDER_SUBTLE};")
+        # Just the background here - a bare (selector-less) setStyleSheet()
+        # call cascades to child widgets in Qt, so a border-bottom set this
+        # way ends up redrawn individually by whichever child happens to
+        # stretch full height (the title label) instead of spanning the
+        # whole bar. The full-width line is drawn explicitly in
+        # paintEvent() below instead.
+        self.setStyleSheet(f"background: {SURFACE};")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 0, 0)
@@ -116,6 +122,14 @@ class TitleBar(QWidget):
         self.close_btn.clicked.connect(self.close_app_requested.emit)
         for btn in (self.min_btn, self.max_btn, self.close_btn):
             layout.addWidget(btn)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor(BORDER_SUBTLE)))
+        y = self.height() - 1
+        painter.drawLine(0, y, self.width() - 1, y)
+        painter.end()
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

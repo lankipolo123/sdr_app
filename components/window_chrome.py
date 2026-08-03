@@ -7,7 +7,12 @@ from styles.theme_colors import TEXT_DARK, TEXT_MUTED, BORDER_SUBTLE, STATUS_ERR
 # Thin border reserved purely for edge/corner resize grabbing - the
 # frameless window has no OS-drawn frame to grab, so this margin (kept
 # free of any child widget) is what ResizableContainer hit-tests against.
-RESIZE_MARGIN = 6
+# Kept >= WINDOW_RADIUS so the rounded corner's curve always falls inside
+# this margin band, never under the (square-cornered) title bar/content.
+RESIZE_MARGIN = 10
+
+# Corner radius of the whole window's rounded outline.
+WINDOW_RADIUS = 10
 
 
 class _CaptionButton(QToolButton):
@@ -149,12 +154,22 @@ class ResizableContainer(QWidget):
     RESIZE_MARGIN border around the title bar + content; mouse activity in
     that border (the only place with no child widget to swallow it) turns
     into a native OS resize via startSystemResize(), so edge/corner
-    resizing keeps working without the window having an actual frame."""
+    resizing keeps working without the window having an actual frame.
+
+    Also the window's visible outline: rounded corners + a 1px border, sat
+    inside a fully transparent top-level window (see MainWindow's
+    WA_TranslucentBackground) so this rounded card is the only thing drawn
+    - there's no square window rect showing behind it."""
 
     def __init__(self, window, parent=None):
         super().__init__(parent)
         self._window = window
         self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
+            f"border: 1px solid {BORDER_SUBTLE};"
+        )
 
     def _edges_at(self, pos):
         edges = Qt.Edges()

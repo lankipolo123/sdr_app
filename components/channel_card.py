@@ -5,7 +5,7 @@ from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
 from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE
-from state.level_map import LEVEL_TO_DB, DB_TO_LEVEL
+from state.level_map import LEVEL_TO_DB, DB_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 
 
 class ChannelCard(Card):
@@ -49,8 +49,9 @@ class ChannelCard(Card):
         labels_row.setContentsMargins(0, 0, 0, 0)
         self.level_labels = []
         for level in range(4):
-            lbl = QLabel(f"L{level}")
+            lbl = QLabel(LEVEL_LABELS[level])
             lbl.setAlignment(Qt.AlignCenter)
+            lbl.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
             labels_row.addWidget(lbl)
             self.level_labels.append(lbl)
         self.body_layout.addLayout(labels_row)
@@ -115,7 +116,7 @@ class ChannelCard(Card):
 
     def _update_status(self, level: int):
         is_on = level > 0
-        self.status_text.setText(f"L{level}" if is_on else "STANDBY")
+        self.status_text.setText(LEVEL_LABELS[level].upper() if is_on else "STANDBY")
         color = STATUS_OK if is_on else TEXT_MUTED
         self.status_text.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")

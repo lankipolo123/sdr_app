@@ -8,10 +8,14 @@ from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR
+from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 
 MAX_COLUMNS = 4
+
+# Connection / Controls / Emergency all share this exact size so the top
+# row reads as three equal panels, not mismatched widgets.
+TOP_CARD_SIZE = (320, 120)
 
 
 class MainWindow(QMainWindow):
@@ -59,10 +63,11 @@ class MainWindow(QMainWindow):
         top_row.setSpacing(12)
 
         self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
+        self.connection_bar.setFixedSize(*TOP_CARD_SIZE)
         top_row.addWidget(self.connection_bar, alignment=Qt.AlignTop)
 
         controls_card = make_card("Controls", icon="fa5s.sliders-h")
-        controls_card.setMaximumWidth(320)
+        controls_card.setFixedSize(*TOP_CARD_SIZE)
 
         status_row = QHBoxLayout()
         self.status_label = QLabel("Not connected.")
@@ -93,12 +98,10 @@ class MainWindow(QMainWindow):
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
 
-        emergency_card = make_card("Emergency", icon="fa5s.exclamation-triangle", accent=STATUS_ERROR)
-        emergency_card.setMaximumWidth(220)
-        self.stop_btn = EmergencyStopButton()
+        self.stop_btn = EmergencyStopButton(icon_size=28, font_size=16)
+        self.stop_btn.setFixedSize(*TOP_CARD_SIZE)
         self.stop_btn.clicked.connect(self._on_emergency_stop)
-        emergency_card.body_layout.addWidget(self.stop_btn)
-        top_row.addWidget(emergency_card, alignment=Qt.AlignTop)
+        top_row.addWidget(self.stop_btn, alignment=Qt.AlignTop)
 
         top_row.addStretch()
         outer.addLayout(top_row)

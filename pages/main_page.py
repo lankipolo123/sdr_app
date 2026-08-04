@@ -2,14 +2,16 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QScrollArea, QPushButton
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
+from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
+
+WARNING_DISPLAY_MS = 6000
 
 MAX_COLUMNS = 4
 
@@ -106,6 +108,23 @@ class MainWindow(QMainWindow):
         top_row.addStretch()
         outer.addLayout(top_row)
 
+        # A command that never got acknowledged (module unplugged
+        # mid-session, real hardware fault, etc.) has to surface
+        # somewhere - it used to just vanish into command_timeout with
+        # nothing listening. Hidden until the first timeout, then
+        # auto-hides itself after WARNING_DISPLAY_MS.
+        self.warning_label = QLabel("")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setStyleSheet(
+            f"color: {WARNING_TEXT}; background: {WARNING_BG}; border: 1px solid {WARNING_BORDER}; "
+            f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
+        )
+        self.warning_label.setVisible(False)
+        outer.addWidget(self.warning_label)
+        self._warning_timer = QTimer(self)
+        self._warning_timer.setSingleShot(True)
+        self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         grid_container = QWidget()
@@ -121,6 +140,7 @@ class MainWindow(QMainWindow):
         self.app.channels.channel_added.connect(self._on_channel_added)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
+        self.app.channels.command_timeout.connect(self._on_command_timeout)
 
         # No manual "Connect" step anymore - each module gets its own
         # dedicated serial port (RS422 is point-to-point, not a shared
@@ -141,6 +161,11 @@ class MainWindow(QMainWindow):
     def _on_rescan(self):
         self.status_label.setText("Rescanning… checking for new channels")
         self.app.channels.start_discovery()
+
+    def _on_command_timeout(self, message: str):
+        self.warning_label.setText(message)
+        self.warning_label.setVisible(True)
+        self._warning_timer.start(WARNING_DISPLAY_MS)
 
     def _on_channel_added(self, address: int):
         controller = self.app.channels.get_controller(address)

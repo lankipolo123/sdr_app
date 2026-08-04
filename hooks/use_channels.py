@@ -66,11 +66,13 @@ class ChannelManager(QObject):
         (L0-L3) at once. One command per channel, no intermediate values -
         the caller passes the final level directly, not a dragged range."""
         db = LEVEL_TO_DB[level]
-        for controller in self.controllers.values():
+        for address, controller in self.controllers.items():
             if db is None:
                 controller.turn_output_off()
-            else:
+            elif self.states[address].data.output_on:
                 controller.set_power(db)
+            else:
+                controller.resume_output(db)
 
     def shutdown(self):
         self._discovery.stop()

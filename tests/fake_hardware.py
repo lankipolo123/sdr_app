@@ -71,7 +71,12 @@ class FakeModulePort:
             self.freq_mhz = struct.unpack(">H", frame.buf[1:3])[0]
             self.bandwidth_mhz = c.BANDWIDTH_CODES_REV[frame.buf[3]]
             self.power_db = c.POWER_CODES_REV[frame.buf[4]]
-            self.output_on = True  # a Signal Control frame implies the output is now driven
+            # Deliberately does NOT set self.output_on here - matches real
+            # hardware (confirmed via spectrum analyzer): Signal Control
+            # alone reconfigures parameters but doesn't re-enable the RF
+            # stage once it's been switched off. Only Output Switch ON
+            # does that. Without this, the fake would have hidden the
+            # exact bug that was found on real hardware.
             self._reply(c.TYPE_SIGNAL_CONTROL, bytes([c.RESP_SUCCESS]))
 
 

@@ -80,6 +80,43 @@ class FakeModulePort:
             self._reply(c.TYPE_SIGNAL_CONTROL, bytes([c.RESP_SUCCESS]))
 
 
+class FakeSharedBusPort:
+    """Simulates the real-world failure mode already confirmed on actual
+    hardware: multiple modules wired onto ONE port (one USB-RS422
+    adapter, many addresses) instead of one module per port. RS422
+    isn't a real multi-drop bus - when more than one module tries to
+    answer the same line at once, their transmitters collide
+    electrically and corrupt everything, which is why real testing saw
+    "no response at all" with two modules on one adapter rather than
+    two clean replies.
+
+    Modeled here as: every write is "heard" by every attached module
+    (matching a real shared line), but the reply that comes back is
+    garbage - never a well-formed frame - standing in for electrical
+    contention rather than politely interleaved responses. Used to
+    verify discovery times out and moves on cleanly instead of hanging,
+    crashing, or building a channel out of corrupted bytes."""
+
+    def __init__(self, modules: list):
+        self.modules = modules
+        self._rx = bytearray()
+
+    def write(self, data: bytes):
+        for module in self.modules:
+            module._parser.feed(data)  # each module "hears" it, same as a real shared line
+        # Bytes actually appear on the wire looking like collision noise,
+        # not any one module's clean, well-formed reply.
+        self._rx.extend(bytes((b + 0x5A) & 0xFF for b in data))
+
+    def read(self, size: int = 256) -> bytes:
+        if not self._rx:
+            time.sleep(0.005)
+            return b""
+        chunk = bytes(self._rx[:size])
+        del self._rx[:size]
+        return chunk
+
+
 class FakePortRegistry:
     """What's "plugged in" for a test run - maps fake port names to
     FakeModulePort instances, the same way real ports map to real

@@ -59,7 +59,9 @@ def main():
     app.setPalette(light_palette())
     app.setStyleSheet(build_global_qss())
 
-    from tests.fake_hardware import FakeModulePort, FakePortRegistry, install_fake_hardware
+    from tests.fake_hardware import (
+        FakeModulePort, FakePortRegistry, FakeSharedBusPort, install_fake_hardware,
+    )
 
     registry = FakePortRegistry()
     module = FakeModulePort(address=0)
@@ -259,6 +261,28 @@ def main():
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
     controller6.shutdown()
+    pump(50)
+
+    print("\n=== One COM port, many addresses (real-world current test rig) ===")
+    print("(one shared line, two modules both trying to answer - the exact")
+    print(" wiring confirmed in testing: single USB-RS422 adapter driving")
+    print(" two modules at once)")
+    bus_module_a = FakeModulePort(address=0)
+    bus_module_b = FakeModulePort(address=1)
+    shared_bus = FakeSharedBusPort([bus_module_a, bus_module_b])
+    registry_bus = FakePortRegistry()
+    registry_bus.add("FAKE_SHARED_BUS", shared_bus)
+    install_fake_hardware(registry_bus)
+    controller7 = make_app_controller()
+    window7 = MainWindow(controller7)
+    window7.show()
+    window7.rescan_btn.click()
+    wait_for(controller7.channels.discovery_finished, timeout_ms=4000)
+    check("no phantom channel built from collision noise", len(controller7.channels.states) == 0)
+    check("status reflects nothing found, not a false success",
+          "No devices found" in window7.status_label.text())
+    check("no crash/hang scanning a colliding shared bus", True)
+    controller7.shutdown()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

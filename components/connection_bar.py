@@ -32,7 +32,7 @@ class ConnectionBar(Card):
         self.channels.channel_added.connect(self._on_channel_added)
         self.channels.discovery_progress.connect(self._on_progress)
         self.channels.discovery_finished.connect(self._on_finished)
-        self._set_status(False, "Scanning…")
+        self._set_status(False, "Not scanned yet.")
 
     def _on_progress(self, current: int, total: int):
         connected = len(self.channels.states) > 0

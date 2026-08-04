@@ -59,7 +59,9 @@ def main():
     app.setPalette(light_palette())
     app.setStyleSheet(build_global_qss())
 
-    from tests.fake_hardware import FakeModulePort, FakePortRegistry, install_fake_hardware
+    from tests.fake_hardware import (
+        FakeModulePort, FakePortRegistry, FakeSharedBusPort, install_fake_hardware,
+    )
 
     registry = FakePortRegistry()
     module = FakeModulePort(address=0)
@@ -93,6 +95,11 @@ def main():
     window = MainWindow(controller)
     window.show()
 
+    # No more auto-scan on launch - discovery only ever starts from an
+    # explicit click (the Scan button) now, so tests trigger it manually,
+    # same as a real user would.
+    check("no auto-scan on launch (nothing found yet)", len(controller.channels.states) == 0)
+    window.rescan_btn.click()
     wait_for(controller.channels.discovery_finished)
     check("discovery finds the fake module", 0 in controller.channels.states)
     check("exactly one channel discovered (no duplicates)", len(controller.channels.states) == 1)
@@ -174,6 +181,7 @@ def main():
     controller2 = make_app_controller()
     window2 = MainWindow(controller2)
     window2.show()
+    window2.rescan_btn.click()
     wait_for(controller2.channels.discovery_finished)
     check("second run rediscovers the channel", 0 in controller2.channels.states)
     if 0 in controller2.channels.states:
@@ -192,6 +200,7 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
+    window3.rescan_btn.click()
     # Deliberately no wait_for() here - shut down while the scan is still running.
     controller3.shutdown()
     pump(50)
@@ -207,6 +216,7 @@ def main():
     controller4 = make_app_controller()
     window4 = MainWindow(controller4)
     window4.show()
+    window4.rescan_btn.click()
     wait_for(controller4.channels.discovery_finished)
     check("both modules discovered", len(controller4.channels.states) == 2)
     check("both channel cards created", len(window4._cards) == 2)
@@ -225,6 +235,7 @@ def main():
     controller5 = make_app_controller()
     window5 = MainWindow(controller5)
     window5.show()
+    window5.rescan_btn.click()
     wait_for(controller5.channels.discovery_finished, timeout_ms=4000)
     check("exactly one channel found (the live one)", len(controller5.channels.states) == 1)
     check("it's the good module's address (5), not the dead one's", 5 in controller5.channels.states)
@@ -239,6 +250,7 @@ def main():
     controller6 = make_app_controller()
     window6 = MainWindow(controller6)
     window6.show()
+    window6.rescan_btn.click()
     wait_for(controller6.channels.discovery_finished)
     check("timeout-test channel discovered", 0 in window6._cards)
     check("warning label starts hidden", not window6.warning_label.isVisible())
@@ -249,6 +261,28 @@ def main():
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
     controller6.shutdown()
+    pump(50)
+
+    print("\n=== One COM port, many addresses (real-world current test rig) ===")
+    print("(one shared line, two modules both trying to answer - the exact")
+    print(" wiring confirmed in testing: single USB-RS422 adapter driving")
+    print(" two modules at once)")
+    bus_module_a = FakeModulePort(address=0)
+    bus_module_b = FakeModulePort(address=1)
+    shared_bus = FakeSharedBusPort([bus_module_a, bus_module_b])
+    registry_bus = FakePortRegistry()
+    registry_bus.add("FAKE_SHARED_BUS", shared_bus)
+    install_fake_hardware(registry_bus)
+    controller7 = make_app_controller()
+    window7 = MainWindow(controller7)
+    window7.show()
+    window7.rescan_btn.click()
+    wait_for(controller7.channels.discovery_finished, timeout_ms=4000)
+    check("no phantom channel built from collision noise", len(controller7.channels.states) == 0)
+    check("status reflects nothing found, not a false success",
+          "No devices found" in window7.status_label.text())
+    check("no crash/hang scanning a colliding shared bus", True)
+    controller7.shutdown()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

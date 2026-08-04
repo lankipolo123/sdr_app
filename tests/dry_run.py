@@ -60,7 +60,8 @@ def main():
     app.setStyleSheet(build_global_qss())
 
     from tests.fake_hardware import (
-        FakeModulePort, FakePortRegistry, FakeSharedBusPort, install_fake_hardware,
+        FakeModulePort, FakePortRegistry, FakeSharedBusPort, FakeAddressedBusPort,
+        install_fake_hardware,
     )
 
     registry = FakePortRegistry()
@@ -283,6 +284,65 @@ def main():
           "No devices found" in window7.status_label.text())
     check("no crash/hang scanning a colliding shared bus", True)
     controller7.shutdown()
+    pump(50)
+
+    print("\n=== Manual add (targeted, no broadcast) on a genuinely colliding shared bus ===")
+    print("(tests the senior's claim under the WORST case: same electrical")
+    print(" collision as above, but Scan's broadcast is skipped entirely and")
+    print(" only one address is targeted directly - must still fail safely)")
+    collide_a = FakeModulePort(address=0)
+    collide_b = FakeModulePort(address=1)
+    shared_bus2 = FakeSharedBusPort([collide_a, collide_b])
+    registry_manual_bad = FakePortRegistry()
+    registry_manual_bad.add("FAKE_MANUAL_BAD", shared_bus2)
+    install_fake_hardware(registry_manual_bad)
+    controller8 = make_app_controller()
+    window8 = MainWindow(controller8)
+    window8.show()
+    controller8.channels.add_manual_channel("FAKE_MANUAL_BAD", 0)
+    wait_for(controller8.channels.command_timeout, timeout_ms=2000)
+    check("targeted add on a colliding bus does not fabricate a channel",
+          len(controller8.channels.states) == 0)
+    check("no port connection leaked after a failed targeted probe",
+          "FAKE_MANUAL_BAD" not in controller8.channels._port_connections)
+    controller8.shutdown()
+    pump(50)
+
+    print("\n=== Manual add (targeted, no broadcast): two addresses sharing one port ===")
+    print("(the OPTIMISTIC case - only valid if the module's firmware really")
+    print(" does filter Status Query by address AND its driver tri-states.")
+    print(" Proves the app's own code is correct if that's ever confirmed on")
+    print(" the actual hardware - does not itself prove the hardware does this.)")
+    addr_a = FakeModulePort(address=0, freq_mhz=2400)
+    addr_b = FakeModulePort(address=1, freq_mhz=5800)
+    addressed_bus = FakeAddressedBusPort([addr_a, addr_b])
+    registry_manual_good = FakePortRegistry()
+    registry_manual_good.add("FAKE_MANUAL_GOOD", addressed_bus)
+    install_fake_hardware(registry_manual_good)
+    controller9 = make_app_controller()
+    window9 = MainWindow(controller9)
+    window9.show()
+
+    controller9.channels.add_manual_channel("FAKE_MANUAL_GOOD", 0)
+    wait_for(controller9.channels.channel_added, timeout_ms=2000)
+    check("first targeted address added", 0 in controller9.channels.states)
+
+    controller9.channels.add_manual_channel("FAKE_MANUAL_GOOD", 1)
+    wait_for(controller9.channels.channel_added, timeout_ms=2000)
+    check("second targeted address added, sharing the same port", 1 in controller9.channels.states)
+    check(
+        "both addresses share one physical connection, not two",
+        0 in controller9.channels.connections and 1 in controller9.channels.connections
+        and controller9.channels.connections[0] is controller9.channels.connections[1],
+    )
+
+    if 0 in window9._cards and 1 in window9._cards:
+        window9._cards[0].toggle.click()
+        pump(200)
+        check("turning channel 0 on doesn't also turn channel 1 on", not addr_b.output_on)
+        check("channel 0 actually turned on", addr_a.output_on)
+
+    controller9.shutdown()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

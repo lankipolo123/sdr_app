@@ -1,13 +1,14 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QStatusBar
+    QScrollArea, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer
 
 from components import (
-    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
+    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
     TitleBar, ResizableContainer, make_card,
 )
+from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
     TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
 )
@@ -78,6 +79,13 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
+        self.manual_add_btn = QPushButton("+ Addr")
+        self.manual_add_btn.setToolTip(
+            "Add a channel by port + address directly - targeted only, no broadcast"
+        )
+        self.manual_add_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.manual_add_btn.clicked.connect(self._on_manual_add)
+        status_row.addWidget(self.manual_add_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -134,19 +142,28 @@ class MainWindow(QMainWindow):
         self.grid.setSpacing(12)
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)
 
-        self.setCentralWidget(central)
-
-        status_bar = QStatusBar()
-        status_bar.setStyleSheet(f"QStatusBar {{ border-top: 1px solid {BORDER_SUBTLE}; }}")
+        # A plain widget inside our own layout, not QMainWindow's native
+        # setStatusBar() - that mechanism places the bar outside
+        # ResizableContainer (the widget that actually paints the rounded
+        # white card), so it ended up rendering in the leftover
+        # translucent area around it instead of inside the visible window.
+        txrx_bar = QWidget()
+        txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
+        txrx_bar.setStyleSheet(f"border-top: 1px solid {BORDER_SUBTLE};")
+        txrx_row = QHBoxLayout(txrx_bar)
+        txrx_row.setContentsMargins(0, 8, 0, 0)
         self.tx_value_label = QLabel("TX : --")
         self.rx_value_label = QLabel("RX : --")
         for lbl in (self.tx_value_label, self.rx_value_label):
-            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px;")
-        status_bar.addPermanentWidget(self.tx_value_label, 1)
-        status_bar.addPermanentWidget(self.rx_value_label, 1)
-        self.setStatusBar(status_bar)
+            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px; border: none;")
+        txrx_row.addWidget(self.tx_value_label)
+        txrx_row.addStretch()
+        txrx_row.addWidget(self.rx_value_label)
+        outer.addWidget(txrx_bar)
+
+        self.setCentralWidget(central)
 
         self._cards = {}
         self.app.channels.channel_added.connect(self._on_channel_added)
@@ -175,6 +192,15 @@ class MainWindow(QMainWindow):
     def _on_rescan(self):
         self.status_label.setText("Scanning… checking for channels")
         self.app.channels.start_discovery()
+
+    def _on_manual_add(self):
+        ports = ConnectionController.list_ports()
+        result = ManualAddDialog.ask(self, ports)
+        if result is None:
+            return
+        port, address = result
+        self.status_label.setText(f"Targeting address {address} on {port}…")
+        self.app.channels.add_manual_channel(port, address)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

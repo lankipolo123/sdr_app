@@ -22,6 +22,8 @@ class ChannelManager(QObject):
     discovery_progress = Signal(int, int)
     discovery_finished = Signal()
     command_timeout = Signal(str)
+    raw_tx = Signal(int, bytes)          # address, bytes sent
+    raw_rx = Signal(int, bytes)          # address, bytes received
 
     def __init__(self, config_service, logger=None):
         super().__init__()
@@ -99,6 +101,8 @@ class ChannelManager(QObject):
         controller = ChannelController(conn, state, self.logger)
         controller.command_timeout.connect(self.command_timeout.emit)
         conn.frame_received.connect(controller.handle_frame)
+        conn.raw_tx.connect(lambda data, addr=address: self.raw_tx.emit(addr, data))
+        conn.raw_rx.connect(lambda data, addr=address: self.raw_rx.emit(addr, data))
 
         self.states[address] = state
         self.controllers[address] = controller

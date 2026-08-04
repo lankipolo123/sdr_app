@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton
+    QScrollArea, QPushButton, QStatusBar
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -8,7 +8,9 @@ from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER
+from styles.theme_colors import (
+    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
+)
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 
 WARNING_DISPLAY_MS = 6000
@@ -136,11 +138,23 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
+        status_bar = QStatusBar()
+        status_bar.setStyleSheet(f"QStatusBar {{ border-top: 1px solid {BORDER_SUBTLE}; }}")
+        self.tx_value_label = QLabel("TX : --")
+        self.rx_value_label = QLabel("RX : --")
+        for lbl in (self.tx_value_label, self.rx_value_label):
+            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px;")
+        status_bar.addPermanentWidget(self.tx_value_label, 1)
+        status_bar.addPermanentWidget(self.rx_value_label, 1)
+        self.setStatusBar(status_bar)
+
         self._cards = {}
         self.app.channels.channel_added.connect(self._on_channel_added)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
         self.app.channels.command_timeout.connect(self._on_command_timeout)
+        self.app.channels.raw_tx.connect(self._on_raw_tx)
+        self.app.channels.raw_rx.connect(self._on_raw_rx)
 
         # Deliberately does NOT auto-scan on launch - scanning sends a
         # broadcast Address Query to every available port, and if two
@@ -166,6 +180,12 @@ class MainWindow(QMainWindow):
         self.warning_label.setText(message)
         self.warning_label.setVisible(True)
         self._warning_timer.start(WARNING_DISPLAY_MS)
+
+    def _on_raw_tx(self, address: int, data: bytes):
+        self.tx_value_label.setText(f"TX : CH{address + 1:02d} {data.hex(' ').upper()}")
+
+    def _on_raw_rx(self, address: int, data: bytes):
+        self.rx_value_label.setText(f"RX : CH{address + 1:02d} {data.hex(' ').upper()}")
 
     def _on_channel_added(self, address: int):
         controller = self.app.channels.get_controller(address)

@@ -11,18 +11,8 @@ RESPONSE_TIMEOUT_MS = 2000
 
 
 class ChannelController(QObject):
-    """Handles commands + responses for exactly one addressed channel.
-
-    Shares one ConnectionController (one serial link) with every other
-    channel on the bus - ChannelManager routes incoming frames to the
-    right ChannelController by address.
-
-    Unlike the old DeviceController, this has no query_address()/
-    set_address() (no Module Address UI at all) and no
-    apply_signal_settings() with user-chosen Mode/Frequency/Bandwidth -
-    the customer can only change Power, via set_power(). Mode/Frequency/
-    Bandwidth are always the values last read from the module itself.
-    """
+    """Handles commands + responses for one addressed channel, over its
+    own dedicated ConnectionController."""
 
     command_timeout = Signal(str)
 

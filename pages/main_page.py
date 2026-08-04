@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QTimer
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
-    TitleBar, ResizableContainer, make_card, CommLogPanel, ManualTestCard,
+    TitleBar, ResizableContainer, make_card,
 )
 from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
@@ -125,24 +125,6 @@ class MainWindow(QMainWindow):
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
 
-        debug_row = QHBoxLayout()
-        debug_row.setSpacing(12)
-        self.manual_test = ManualTestCard()
-        self.manual_test.setFixedWidth(260)
-        debug_row.addWidget(self.manual_test, alignment=Qt.AlignTop)
-        self.comm_log = CommLogPanel()
-        debug_row.addWidget(self.comm_log, 1)
-        outer.addLayout(debug_row)
-
-        self.manual_test.raw_tx.connect(lambda data: self.comm_log.log("TX", "Manual", data))
-        self.manual_test.raw_rx.connect(lambda data: self.comm_log.log("RX", "Manual", data))
-        self.app.channels.raw_tx.connect(
-            lambda addr, data: self.comm_log.log("TX", f"CH{addr + 1:02d}", data)
-        )
-        self.app.channels.raw_rx.connect(
-            lambda addr, data: self.comm_log.log("RX", f"CH{addr + 1:02d}", data)
-        )
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         grid_container = QWidget()
@@ -194,8 +176,6 @@ class MainWindow(QMainWindow):
         self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
 
     def closeEvent(self, event):
-        if self.manual_test.conn.is_connected():
-            self.manual_test.conn.disconnect()
         self.app.shutdown()
         event.accept()
 

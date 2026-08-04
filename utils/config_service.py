@@ -5,7 +5,6 @@ import os
 from .app_paths import user_data_dir, default_log_folder
 
 DEFAULT_CONFIG = {
-    "com_port": "",
     "baud_rate": 115200,
     "parity": "N",
     "data_bits": 8,

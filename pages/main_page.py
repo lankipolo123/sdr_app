@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
 
-        self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
+        self.connection_bar = ConnectionBar(self.app.channels)
         self.connection_bar.setFixedSize(*TOP_CARD_SIZE)
         top_row.addWidget(self.connection_bar, alignment=Qt.AlignTop)
 
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         controls_card.setFixedSize(*TOP_CARD_SIZE)
 
         status_row = QHBoxLayout()
-        self.status_label = QLabel("Not connected.")
+        self.status_label = QLabel("Scanning for devices…")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
@@ -121,29 +121,24 @@ class MainWindow(QMainWindow):
         self.app.channels.channel_added.connect(self._on_channel_added)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
-        self.app.connection.connected_changed.connect(self._on_connected_changed)
 
-    def _on_connected_changed(self, connected: bool):
-        if connected:
-            self.status_label.setText("Scanning for connected channels…")
-            self.app.channels.start_discovery()
-        else:
-            self.status_label.setText("Not connected.")
+        # No manual "Connect" step anymore - each module gets its own
+        # dedicated serial port (RS422 is point-to-point, not a shared
+        # bus), so there's nothing to pick; just scan every available
+        # port on launch.
+        self.app.channels.start_discovery()
 
     def _on_discovery_progress(self, current: int, total: int):
-        self.status_label.setText(f"Scanning… checked address {current}/{total}")
+        self.status_label.setText(f"Scanning… checked port {current}/{total}")
 
     def _on_discovery_finished(self):
         count = len(self._cards)
         self.status_label.setText(
             f"{count} channel(s) found." if count else
-            "No channels responded. Check wiring and power."
+            "No devices found. Check wiring and power."
         )
 
     def _on_rescan(self):
-        if not self.app.connection.is_connected():
-            self.status_label.setText("Connect first before rescanning.")
-            return
         self.status_label.setText("Rescanning… checking for new channels")
         self.app.channels.start_discovery()
 

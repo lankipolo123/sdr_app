@@ -8,7 +8,6 @@ DEFAULT_CONFIG = {
     "baud_rate": 115200,
     "parity": "N",
     "data_bits": 8,
-    "auto_connect": False,
     "log_folder": default_log_folder(),
     "channels": {},   # address (str) -> {"last_level": int}
 }

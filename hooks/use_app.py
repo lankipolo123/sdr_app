@@ -3,14 +3,13 @@ from .use_channels import ChannelManager
 
 
 class AppController:
+    """No auto-scan on launch, deliberately - see MainWindow. Scanning
+    only ever happens from an explicit user click now."""
+
     def __init__(self):
         self.config = ConfigService()
         self.logger = setup_logger(self.config.get("log_folder", "logs"))
         self.channels = ChannelManager(self.config, self.logger)
-
-        if self.config.get("auto_connect", False):
-            self.logger.info("Auto-connect enabled - scanning for modules on launch.")
-            self.channels.start_discovery()
 
     def shutdown(self):
         self.channels.save_all()

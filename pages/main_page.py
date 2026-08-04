@@ -72,12 +72,12 @@ class MainWindow(QMainWindow):
         controls_card.setFixedSize(*TOP_CARD_SIZE)
 
         status_row = QHBoxLayout()
-        self.status_label = QLabel("Scanning for devices…")
+        self.status_label = QLabel("Not scanned yet.")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
-        self.rescan_btn = QPushButton("Rescan")
-        self.rescan_btn.setToolTip("Scan again for newly-connected channels")
+        self.rescan_btn = QPushButton("Scan")
+        self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
         status_row.addWidget(self.rescan_btn)
         controls_card.body_layout.addLayout(status_row)
@@ -142,11 +142,11 @@ class MainWindow(QMainWindow):
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
         self.app.channels.command_timeout.connect(self._on_command_timeout)
 
-        # No manual "Connect" step anymore - each module gets its own
-        # dedicated serial port (RS422 is point-to-point, not a shared
-        # bus), so there's nothing to pick; just scan every available
-        # port on launch.
-        self.app.channels.start_discovery()
+        # Deliberately does NOT auto-scan on launch - scanning sends a
+        # broadcast Address Query to every available port, and if two
+        # modules are still sharing one converter (a real risk on the
+        # current test rig), that's a bus collision every time it fires.
+        # Scanning only happens when the user explicitly clicks Scan.
 
     def _on_discovery_progress(self, current: int, total: int):
         self.status_label.setText(f"Scanning… checked port {current}/{total}")
@@ -159,7 +159,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_rescan(self):
-        self.status_label.setText("Rescanning… checking for new channels")
+        self.status_label.setText("Scanning… checking for channels")
         self.app.channels.start_discovery()
 
     def _on_command_timeout(self, message: str):

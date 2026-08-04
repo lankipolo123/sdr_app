@@ -93,6 +93,11 @@ def main():
     window = MainWindow(controller)
     window.show()
 
+    # No more auto-scan on launch - discovery only ever starts from an
+    # explicit click (the Scan button) now, so tests trigger it manually,
+    # same as a real user would.
+    check("no auto-scan on launch (nothing found yet)", len(controller.channels.states) == 0)
+    window.rescan_btn.click()
     wait_for(controller.channels.discovery_finished)
     check("discovery finds the fake module", 0 in controller.channels.states)
     check("exactly one channel discovered (no duplicates)", len(controller.channels.states) == 1)
@@ -174,6 +179,7 @@ def main():
     controller2 = make_app_controller()
     window2 = MainWindow(controller2)
     window2.show()
+    window2.rescan_btn.click()
     wait_for(controller2.channels.discovery_finished)
     check("second run rediscovers the channel", 0 in controller2.channels.states)
     if 0 in controller2.channels.states:
@@ -192,6 +198,7 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
+    window3.rescan_btn.click()
     # Deliberately no wait_for() here - shut down while the scan is still running.
     controller3.shutdown()
     pump(50)
@@ -207,6 +214,7 @@ def main():
     controller4 = make_app_controller()
     window4 = MainWindow(controller4)
     window4.show()
+    window4.rescan_btn.click()
     wait_for(controller4.channels.discovery_finished)
     check("both modules discovered", len(controller4.channels.states) == 2)
     check("both channel cards created", len(window4._cards) == 2)
@@ -225,6 +233,7 @@ def main():
     controller5 = make_app_controller()
     window5 = MainWindow(controller5)
     window5.show()
+    window5.rescan_btn.click()
     wait_for(controller5.channels.discovery_finished, timeout_ms=4000)
     check("exactly one channel found (the live one)", len(controller5.channels.states) == 1)
     check("it's the good module's address (5), not the dead one's", 5 in controller5.channels.states)
@@ -239,6 +248,7 @@ def main():
     controller6 = make_app_controller()
     window6 = MainWindow(controller6)
     window6.show()
+    window6.rescan_btn.click()
     wait_for(controller6.channels.discovery_finished)
     check("timeout-test channel discovered", 0 in window6._cards)
     check("warning label starts hidden", not window6.warning_label.isVisible())

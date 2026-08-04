@@ -2,14 +2,16 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QScrollArea, QPushButton
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE
+from styles.theme_colors import TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
+
+WARNING_DISPLAY_MS = 6000
 
 MAX_COLUMNS = 4
 
@@ -62,7 +64,7 @@ class MainWindow(QMainWindow):
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
 
-        self.connection_bar = ConnectionBar(self.app.connection, self.app.config)
+        self.connection_bar = ConnectionBar(self.app.channels)
         self.connection_bar.setFixedSize(*TOP_CARD_SIZE)
         top_row.addWidget(self.connection_bar, alignment=Qt.AlignTop)
 
@@ -70,7 +72,7 @@ class MainWindow(QMainWindow):
         controls_card.setFixedSize(*TOP_CARD_SIZE)
 
         status_row = QHBoxLayout()
-        self.status_label = QLabel("Not connected.")
+        self.status_label = QLabel("Scanning for devices…")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
@@ -106,6 +108,23 @@ class MainWindow(QMainWindow):
         top_row.addStretch()
         outer.addLayout(top_row)
 
+        # A command that never got acknowledged (module unplugged
+        # mid-session, real hardware fault, etc.) has to surface
+        # somewhere - it used to just vanish into command_timeout with
+        # nothing listening. Hidden until the first timeout, then
+        # auto-hides itself after WARNING_DISPLAY_MS.
+        self.warning_label = QLabel("")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setStyleSheet(
+            f"color: {WARNING_TEXT}; background: {WARNING_BG}; border: 1px solid {WARNING_BORDER}; "
+            f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
+        )
+        self.warning_label.setVisible(False)
+        outer.addWidget(self.warning_label)
+        self._warning_timer = QTimer(self)
+        self._warning_timer.setSingleShot(True)
+        self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         grid_container = QWidget()
@@ -121,31 +140,32 @@ class MainWindow(QMainWindow):
         self.app.channels.channel_added.connect(self._on_channel_added)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
-        self.app.connection.connected_changed.connect(self._on_connected_changed)
+        self.app.channels.command_timeout.connect(self._on_command_timeout)
 
-    def _on_connected_changed(self, connected: bool):
-        if connected:
-            self.status_label.setText("Scanning for connected channels…")
-            self.app.channels.start_discovery()
-        else:
-            self.status_label.setText("Not connected.")
+        # No manual "Connect" step anymore - each module gets its own
+        # dedicated serial port (RS422 is point-to-point, not a shared
+        # bus), so there's nothing to pick; just scan every available
+        # port on launch.
+        self.app.channels.start_discovery()
 
     def _on_discovery_progress(self, current: int, total: int):
-        self.status_label.setText(f"Scanning… checked address {current}/{total}")
+        self.status_label.setText(f"Scanning… checked port {current}/{total}")
 
     def _on_discovery_finished(self):
         count = len(self._cards)
         self.status_label.setText(
             f"{count} channel(s) found." if count else
-            "No channels responded. Check wiring and power."
+            "No devices found. Check wiring and power."
         )
 
     def _on_rescan(self):
-        if not self.app.connection.is_connected():
-            self.status_label.setText("Connect first before rescanning.")
-            return
         self.status_label.setText("Rescanning… checking for new channels")
         self.app.channels.start_discovery()
+
+    def _on_command_timeout(self, message: str):
+        self.warning_label.setText(message)
+        self.warning_label.setVisible(True)
+        self._warning_timer.start(WARNING_DISPLAY_MS)
 
     def _on_channel_added(self, address: int):
         controller = self.app.channels.get_controller(address)
@@ -180,6 +200,7 @@ class MainWindow(QMainWindow):
             "this does not turn anything off.",
             confirm_text="Close",
             cancel_text="Cancel",
+            danger=True,
         )
         if not confirmed:
             return

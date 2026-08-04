@@ -1,7 +1,6 @@
 from .card import Card, make_card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from .combo_box import ComboBox
 from .connection_bar import ConnectionBar
 from .channel_card import ChannelCard
 from .confirm_dialog import ConfirmDialog
@@ -13,7 +12,6 @@ __all__ = [
     "make_card",
     "PowerButton",
     "LevelSlider",
-    "ComboBox",
     "ConnectionBar",
     "ChannelCard",
     "ConfirmDialog",

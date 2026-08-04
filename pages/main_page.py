@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QStatusBar
+    QScrollArea, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -134,19 +134,28 @@ class MainWindow(QMainWindow):
         self.grid.setSpacing(12)
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)
 
-        self.setCentralWidget(central)
-
-        status_bar = QStatusBar()
-        status_bar.setStyleSheet(f"QStatusBar {{ border-top: 1px solid {BORDER_SUBTLE}; }}")
+        # A plain widget inside our own layout, not QMainWindow's native
+        # setStatusBar() - that mechanism places the bar outside
+        # ResizableContainer (the widget that actually paints the rounded
+        # white card), so it ended up rendering in the leftover
+        # translucent area around it instead of inside the visible window.
+        txrx_bar = QWidget()
+        txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
+        txrx_bar.setStyleSheet(f"border-top: 1px solid {BORDER_SUBTLE};")
+        txrx_row = QHBoxLayout(txrx_bar)
+        txrx_row.setContentsMargins(0, 8, 0, 0)
         self.tx_value_label = QLabel("TX : --")
         self.rx_value_label = QLabel("RX : --")
         for lbl in (self.tx_value_label, self.rx_value_label):
-            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px;")
-        status_bar.addPermanentWidget(self.tx_value_label, 1)
-        status_bar.addPermanentWidget(self.rx_value_label, 1)
-        self.setStatusBar(status_bar)
+            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px; border: none;")
+        txrx_row.addWidget(self.tx_value_label)
+        txrx_row.addStretch()
+        txrx_row.addWidget(self.rx_value_label)
+        outer.addWidget(txrx_bar)
+
+        self.setCentralWidget(central)
 
         self._cards = {}
         self.app.channels.channel_added.connect(self._on_channel_added)

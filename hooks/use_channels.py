@@ -8,7 +8,9 @@ from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_discovery import DiscoveryController
 
-MANUAL_TIMEOUT_MS = 800
+MANUAL_TIMEOUT_MS = 500
+MANUAL_MAX_ATTEMPTS = 6  # re-send the targeted query a few times before giving up,
+                          # in case the line only has a narrow clean window
 
 MAX_CHANNELS = 16  # ceiling on how many ports we'll ever probe at once
 
@@ -77,6 +79,17 @@ class ChannelManager(QObject):
 
         timer = QTimer(self)
         timer.setSingleShot(True)
+        attempts = {"count": 0}
+
+        def send_attempt():
+            attempts["count"] += 1
+            if self.logger:
+                self.logger.info(
+                    f"Manual add: targeted query to address {address} on {port} "
+                    f"(attempt {attempts['count']}/{MANUAL_MAX_ATTEMPTS})"
+                )
+            conn.send(commands.query_status(address))
+            timer.start(MANUAL_TIMEOUT_MS)
 
         def on_frame(frame: ParsedFrame):
             if frame.type != c.TYPE_STATUS_QUERY or frame.addr != address or len(frame.buf) < 6:
@@ -87,12 +100,18 @@ class ChannelManager(QObject):
             self._finish_manual_add(port, address, conn, frame)
 
         def on_timeout():
+            if attempts["count"] < MANUAL_MAX_ATTEMPTS:
+                send_attempt()
+                return
             conn.frame_received.disconnect(on_frame)
             del self._manual_probes[port]
             if opened_new:
                 del self._port_connections[port]
                 conn.disconnect()
-            msg = f"No response from address {address} on {port} (targeted query, no broadcast)."
+            msg = (
+                f"No response from address {address} on {port} after "
+                f"{MANUAL_MAX_ATTEMPTS} targeted attempts (no broadcast)."
+            )
             if self.logger:
                 self.logger.warning(f"Manual add: {msg}")
             self.command_timeout.emit(msg)
@@ -100,8 +119,7 @@ class ChannelManager(QObject):
         timer.timeout.connect(on_timeout)
         conn.frame_received.connect(on_frame)
         self._manual_probes[port] = (address, timer, on_frame)
-        conn.send(commands.query_status(address))
-        timer.start(MANUAL_TIMEOUT_MS)
+        send_attempt()
 
     def _finish_manual_add(self, port: str, address: int, conn: ConnectionController, frame: ParsedFrame):
         state = ChannelState(address)

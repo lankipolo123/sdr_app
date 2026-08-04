@@ -180,6 +180,7 @@ class MainWindow(QMainWindow):
             "this does not turn anything off.",
             confirm_text="Close",
             cancel_text="Cancel",
+            danger=True,
         )
         if not confirmed:
             return

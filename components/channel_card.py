@@ -90,8 +90,12 @@ class ChannelCard(Card):
         db = LEVEL_TO_DB[level]
         if db is None:
             self.controller.turn_output_off()
-        else:
+        elif self.state.data.output_on:
             self.controller.set_power(db)
+        else:
+            # Was off - needs an explicit Output Switch ON, not just a
+            # Signal Control power change (see ChannelController.resume_output).
+            self.controller.resume_output(db)
 
     # --- real hardware state changes (Status Query responses, etc.) --------
 

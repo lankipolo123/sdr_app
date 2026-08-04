@@ -1,4 +1,5 @@
 import struct
+from collections import deque
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -33,16 +34,17 @@ class ChannelController(QObject):
         self._pending_timer: QTimer | None = None
         self._pending_label = None
         self._pending_state_update: dict | None = None
+        self._queue: deque = deque()  # commands waiting for the in-flight one to finish
 
     @property
     def address(self) -> int:
         return self.state.data.address
 
     def turn_output_on(self):
-        self._send(commands.output_on(self.address), "Output ON", {"output_on": True})
+        self._enqueue(commands.output_on(self.address), "Output ON", {"output_on": True})
 
     def turn_output_off(self):
-        self._send(commands.output_off(self.address), "Output OFF", {"output_on": False})
+        self._enqueue(commands.output_off(self.address), "Output OFF", {"output_on": False})
 
     def set_power(self, power_db: int):
         """Resend Signal Control with this channel's own stored Mode/
@@ -62,10 +64,32 @@ class ChannelController(QObject):
             return
 
         frame = commands.set_signal(self.address, d.mode, d.frequency_mhz, d.bandwidth_mhz, power_db)
-        self._send(frame, f"Power -> {power_db}dB", {"power_db": power_db, "output_on": True})
+        self._enqueue(frame, f"Power -> {power_db}dB", {"power_db": power_db, "output_on": True})
+
+    def resume_output(self, power_db: int):
+        """Turning back on after being off needs an explicit Output Switch
+        ON, not just a Signal Control power change - confirmed on real
+        hardware (spectrum analyzer) that RF power never actually comes
+        back up from Signal Control alone once the module's been switched
+        off, even though the app's own ack-driven state made it *look*
+        like it turned back on. Output Switch ON is queued first so it's
+        acknowledged before Signal Control goes out."""
+        self.turn_output_on()
+        self.set_power(power_db)
 
     def read_status(self):
-        self._send(commands.query_status(self.address), "Status query")
+        self._enqueue(commands.query_status(self.address), "Status query")
+
+    def _enqueue(self, frame: bytes, label: str, state_update: dict | None = None):
+        self._queue.append((frame, label, state_update))
+        if self._pending_timer is None:
+            self._send_next()
+
+    def _send_next(self):
+        if not self._queue:
+            return
+        frame, label, state_update = self._queue.popleft()
+        self._send(frame, label, state_update)
 
     def _send(self, frame: bytes, label: str, state_update: dict | None = None):
         # Deliberately does NOT call state.update() here - only a confirmed
@@ -77,9 +101,9 @@ class ChannelController(QObject):
 
         sent = self.conn.send(frame)
         if not sent:
+            self._send_next()  # this one failed to even go out - move on rather than stall the queue
             return
 
-        self._cancel_pending_timeout()
         self._pending_label = label
         self._pending_state_update = state_update
         self._pending_timer = QTimer()
@@ -104,6 +128,7 @@ class ChannelController(QObject):
         self.command_timeout.emit(msg)
         self._pending_timer = None
         self._pending_label = None
+        self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):
         """Called by ChannelManager only for frames whose addr matches ours."""
@@ -115,6 +140,7 @@ class ChannelController(QObject):
         if frame.type in (c.TYPE_OUTPUT_SWITCH, c.TYPE_SIGNAL_CONTROL) and len(frame.buf) == 1:
             if frame.buf[0] == c.RESP_SUCCESS and pending_update:
                 self.state.update(**pending_update)
+            self._send_next()
         elif frame.type == c.TYPE_STATUS_QUERY and len(frame.buf) >= 6:
             output = frame.buf[0]
             mode = frame.buf[1]
@@ -128,3 +154,4 @@ class ChannelController(QObject):
                 bandwidth_mhz=c.BANDWIDTH_CODES_REV.get(bw_code),
                 power_db=c.POWER_CODES_REV.get(pw_code),
             )
+            self._send_next()

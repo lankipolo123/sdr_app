@@ -128,6 +128,14 @@ class ChannelManager(QObject):
         timer.setSingleShot(True)
         attempts = {"count": 0}
 
+        def on_raw_rx(data: bytes):
+            # Logged even when nothing parses into a valid frame - tells
+            # "truly nothing came back" apart from "something came back
+            # but wasn't a legal response," which otherwise look
+            # identical from the outside as one generic timeout.
+            if self.logger:
+                self.logger.info(f"Manual ask: raw bytes on {port}: {data.hex(' ').upper()}")
+
         def send_attempt():
             attempts["count"] += 1
             if self.logger:
@@ -143,6 +151,7 @@ class ChannelManager(QObject):
                 return
             timer.stop()
             conn.frame_received.disconnect(on_frame)
+            conn.raw_rx.disconnect(on_raw_rx)
             self._on_channel_found(port, address, conn, frame)
 
         def on_timeout():
@@ -150,6 +159,7 @@ class ChannelManager(QObject):
                 send_attempt()
                 return
             conn.frame_received.disconnect(on_frame)
+            conn.raw_rx.disconnect(on_raw_rx)
             if opened_new:
                 # Only close it if this attempt opened it fresh - a
                 # reused connection belongs to another still-live channel.
@@ -163,6 +173,7 @@ class ChannelManager(QObject):
             self.command_timeout.emit(msg)
 
         timer.timeout.connect(on_timeout)
+        conn.raw_rx.connect(on_raw_rx)
         conn.frame_received.connect(on_frame)
         send_attempt()
 

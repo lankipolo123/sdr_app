@@ -92,6 +92,11 @@ class TitleBar(QWidget):
         # 32px height) + 2 for the border below it.
         self.setFixedHeight(34)
         self.setObjectName("TitleBar")
+        # Required for a plain QWidget (not QFrame) to actually paint its
+        # QSS background/border at all - without this the stylesheet below
+        # is accepted but silently never drawn (same gotcha ResizableContainer
+        # already works around the same way).
+        self.setAttribute(Qt.WA_StyledBackground, True)
         # Rounded bottom corners instead of a flat separator line,
         # matching the rounded-border look used everywhere else (Channels
         # box, cards, the window itself). No top border/radius needed -

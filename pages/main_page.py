@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QPlainTextEdit
+    QScrollArea, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -10,13 +10,10 @@ from components import (
 )
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
-    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
-    ACCENT_BLUE, SURFACE,
+    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, ACCENT_BLUE,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
-from utils.logging_service import clear_log, QtLogHandler
-
-LOG_PANEL_MAX_LINES = 500
+from utils.logging_service import clear_log
 
 WARNING_DISPLAY_MS = 6000
 
@@ -125,7 +122,6 @@ class MainWindow(QMainWindow):
         # somewhere - it used to just vanish into command_timeout with
         # nothing listening. Hidden until the first timeout, then
         # auto-hides itself after WARNING_DISPLAY_MS.
-        warning_row = QHBoxLayout()
         self.warning_label = QLabel("")
         self.warning_label.setWordWrap(True)
         self.warning_label.setStyleSheet(
@@ -133,19 +129,7 @@ class MainWindow(QMainWindow):
             f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
         )
         self.warning_label.setVisible(False)
-        warning_row.addWidget(self.warning_label, 1)
-
-        self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
-        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
-            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
-        )
-        self.clear_log_btn.clicked.connect(self._on_clear_log)
-        warning_row.addWidget(self.clear_log_btn, alignment=Qt.AlignTop)
-
-        outer.addLayout(warning_row)
+        outer.addWidget(self.warning_label)
         self._warning_timer = QTimer(self)
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
@@ -177,21 +161,18 @@ class MainWindow(QMainWindow):
         txrx_row.addWidget(self.tx_value_label)
         txrx_row.addStretch()
         txrx_row.addWidget(self.rx_value_label)
-        root.addWidget(txrx_bar)
 
-        self.log_panel = QPlainTextEdit()
-        self.log_panel.setReadOnly(True)
-        self.log_panel.setFixedHeight(140)
-        self.log_panel.setStyleSheet(
-            f"QPlainTextEdit {{ background: {SURFACE}; color: {TEXT_DARK}; "
-            f"border-top: 1px solid {BORDER_SUBTLE}; border-radius: 0; "
-            f"font-family: Consolas, monospace; font-size: 11px; padding: 6px 16px; }}"
+        self.clear_log_btn = QPushButton("Clear Log")
+        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
+        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_log_btn.setStyleSheet(
+            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
+            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
         )
-        root.addWidget(self.log_panel)
+        self.clear_log_btn.clicked.connect(self._on_clear_log)
+        txrx_row.addWidget(self.clear_log_btn)
 
-        self._log_handler = QtLogHandler()
-        self._log_handler.log_line.connect(self._on_log_line)
-        self.app.logger.addHandler(self._log_handler)
+        root.addWidget(txrx_bar)
 
         self.setCentralWidget(central)
 
@@ -227,24 +208,8 @@ class MainWindow(QMainWindow):
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
-        self.log_panel.clear()
         self.warning_label.setVisible(False)
         self.status_label.setText("Log cleared.")
-
-    def _on_log_line(self, line: str):
-        self.log_panel.appendPlainText(line)
-        # Trim from the top instead of growing forever - this is a live
-        # view, not the actual log file (Clear Log / the file itself are
-        # unaffected either way).
-        doc = self.log_panel.document()
-        if doc.blockCount() > LOG_PANEL_MAX_LINES:
-            cursor = self.log_panel.textCursor()
-            cursor.movePosition(cursor.MoveOperation.Start)
-            cursor.movePosition(
-                cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor,
-                doc.blockCount() - LOG_PANEL_MAX_LINES,
-            )
-            cursor.removeSelectedText()
 
     def _on_manual_ask(self):
         ports = ConnectionController.list_ports()
@@ -281,11 +246,6 @@ class MainWindow(QMainWindow):
             card.set_offline()
 
     def closeEvent(self, event):
-        # The log handler was added to a shared, named logger (not owned
-        # by this window) - without removing it here, closing this
-        # window and opening another would leave it still attached,
-        # firing log_line into a log_panel that no longer exists.
-        self.app.logger.removeHandler(self._log_handler)
         self.app.shutdown()
         event.accept()
 

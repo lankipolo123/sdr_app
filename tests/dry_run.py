@@ -444,6 +444,9 @@ def main():
         check("address 4 actually turned on", share_a.output_on)
 
         window13._cards[4].disconnect_requested.emit(4)
+        pump(300)  # disconnect now turns output off first (was on) and waits for that ack
+        check("address 4 turned off before disconnecting", not share_a.output_on)
+        check("address 4 actually disconnected", controller13.channels.controllers.get(4) is None)
         check(
             "disconnecting one shared address doesn't kill the connection the other still needs",
             controller13.channels.controllers.get(6) is not None,
@@ -454,6 +457,38 @@ def main():
 
     controller13.shutdown()
     window13.close()
+    pump(50)
+
+    print("\n=== Safe disconnect: falls through if the off command never acks ===")
+    print("(module was on, then goes silent - matches the unresponsive-")
+    print(" hardware pattern seen throughout today. Must not leave the")
+    print(" user stuck waiting forever to disconnect)")
+    silent_off_module = FakeModulePort(address=8)
+    registry_silent_off = FakePortRegistry()
+    registry_silent_off.add("FAKE_SILENT_OFF", silent_off_module)
+    install_fake_hardware(registry_silent_off)
+    controller14 = make_app_controller()
+    window14 = MainWindow(controller14)
+    window14.show()
+    window14.rescan_btn.click()
+    wait_for(controller14.channels.discovery_finished)
+    check("silent-off test channel discovered", 8 in window14._cards)
+
+    if 8 in window14._cards:
+        window14._cards[8].toggle.click()
+        pump(200)
+        check("output turned on before going silent", silent_off_module.output_on)
+
+        silent_off_module.silent = True  # stops answering anything, including the off command
+        window14._cards[8].disconnect_requested.emit(8)
+        pump(2700)  # past the 2500ms fallback timeout in disconnect_channel_safely
+        check(
+            "disconnects anyway once the off command times out, doesn't hang forever",
+            controller14.channels.controllers.get(8) is None,
+        )
+
+    controller14.shutdown()
+    window14.close()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

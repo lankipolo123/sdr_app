@@ -57,6 +57,42 @@ class ChannelManager(QObject):
     def start_discovery(self):
         self._discovery.start(exclude_ports=self._claimed_ports)
 
+    def disconnect_channel_safely(self, address: int, off_timeout_ms: int = 2500):
+        """Turns the module's output off first (if it's currently on),
+        waits for that to actually be confirmed, THEN disconnects - so a
+        module doesn't stay transmitting after it's been physically
+        unplugged mid-swap. Falls straight through to a normal
+        disconnect_channel() if it's already off (nothing to wait for),
+        or if the off command never gets acknowledged within
+        off_timeout_ms - better to still let the user disconnect than
+        leave them stuck waiting forever on hardware that isn't
+        responding (the same unresponsiveness seen throughout today)."""
+        controller = self.controllers.get(address)
+        state = self.states.get(address)
+        if controller is None or state is None or not state.data.output_on:
+            self.disconnect_channel(address)
+            return
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+
+        def finish():
+            timer.stop()
+            try:
+                state.changed.disconnect(on_state_changed)
+            except (TypeError, RuntimeError):
+                pass
+            self.disconnect_channel(address)
+
+        def on_state_changed():
+            if not state.data.output_on:
+                finish()
+
+        timer.timeout.connect(finish)
+        state.changed.connect(on_state_changed)
+        timer.start(off_timeout_ms)
+        controller.turn_output_off()
+
     def disconnect_channel(self, address: int):
         """Manually release one channel - lets the user physically swap
         which module is wired to a shared adapter (one module out, the

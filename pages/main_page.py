@@ -246,10 +246,24 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
-        card.disconnect_requested.connect(self.app.channels.disconnect_channel)
+        card.disconnect_requested.connect(self._on_disconnect_requested)
         self._cards[address] = card
         index = len(self._cards) - 1
         self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+
+    def _on_disconnect_requested(self, address: int):
+        confirmed = ConfirmDialog.ask(
+            self,
+            "Disconnect Channel",
+            f"Disconnect CH{address:02d}? Its output will be turned off "
+            f"first, so it's safe to physically swap which module is wired in.",
+            confirm_text="Disconnect",
+            cancel_text="Cancel",
+            danger=True,
+        )
+        if not confirmed:
+            return
+        self.app.channels.disconnect_channel_safely(address)
 
     def _on_channel_online(self, address: int):
         card = self._cards.get(address)

@@ -181,9 +181,9 @@ class MainWindow(QMainWindow):
         self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
         self.clear_log_btn.setCursor(Qt.PointingHandCursor)
         self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {ACCENT_BLUE_DARK}; border-radius: 5px; "
-            f"font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE_DARK}; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE_DARK}; color: white; }}"
+            f"QPushButton {{ background: {ACCENT_BLUE_DARK}; border: 1px solid {ACCENT_BLUE_DARK}; "
+            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: white; }}"
         )
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         txrx_row.addWidget(self.clear_log_btn)

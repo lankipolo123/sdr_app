@@ -5,10 +5,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 
 from components import (
-    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
+    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
     TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
 )
@@ -79,13 +78,6 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
-        self.manual_add_btn = QPushButton("+ Addr")
-        self.manual_add_btn.setToolTip(
-            "Add a channel by port + address directly - targeted only, no broadcast"
-        )
-        self.manual_add_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        self.manual_add_btn.clicked.connect(self._on_manual_add)
-        status_row.addWidget(self.manual_add_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -167,6 +159,7 @@ class MainWindow(QMainWindow):
 
         self._cards = {}
         self.app.channels.channel_added.connect(self._on_channel_added)
+        self.app.channels.channel_removed.connect(self._on_channel_removed)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
         self.app.channels.command_timeout.connect(self._on_command_timeout)
@@ -193,15 +186,6 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Scanning… checking for channels")
         self.app.channels.start_discovery()
 
-    def _on_manual_add(self):
-        ports = ConnectionController.list_ports()
-        result = ManualAddDialog.ask(self, ports)
-        if result is None:
-            return
-        port, address = result
-        self.status_label.setText(f"Targeting address {address} on {port}…")
-        self.app.channels.add_manual_channel(port, address)
-
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)
         self.warning_label.setVisible(True)
@@ -217,9 +201,21 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
+        card.disconnect_requested.connect(self.app.channels.disconnect_channel)
         self._cards[address] = card
         index = len(self._cards) - 1
         self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+
+    def _on_channel_removed(self, address: int):
+        card = self._cards.pop(address, None)
+        if card is None:
+            return
+        self.grid.removeWidget(card)
+        card.deleteLater()
+        # Re-pack the remaining cards so removing one doesn't leave a gap
+        # in the grid where it used to sit.
+        for index, remaining in enumerate(self._cards.values()):
+            self.grid.addWidget(remaining, index // MAX_COLUMNS, index % MAX_COLUMNS)
 
     def closeEvent(self, event):
         self.app.shutdown()

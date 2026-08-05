@@ -117,48 +117,6 @@ class FakeSharedBusPort:
         return chunk
 
 
-class FakeAddressedBusPort:
-    """The OPTIMISTIC counterpart to FakeSharedBusPort - models the claim
-    under test (that targeting one address directly, never broadcasting,
-    can work even with two modules sharing one physical line) rather
-    than the collision already confirmed on real hardware. Two things
-    have to both be true for that claim to hold: the module's firmware
-    only answers a Status Query when the query's address field actually
-    names it (FakeModulePort's own _handle does NOT do this today - it
-    replies to any Status Query regardless of target address), and its
-    transceiver only drives the shared line while doing so (a genuine
-    tri-state, RS485-style driver - not something RS422 requires or
-    guarantees). This class assumes both and only forwards the reply
-    from the module whose address the frame actually names, so it can
-    be used to prove the app-side code (ChannelManager.
-    add_manual_channel: reuse one connection, route responses by
-    address, never broadcast) is itself correct - not to claim the real
-    modules behave this way without confirming it on the bench."""
-
-    def __init__(self, modules: list):
-        self.modules = modules
-        self._parser = FrameParser()
-        self._rx = bytearray()
-
-    def write(self, data: bytes):
-        for frame in self._parser.feed(data):
-            target = next((m for m in self.modules if m.address == frame.addr), None)
-            if target is None:
-                continue
-            before = len(target._rx)
-            target._handle(frame)
-            self._rx.extend(target._rx[before:])
-            del target._rx[before:]
-
-    def read(self, size: int = 256) -> bytes:
-        if not self._rx:
-            time.sleep(0.005)
-            return b""
-        chunk = bytes(self._rx[:size])
-        del self._rx[:size]
-        return chunk
-
-
 class FakePortRegistry:
     """What's "plugged in" for a test run - maps fake port names to
     FakeModulePort instances, the same way real ports map to real

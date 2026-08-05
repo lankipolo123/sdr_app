@@ -56,6 +56,7 @@ class Card(QFrame):
         )
         header.addWidget(title_label)
         header.addStretch()
+        self.header_layout = header
         outer.addLayout(header)
 
         self.body_layout = QVBoxLayout()

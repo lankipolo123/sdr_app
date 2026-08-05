@@ -96,6 +96,7 @@ class DiscoveryController(QObject):
         self._conn = conn
         self._addr = None
         conn.frame_received.connect(self._on_frame)
+        conn.raw_rx.connect(self._on_raw_rx)
         QTimer.singleShot(SETTLE_DELAY_MS, self._send_address_query)
 
     def _send_address_query(self):
@@ -105,6 +106,17 @@ class DiscoveryController(QObject):
             return
         self._conn.send(commands.query_address())
         self._timer.start(STEP_TIMEOUT_MS)
+
+    def _on_raw_rx(self, data: bytes):
+        # Logged even when nothing parses into a valid frame - the only
+        # way to tell "truly nothing came back" apart from "something
+        # came back but wasn't a legal frame" (wrong baud, corrupted by
+        # collision, a device that talks a different protocol, etc.),
+        # which otherwise look identical from the outside as one
+        # generic timeout.
+        if self.logger:
+            port = self._ports[self._index] if self._index < len(self._ports) else "?"
+            self.logger.info(f"Discovery: raw bytes on {port}: {data.hex(' ').upper()}")
 
     def _on_frame(self, frame: ParsedFrame):
         if not self._scanning or self._conn is None:
@@ -119,6 +131,7 @@ class DiscoveryController(QObject):
             self._timer.stop()
             conn, addr, port = self._conn, self._addr, self._ports[self._index]
             conn.frame_received.disconnect(self._on_frame)
+            conn.raw_rx.disconnect(self._on_raw_rx)
             self._conn = None
             self._addr = None
             self.channel_found.emit(port, addr, conn, frame)
@@ -131,6 +144,7 @@ class DiscoveryController(QObject):
         # once every candidate baud has been tried.
         if self._conn is not None:
             self._conn.frame_received.disconnect(self._on_frame)
+            self._conn.raw_rx.disconnect(self._on_raw_rx)
             self._conn.disconnect()
             self._conn = None
         self._addr = None
@@ -159,6 +173,7 @@ class DiscoveryController(QObject):
         self._timer.stop()
         if self._conn is not None:
             self._conn.frame_received.disconnect(self._on_frame)
+            self._conn.raw_rx.disconnect(self._on_raw_rx)
             self._conn.disconnect()
             self._conn = None
         self._addr = None

@@ -10,7 +10,7 @@ from components import (
 )
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
-    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
+    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, ACCENT_BLUE,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.logging_service import clear_log
@@ -122,7 +122,6 @@ class MainWindow(QMainWindow):
         # somewhere - it used to just vanish into command_timeout with
         # nothing listening. Hidden until the first timeout, then
         # auto-hides itself after WARNING_DISPLAY_MS.
-        warning_row = QHBoxLayout()
         self.warning_label = QLabel("")
         self.warning_label.setWordWrap(True)
         self.warning_label.setStyleSheet(
@@ -130,19 +129,7 @@ class MainWindow(QMainWindow):
             f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
         )
         self.warning_label.setVisible(False)
-        warning_row.addWidget(self.warning_label, 1)
-
-        self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
-        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
-            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
-        )
-        self.clear_log_btn.clicked.connect(self._on_clear_log)
-        warning_row.addWidget(self.clear_log_btn, alignment=Qt.AlignTop)
-
-        outer.addLayout(warning_row)
+        outer.addWidget(self.warning_label)
         self._warning_timer = QTimer(self)
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
@@ -156,24 +143,36 @@ class MainWindow(QMainWindow):
         scroll.setWidget(grid_container)
         outer.addWidget(scroll, 1)
 
-        # A plain widget inside our own layout, not QMainWindow's native
-        # setStatusBar() - that mechanism places the bar outside
-        # ResizableContainer (the widget that actually paints the rounded
-        # white card), so it ended up rendering in the leftover
-        # translucent area around it instead of inside the visible window.
+        # Added to `root`, not `outer` - `outer` has a 16px margin on all
+        # sides (for the cards above), which was insetting this bar's
+        # border-top short of the actual window edges instead of letting
+        # it span edge to edge like the title bar's own separator does.
+        # Its own row supplies matching left/right padding instead, so
+        # the text still lines up visually with the cards above it.
         txrx_bar = QWidget()
         txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
         txrx_bar.setStyleSheet(f"border-top: 1px solid {BORDER_SUBTLE};")
         txrx_row = QHBoxLayout(txrx_bar)
-        txrx_row.setContentsMargins(0, 8, 0, 0)
+        txrx_row.setContentsMargins(16, 8, 16, 8)
         self.tx_value_label = QLabel("TX : --")
         self.rx_value_label = QLabel("RX : --")
         for lbl in (self.tx_value_label, self.rx_value_label):
-            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px; border: none;")
+            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: 600; font-size: 12px; border: none;")
         txrx_row.addWidget(self.tx_value_label)
         txrx_row.addStretch()
         txrx_row.addWidget(self.rx_value_label)
-        outer.addWidget(txrx_bar)
+
+        self.clear_log_btn = QPushButton("Clear Log")
+        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
+        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_log_btn.setStyleSheet(
+            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
+            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
+        )
+        self.clear_log_btn.clicked.connect(self._on_clear_log)
+        txrx_row.addWidget(self.clear_log_btn)
+
+        root.addWidget(txrx_bar)
 
         self.setCentralWidget(central)
 

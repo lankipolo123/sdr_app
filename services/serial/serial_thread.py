@@ -1,7 +1,10 @@
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QCoreApplication
 
 from services.protocol.packet_parser import FrameParser
 from .serial_manager import SerialManager
+
+STOP_POLL_MS = 20     # slice size - short enough that the UI stays responsive
+STOP_TIMEOUT_MS = 2000  # hard cap - give up waiting rather than hang forever
 
 
 class SerialThread(QThread):
@@ -20,17 +23,31 @@ class SerialThread(QThread):
         self.start()
 
     def stop_reading(self):
-        # Only flips the flag - does NOT wait here. The loop below only
-        # notices this between read() calls, and a real serial read can
-        # block for its full configured timeout (or longer, if the port
-        # is in a bad state) before it does. Waiting synchronously right
-        # here, before the port gets closed, meant every disconnect
-        # click blocked the whole UI for however long that read took -
-        # felt like the button just didn't work. See wait_until_stopped().
+        # Waits HERE, before the caller closes the port. A prior version
+        # tried closing first to avoid this wait, but that let the port
+        # get closed from the main thread while this thread could still
+        # be mid-read() on the same handle - a real race (not just a
+        # theoretical one: SerialManager.read() checks is_open() then
+        # touches self._port in two separate steps, and self._port can
+        # turn None in between if close() runs concurrently), which can
+        # leave the OS-level port handle in a state where reopening it
+        # fails. Correctness here matters more than waiting.
+        #
+        # What changed: one long self.wait(1000) call froze the entire
+        # UI for however long that took - on a flaky connection, a real
+        # read() doesn't reliably respect its own configured 0.2s
+        # timeout, so this could run close to the full second with
+        # nothing on screen moving, reading as "it's never coming back."
+        # Waiting in short slices with processEvents() between each one
+        # gets the exact same total wait, just without freezing paint
+        # updates and other input while it happens - the button click
+        # registers immediately even though the actual disconnect still
+        # takes the same real time underneath.
         self._running = False
-
-    def wait_until_stopped(self, timeout_ms: int = 1000):
-        self.wait(timeout_ms)
+        elapsed = 0
+        while elapsed < STOP_TIMEOUT_MS and not self.wait(STOP_POLL_MS):
+            QCoreApplication.processEvents()
+            elapsed += STOP_POLL_MS
 
     def run(self):
         while self._running and self._manager.is_open():

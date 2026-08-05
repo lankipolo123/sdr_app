@@ -85,9 +85,18 @@ class ChannelManager(QObject):
             for a in self.connections
         )
         if not still_shared:
+            # conn.disconnect() first, port freed from _claimed_ports only
+            # after it actually finishes - conn.disconnect() now processes
+            # events internally while it waits for the reader thread to
+            # stop (keeps the UI responsive), which means a Scan click
+            # could land WHILE this is still running. If the port were
+            # already marked free at that point, Scan could try to open
+            # the exact same port the old thread hasn't finished
+            # releasing yet - freeing it only after disconnect() returns
+            # closes that window.
+            conn.disconnect()
             if port:
                 self._claimed_ports.discard(port)
-            conn.disconnect()
             self._dispatch_wired.discard(id(conn))
         self.channel_offline.emit(address)
 

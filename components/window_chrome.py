@@ -193,9 +193,17 @@ class ResizableContainer(QWidget):
         super().__init__(parent)
         self._window = window
         self.setAttribute(Qt.WA_StyledBackground, True)
+        # #ResizableContainer scopes this to just this one widget - a
+        # bare, selector-less setStyleSheet() cascades to every child
+        # that doesn't set its own "border", which is exactly what
+        # happened here: every card, label, and button in the app
+        # picked up this border too instead of just the outer window
+        # (the same class of bug the title bar's separator line hit
+        # earlier, for the same reason).
+        self.setObjectName("ResizableContainer")
         self.setStyleSheet(
-            f"background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
-            f"border: 1px solid {BORDER_SUBTLE};"
+            f"#ResizableContainer {{ background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
+            f"border: 1px solid {BORDER_SUBTLE}; }}"
         )
 
     def resizeEvent(self, event):

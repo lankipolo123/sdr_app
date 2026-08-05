@@ -152,18 +152,8 @@ class MainWindow(QMainWindow):
         # Its own row supplies matching left/right padding instead, so
         # the text still lines up visually with the cards above it.
         txrx_bar = QWidget()
-        txrx_bar.setObjectName("TxRxBar")
         txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
-        # Rounded top corners instead of a flat top line, matching the
-        # rounded-border look used everywhere else (Channels box, cards,
-        # the window itself) - no bottom border/radius needed since this
-        # sits flush against the window's own already-rounded bottom
-        # edge (clipped by ResizableContainer's mask).
-        txrx_bar.setStyleSheet(
-            f"#TxRxBar {{ background: #FFFFFF; "
-            f"border: 2px solid {BORDER_SUBTLE}; border-bottom: none; "
-            f"border-top-left-radius: 10px; border-top-right-radius: 10px; }}"
-        )
+        txrx_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
         txrx_row = QHBoxLayout(txrx_bar)
         txrx_row.setContentsMargins(16, 8, 16, 8)
         txrx_row.setSpacing(16)

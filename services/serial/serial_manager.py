@@ -47,6 +47,12 @@ class SerialManager:
         self._port.stopbits = serial.STOPBITS_ONE
         self._port.timeout = 0.2
         self._port.dtr = False
+        # Idle state is RTS low - see write() for why. Starting low
+        # instead of pyserial's real default (True) means the adapter's
+        # transmitter (if it's gated by RTS, common on cheap RS422/485
+        # USB bridges) doesn't stay asserted on the line except during
+        # an actual write.
+        self._port.rts = False
         self._port.open()
 
     def close(self):
@@ -60,7 +66,17 @@ class SerialManager:
     def write(self, data: bytes):
         if not self.is_open():
             raise RuntimeError("Port not open")
+        # Classic manual half-duplex direction control, from the era
+        # before adapters did this on their own: assert RTS only for the
+        # duration of an actual transmission, drop it immediately after.
+        # flush() blocks until the OS has actually finished shifting the
+        # bytes out - dropping RTS before that would cut the transmission
+        # off mid-byte on any adapter that really does gate its driver
+        # this way. Harmless on an adapter that ignores RTS entirely.
+        self._port.rts = True
         self._port.write(data)
+        self._port.flush()
+        self._port.rts = False
 
     def read(self, size: int = 256) -> bytes:
         if not self.is_open():

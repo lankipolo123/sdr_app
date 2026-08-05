@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import QHBoxLayout, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
+from PySide6.QtCore import Qt, Signal
+import qtawesome as qta
 
 from .card import Card
 from .power_button import PowerButton
@@ -27,11 +28,27 @@ class ChannelCard(Card):
     interaction sends a command.
     """
 
+    disconnect_requested = Signal(int)  # address
+
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
         self.setFixedWidth(220)
         self.controller = controller
         self.state = state
+
+        disconnect_btn = QPushButton()
+        disconnect_btn.setIcon(qta.icon("fa5s.unlink", color=TEXT_MUTED))
+        disconnect_btn.setFixedSize(20, 20)
+        disconnect_btn.setFlat(True)
+        disconnect_btn.setCursor(Qt.PointingHandCursor)
+        disconnect_btn.setToolTip(
+            "Disconnect this channel - use this before swapping which "
+            "module is physically wired to a shared port"
+        )
+        disconnect_btn.clicked.connect(
+            lambda: self.disconnect_requested.emit(self.state.data.address)
+        )
+        self.header_layout.addWidget(disconnect_btn)
 
         status_row = QHBoxLayout()
         self.status_dot = QLabel()

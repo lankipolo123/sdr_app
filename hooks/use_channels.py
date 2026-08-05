@@ -19,6 +19,7 @@ class ChannelManager(QObject):
     ChannelController."""
 
     channel_added = Signal(int)          # address
+    channel_removed = Signal(int)        # address
     discovery_progress = Signal(int, int)
     discovery_finished = Signal()
     command_timeout = Signal(str)
@@ -33,6 +34,7 @@ class ChannelManager(QObject):
         self.controllers: dict[int, ChannelController] = {}
         self.connections: dict[int, ConnectionController] = {}
         self._claimed_ports: set[str] = set()
+        self._address_port: dict[int, str] = {}
 
         baud = self.config.get("baud_rate", 115200)
         parity = self.config.get("parity", "N")
@@ -44,6 +46,23 @@ class ChannelManager(QObject):
 
     def start_discovery(self):
         self._discovery.start(exclude_ports=self._claimed_ports)
+
+    def disconnect_channel(self, address: int):
+        """Manually release one channel and free its port - lets the user
+        physically swap which module is wired to a shared adapter (one
+        module out, the other in) and pick the new one up with a plain
+        Scan, without restarting the app. Does not touch the module's own
+        power/output state - it's still whatever it was last set to."""
+        if address not in self.states:
+            return
+        conn = self.connections.pop(address)
+        self.controllers.pop(address)
+        self.states.pop(address)
+        port = self._address_port.pop(address, None)
+        if port:
+            self._claimed_ports.discard(port)
+        conn.disconnect()
+        self.channel_removed.emit(address)
 
     def get_controller(self, address: int) -> ChannelController:
         return self.controllers[address]
@@ -108,6 +127,7 @@ class ChannelManager(QObject):
         self.controllers[address] = controller
         self.connections[address] = conn
         self._claimed_ports.add(port)
+        self._address_port[address] = port
 
         # Seed from the discovery frame itself - it's the exact same
         # Status Query response the doc's plan asks for, no need to send

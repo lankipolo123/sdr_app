@@ -285,6 +285,40 @@ def main():
     controller7.shutdown()
     pump(50)
 
+    print("\n=== Manual disconnect + physical swap (reach both, one at a time, no purchase) ===")
+    print("(module A wired in, controlled, disconnected in-app; module B")
+    print(" physically wired into the SAME port in its place; a plain")
+    print(" rescan picks it up - the zero-cost 'swap which module is")
+    print(" plugged in' workflow, using only what's already on hand)")
+    swap_module_a = FakeModulePort(address=0)
+    registry_swap = FakePortRegistry()
+    registry_swap.add("FAKE_SWAP", swap_module_a)
+    install_fake_hardware(registry_swap)
+    controller10 = make_app_controller()
+    window10 = MainWindow(controller10)
+    window10.show()
+    window10.rescan_btn.click()
+    wait_for(controller10.channels.discovery_finished)
+    check("module A discovered first", 0 in controller10.channels.states)
+    check("module A has a card", 0 in window10._cards)
+
+    if 0 in window10._cards:
+        window10._cards[0].disconnect_requested.emit(0)
+        check("channel released after manual disconnect", 0 not in controller10.channels.states)
+        check("card removed from the UI", 0 not in window10._cards)
+
+        # Physically swap: module A comes off the shared port, module B
+        # goes on in its place (same fake port name = same physical wire).
+        swap_module_b = FakeModulePort(address=1)
+        registry_swap.modules["FAKE_SWAP"] = swap_module_b
+        window10._on_rescan()
+        wait_for(controller10.channels.discovery_finished)
+        check("module B discovered after the swap", 1 in controller10.channels.states)
+        check("module B has a card", 1 in window10._cards)
+
+    controller10.shutdown()
+    pump(50)
+
     print("\n=== Uncaught exceptions during the run ===")
     check("no uncaught exceptions in any Qt slot", len(UNCAUGHT) == 0)
     for tb in UNCAUGHT:

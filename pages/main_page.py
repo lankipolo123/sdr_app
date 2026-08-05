@@ -159,6 +159,7 @@ class MainWindow(QMainWindow):
 
         self._cards = {}
         self.app.channels.channel_added.connect(self._on_channel_added)
+        self.app.channels.channel_removed.connect(self._on_channel_removed)
         self.app.channels.discovery_progress.connect(self._on_discovery_progress)
         self.app.channels.discovery_finished.connect(self._on_discovery_finished)
         self.app.channels.command_timeout.connect(self._on_command_timeout)
@@ -200,9 +201,21 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
+        card.disconnect_requested.connect(self.app.channels.disconnect_channel)
         self._cards[address] = card
         index = len(self._cards) - 1
         self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+
+    def _on_channel_removed(self, address: int):
+        card = self._cards.pop(address, None)
+        if card is None:
+            return
+        self.grid.removeWidget(card)
+        card.deleteLater()
+        # Re-pack the remaining cards so removing one doesn't leave a gap
+        # in the grid where it used to sit.
+        for index, remaining in enumerate(self._cards.values()):
+            self.grid.addWidget(remaining, index // MAX_COLUMNS, index % MAX_COLUMNS)
 
     def closeEvent(self, event):
         self.app.shutdown()

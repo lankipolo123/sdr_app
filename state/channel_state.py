@@ -29,9 +29,13 @@ class ChannelState(QObject):
 
     @property
     def display_number(self) -> int:
-        # Addressing starts at 0 (protocol/firmware default), display
-        # numbering starts at 1 (CH01) - two different numbers, same channel.
-        return self.data.address + 1
+        # CHn's n IS the address, always, everywhere - no +1 offset. Two
+        # different numbers for the same channel is exactly what caused
+        # "Channel 2" (a warning using the raw address) to look like a
+        # different, missing channel from "CH03" (the card, which used to
+        # add 1) - removing the offset entirely means there's no second
+        # numbering scheme left to drift out of sync with the first.
+        return self.data.address
 
     def update(self, **kwargs):
         for k, v in kwargs.items():

@@ -7,6 +7,15 @@ from .use_connection import ConnectionController
 
 STEP_TIMEOUT_MS = 500  # generous - includes opening the port plus a real round trip
 
+# A module whose wires were just physically reconnected (swapping which one
+# is wired to a shared port) may not be electrically ready the instant the
+# OS reports the port open - line capacitance settling, the module's own
+# UART re-syncing, etc. Sending the very first query immediately after
+# open() risks it landing before the module can actually hear it, which
+# looks identical to "nothing is there" even though it is. This delay
+# only applies once per port, before the first query at each baud.
+SETTLE_DELAY_MS = 250
+
 # Tried in order on a port that doesn't answer at the configured baud, before
 # giving up on it entirely. A slower baud gives each bit a longer window,
 # which can be the difference between unreadable noise and a legible frame
@@ -87,7 +96,14 @@ class DiscoveryController(QObject):
         self._conn = conn
         self._addr = None
         conn.frame_received.connect(self._on_frame)
-        conn.send(commands.query_address())
+        QTimer.singleShot(SETTLE_DELAY_MS, self._send_address_query)
+
+    def _send_address_query(self):
+        # Guard against the scan having moved on (timeout, stop(), or a
+        # response already arrived some other way) during the settle delay.
+        if self._conn is None:
+            return
+        self._conn.send(commands.query_address())
         self._timer.start(STEP_TIMEOUT_MS)
 
     def _on_frame(self, frame: ParsedFrame):

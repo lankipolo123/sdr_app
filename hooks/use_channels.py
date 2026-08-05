@@ -1,5 +1,6 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
+from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 from state.level_map import LEVEL_TO_DB
@@ -8,6 +9,9 @@ from .use_connection import ConnectionController
 from .use_discovery import DiscoveryController
 
 MAX_CHANNELS = 16  # ceiling on how many ports we'll ever probe at once
+
+MANUAL_TIMEOUT_MS = 500
+MANUAL_MAX_ATTEMPTS = 6  # re-send the targeted query a few times before giving up
 
 
 class ChannelManager(QObject):
@@ -68,6 +72,68 @@ class ChannelManager(QObject):
             self._claimed_ports.discard(port)
         conn.disconnect()
         self.channel_offline.emit(address)
+
+    def add_manual_channel(self, port: str, address: int):
+        """Ask one address directly on one port - skips Scan's broadcast
+        Address Query stage entirely, the same "just call the address"
+        approach as the senior described. Retries a few times before
+        giving up; on a real response, hands off to the exact same path
+        a normal Scan uses, so it behaves identically either way (known
+        address comes back online on its existing card, new one gets a
+        fresh card)."""
+        if self.controllers.get(address) is not None:
+            self.command_timeout.emit(f"Address {address} is already connected.")
+            return
+        if port in self._claimed_ports:
+            self.command_timeout.emit(f"{port} is already in use - disconnect that channel first.")
+            return
+
+        baud = self.config.get("baud_rate", 115200)
+        parity = self.config.get("parity", "N")
+        data_bits = self.config.get("data_bits", 8)
+        conn = ConnectionController()
+        if not conn.connect(port, baud, parity, data_bits):
+            self.command_timeout.emit(f"Failed to open {port}.")
+            return
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        attempts = {"count": 0}
+
+        def send_attempt():
+            attempts["count"] += 1
+            if self.logger:
+                self.logger.info(
+                    f"Manual ask: address {address} on {port} "
+                    f"(attempt {attempts['count']}/{MANUAL_MAX_ATTEMPTS})"
+                )
+            conn.send(commands.query_status(address))
+            timer.start(MANUAL_TIMEOUT_MS)
+
+        def on_frame(frame: ParsedFrame):
+            if frame.type != c.TYPE_STATUS_QUERY or frame.addr != address or len(frame.buf) < 6:
+                return
+            timer.stop()
+            conn.frame_received.disconnect(on_frame)
+            self._on_channel_found(port, address, conn, frame)
+
+        def on_timeout():
+            if attempts["count"] < MANUAL_MAX_ATTEMPTS:
+                send_attempt()
+                return
+            conn.frame_received.disconnect(on_frame)
+            conn.disconnect()
+            msg = (
+                f"No response from address {address} on {port} after "
+                f"{MANUAL_MAX_ATTEMPTS} targeted attempts."
+            )
+            if self.logger:
+                self.logger.warning(f"Manual ask: {msg}")
+            self.command_timeout.emit(msg)
+
+        timer.timeout.connect(on_timeout)
+        conn.frame_received.connect(on_frame)
+        send_attempt()
 
     def get_controller(self, address: int) -> ChannelController | None:
         return self.controllers[address]

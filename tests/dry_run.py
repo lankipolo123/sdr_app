@@ -364,6 +364,41 @@ def main():
     controller11.shutdown()
     pump(50)
 
+    print("\n=== Manual ask (+Addr): targeted, no broadcast ===")
+    print("(type a specific address, ask it directly - proves this path")
+    print(" behaves identically to a normal Scan discovery once it gets")
+    print(" a real response, including reusing a known channel's card)")
+    ask_module = FakeModulePort(address=3)
+    registry_ask = FakePortRegistry()
+    registry_ask.add("FAKE_ASK", ask_module)
+    install_fake_hardware(registry_ask)
+    controller12 = make_app_controller()
+    window12 = MainWindow(controller12)
+    window12.show()
+
+    controller12.channels.add_manual_channel("FAKE_ASK", 3)
+    wait_for(controller12.channels.channel_added, timeout_ms=3000)
+    check("manual ask found the address", 3 in controller12.channels.states)
+    check("manual ask created a card", 3 in window12._cards)
+
+    if 3 in window12._cards:
+        window12._cards[3].disconnect_requested.emit(3)
+        check("disconnect works the same after a manual ask", controller12.channels.controllers.get(3) is None)
+
+        controller12.channels.add_manual_channel("FAKE_ASK", 3)
+        wait_for(controller12.channels.channel_online, timeout_ms=3000)
+        check("asking the same address again reuses its existing card", window12._cards[3].toggle.isEnabled())
+        check("still only 1 card, no duplicate", len(window12._cards) == 1)
+
+    wrong_ask_fired = []
+    controller12.channels.command_timeout.connect(lambda msg: wrong_ask_fired.append(msg))
+    controller12.channels.add_manual_channel("FAKE_ASK", 7)  # nothing at this address
+    wait_for(controller12.channels.command_timeout, timeout_ms=4000)
+    check("asking a wrong address fails cleanly, no phantom card", 7 not in window12._cards)
+
+    controller12.shutdown()
+    pump(50)
+
     print("\n=== Uncaught exceptions during the run ===")
     check("no uncaught exceptions in any Qt slot", len(UNCAUGHT) == 0)
     for tb in UNCAUGHT:

@@ -5,9 +5,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 
 from components import (
-    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog,
+    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
     TitleBar, ResizableContainer, make_card,
 )
+from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
     TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
 )
@@ -78,6 +79,11 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
+        self.manual_ask_btn = QPushButton("+ Addr")
+        self.manual_ask_btn.setToolTip("Ask one specific address directly - no broadcast")
+        self.manual_ask_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.manual_ask_btn.clicked.connect(self._on_manual_ask)
+        status_row.addWidget(self.manual_ask_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -186,6 +192,15 @@ class MainWindow(QMainWindow):
     def _on_rescan(self):
         self.status_label.setText("Scanning… checking for channels")
         self.app.channels.start_discovery()
+
+    def _on_manual_ask(self):
+        ports = ConnectionController.list_ports()
+        result = ManualAddDialog.ask(self, ports)
+        if result is None:
+            return
+        port, address = result
+        self.status_label.setText(f"Asking address {address} on {port}…")
+        self.app.channels.add_manual_channel(port, address)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

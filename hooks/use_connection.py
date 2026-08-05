@@ -1,6 +1,11 @@
+import time
+
 from PySide6.QtCore import QObject, Signal
 
 from services.serial import SerialManager, SerialThread, list_com_ports
+
+CONNECT_RETRY_ATTEMPTS = 3
+CONNECT_RETRY_DELAY_S = 0.3
 
 
 class ConnectionController(QObject):
@@ -23,14 +28,26 @@ class ConnectionController(QObject):
         return list_com_ports()
 
     def connect(self, port_name: str, baud: int = 115200, parity: str = "N", data_bits: int = 8) -> bool:
-        try:
-            self.manager.open(port_name, baud, parity, data_bits)
-        except Exception as e:
-            self.error.emit(f"Failed to open {port_name}: {e}")
-            return False
-        self.thread.start_reading()
-        self.connected_changed.emit(True)
-        return True
+        # Windows can briefly hold a COM port after a prior close() even
+        # though close() has already returned - opening it again right
+        # away can fail with "Access is denied" for a moment before the
+        # OS actually releases it. This app opens/closes ports often
+        # (scanning several in a row, manual disconnect-then-Scan swaps),
+        # so a short bounded retry here is worth it rather than treating
+        # that transient race as a hard "nothing's there."
+        last_error = None
+        for attempt in range(CONNECT_RETRY_ATTEMPTS):
+            try:
+                self.manager.open(port_name, baud, parity, data_bits)
+                self.thread.start_reading()
+                self.connected_changed.emit(True)
+                return True
+            except Exception as e:
+                last_error = e
+                if attempt < CONNECT_RETRY_ATTEMPTS - 1:
+                    time.sleep(CONNECT_RETRY_DELAY_S)
+        self.error.emit(f"Failed to open {port_name}: {last_error}")
+        return False
 
     def disconnect(self):
         # stop_reading() waits for the thread to actually finish before

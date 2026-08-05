@@ -89,16 +89,26 @@ class TitleBar(QWidget):
         self._restore_geometry = None
 
         # 32 for the content row (matches the caption buttons' own fixed
-        # 32px height) + 2 for the separator below it.
+        # 32px height) + 2 for the border below it.
         self.setFixedHeight(34)
-        self.setStyleSheet(f"background: {SURFACE};")
+        self.setObjectName("TitleBar")
+        # Rounded bottom corners instead of a flat separator line,
+        # matching the rounded-border look used everywhere else (Channels
+        # box, cards, the window itself). No top border/radius needed -
+        # this sits flush against the window's own already-rounded top
+        # edge (clipped by ResizableContainer's mask).
+        self.setStyleSheet(
+            f"#TitleBar {{ background: {SURFACE}; "
+            f"border: 2px solid {BORDER_SUBTLE}; border-top: none; "
+            f"border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }}"
+        )
 
-        # A separate strip below the content row, not a border on the row
+        # A separate strip for the bottom border, not a border on the row
         # itself - a border drawn "under" the icon/title labels gets
         # painted over by them (children always paint after their
         # parent in Qt, and once the app has a global stylesheet active,
-        # plain QLabels get an opaque background fill too). Giving the
-        # line its own row means nothing can ever sit on top of it.
+        # plain QLabels get an opaque background fill too). Giving it its
+        # own row means nothing can ever sit on top of it.
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -132,14 +142,6 @@ class TitleBar(QWidget):
             layout.addWidget(btn)
 
         outer.addWidget(row, 1)
-
-        # Matches Card's own border weight+color (components/card.py:
-        # "border: 2px solid {BORDER_SUBTLE}") so the header's divider
-        # reads as the same visual language as the cards below it.
-        separator = QWidget()
-        separator.setFixedHeight(2)
-        separator.setStyleSheet(f"background: {BORDER_SUBTLE};")
-        outer.addWidget(separator)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

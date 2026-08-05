@@ -136,6 +136,12 @@ class MainWindow(QMainWindow):
         scroll.setStyleSheet(
             f"#ChannelsScroll {{ border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; background: #FFFFFF; }}"
         )
+        # The viewport is a separate child widget with its own opaque
+        # square background - it isn't clipped to the frame's rounded
+        # corners, so it was covering them with square white corners
+        # right up against the curved border. Making it transparent lets
+        # the frame's own rounded background paint through cleanly.
+        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidgetResizable(True)
         grid_container = QWidget()
         self.grid = QGridLayout(grid_container)

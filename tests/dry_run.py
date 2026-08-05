@@ -167,6 +167,7 @@ def main():
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")
     controller.shutdown()
+    window.close()
     pump(50)
 
     with open(config_path) as f:
@@ -191,6 +192,7 @@ def main():
             controller2.channels.states[0].data.last_level == last_level_before_shutdown,
         )
     controller2.shutdown()
+    window2.close()
     pump(50)
 
     print("\n=== Shutdown while a scan is still mid-flight (must not crash) ===")
@@ -204,6 +206,7 @@ def main():
     window3.rescan_btn.click()
     # Deliberately no wait_for() here - shut down while the scan is still running.
     controller3.shutdown()
+    window3.close()
     pump(50)
     check("mid-scan shutdown completed without raising", True)
 
@@ -224,6 +227,7 @@ def main():
     check("address 0 present", 0 in controller4.channels.states)
     check("address 1 present", 1 in controller4.channels.states)
     controller4.shutdown()
+    window4.close()
     pump(50)
 
     print("\n=== A dead port mixed with a good one (must skip dead, find good) ===")
@@ -241,6 +245,7 @@ def main():
     check("exactly one channel found (the live one)", len(controller5.channels.states) == 1)
     check("it's the good module's address (5), not the dead one's", 5 in controller5.channels.states)
     controller5.shutdown()
+    window5.close()
     pump(50)
 
     print("\n=== Command timeout (module goes silent mid-session) surfaces in the UI ===")
@@ -262,6 +267,7 @@ def main():
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
     controller6.shutdown()
+    window6.close()
     pump(50)
 
     print("\n=== One COM port, many addresses (real-world current test rig) ===")
@@ -284,6 +290,7 @@ def main():
           "No devices found" in window7.status_label.text())
     check("no crash/hang scanning a colliding shared bus", True)
     controller7.shutdown()
+    window7.close()
     pump(50)
 
     print("\n=== Manual disconnect + physical swap (see both, control one at a time) ===")
@@ -334,6 +341,7 @@ def main():
         check("still only 2 cards total, no duplicate", len(window10._cards) == 2)
 
     controller10.shutdown()
+    window10.close()
     pump(50)
 
     print("\n=== Disconnecting mid-command must not leave a stale timeout ===")
@@ -363,6 +371,7 @@ def main():
         check("no stale command_timeout fired after disconnecting mid-command", len(stale_fired) == 0)
 
     controller11.shutdown()
+    window11.close()
     pump(50)
 
     print("\n=== Manual ask (+Addr): targeted, no broadcast ===")
@@ -398,6 +407,7 @@ def main():
     check("asking a wrong address fails cleanly, no phantom card", 7 not in window12._cards)
 
     controller12.shutdown()
+    window12.close()
     pump(50)
 
     print("\n=== +Addr sharing one port: two addresses, no disconnect needed ===")
@@ -443,6 +453,7 @@ def main():
         check("address 6 still works after address 4 disconnected", share_b.output_on)
 
     controller13.shutdown()
+    window13.close()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

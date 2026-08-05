@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton
+    QScrollArea, QPushButton, QPlainTextEdit
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -10,10 +10,13 @@ from components import (
 )
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
-    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
+    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
+    ACCENT_BLUE, SURFACE,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
-from utils.logging_service import clear_log
+from utils.logging_service import clear_log, QtLogHandler
+
+LOG_PANEL_MAX_LINES = 500
 
 WARNING_DISPLAY_MS = 6000
 
@@ -156,24 +159,39 @@ class MainWindow(QMainWindow):
         scroll.setWidget(grid_container)
         outer.addWidget(scroll, 1)
 
-        # A plain widget inside our own layout, not QMainWindow's native
-        # setStatusBar() - that mechanism places the bar outside
-        # ResizableContainer (the widget that actually paints the rounded
-        # white card), so it ended up rendering in the leftover
-        # translucent area around it instead of inside the visible window.
+        # Added to `root`, not `outer` - `outer` has a 16px margin on all
+        # sides (for the cards above), which was insetting this bar's
+        # border-top short of the actual window edges instead of letting
+        # it span edge to edge like the title bar's own separator does.
+        # Its own row supplies matching left/right padding instead, so
+        # the text still lines up visually with the cards above it.
         txrx_bar = QWidget()
         txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
         txrx_bar.setStyleSheet(f"border-top: 1px solid {BORDER_SUBTLE};")
         txrx_row = QHBoxLayout(txrx_bar)
-        txrx_row.setContentsMargins(0, 8, 0, 0)
+        txrx_row.setContentsMargins(16, 8, 16, 8)
         self.tx_value_label = QLabel("TX : --")
         self.rx_value_label = QLabel("RX : --")
         for lbl in (self.tx_value_label, self.rx_value_label):
-            lbl.setStyleSheet(f"color: {STATUS_ERROR_LIGHT}; font-weight: 600; font-size: 12px; border: none;")
+            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: 600; font-size: 12px; border: none;")
         txrx_row.addWidget(self.tx_value_label)
         txrx_row.addStretch()
         txrx_row.addWidget(self.rx_value_label)
-        outer.addWidget(txrx_bar)
+        root.addWidget(txrx_bar)
+
+        self.log_panel = QPlainTextEdit()
+        self.log_panel.setReadOnly(True)
+        self.log_panel.setFixedHeight(140)
+        self.log_panel.setStyleSheet(
+            f"QPlainTextEdit {{ background: {SURFACE}; color: {TEXT_DARK}; "
+            f"border-top: 1px solid {BORDER_SUBTLE}; border-radius: 0; "
+            f"font-family: Consolas, monospace; font-size: 11px; padding: 6px 16px; }}"
+        )
+        root.addWidget(self.log_panel)
+
+        self._log_handler = QtLogHandler()
+        self._log_handler.log_line.connect(self._on_log_line)
+        self.app.logger.addHandler(self._log_handler)
 
         self.setCentralWidget(central)
 
@@ -209,8 +227,24 @@ class MainWindow(QMainWindow):
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
+        self.log_panel.clear()
         self.warning_label.setVisible(False)
         self.status_label.setText("Log cleared.")
+
+    def _on_log_line(self, line: str):
+        self.log_panel.appendPlainText(line)
+        # Trim from the top instead of growing forever - this is a live
+        # view, not the actual log file (Clear Log / the file itself are
+        # unaffected either way).
+        doc = self.log_panel.document()
+        if doc.blockCount() > LOG_PANEL_MAX_LINES:
+            cursor = self.log_panel.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            cursor.movePosition(
+                cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor,
+                doc.blockCount() - LOG_PANEL_MAX_LINES,
+            )
+            cursor.removeSelectedText()
 
     def _on_manual_ask(self):
         ports = ConnectionController.list_ports()
@@ -247,6 +281,11 @@ class MainWindow(QMainWindow):
             card.set_offline()
 
     def closeEvent(self, event):
+        # The log handler was added to a shared, named logger (not owned
+        # by this window) - without removing it here, closing this
+        # window and opening another would leave it still attached,
+        # firing log_line into a log_panel that no longer exists.
+        self.app.logger.removeHandler(self._log_handler)
         self.app.shutdown()
         event.accept()
 

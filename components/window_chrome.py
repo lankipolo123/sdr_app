@@ -193,7 +193,10 @@ class ResizableContainer(QWidget):
         super().__init__(parent)
         self._window = window
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(f"background: {SURFACE}; border-radius: {WINDOW_RADIUS}px;")
+        self.setStyleSheet(
+            f"background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
+            f"border: 1px solid {BORDER_SUBTLE};"
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

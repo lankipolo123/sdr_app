@@ -19,3 +19,19 @@ def setup_logger(log_folder: str = "logs", name: str = "sdr_controller") -> logg
         logger.addHandler(file_handler)
 
     return logger
+
+
+def clear_log(logger: logging.Logger):
+    """Truncates the log file in place instead of deleting it, so the
+    handler keeps writing to the same still-open file descriptor rather
+    than a stale/deleted one. Goes through the handler's own lock
+    (acquire/release) since the logger can be written to from other
+    threads (e.g. SerialThread) at any moment."""
+    for handler in logger.handlers:
+        if isinstance(handler, RotatingFileHandler):
+            handler.acquire()
+            try:
+                handler.stream.close()
+                handler.stream = open(handler.baseFilename, "w")
+            finally:
+                handler.release()

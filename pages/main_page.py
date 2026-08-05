@@ -13,6 +13,7 @@ from styles.theme_colors import (
     TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, STATUS_ERROR_LIGHT,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
+from utils.logging_service import clear_log
 
 WARNING_DISPLAY_MS = 6000
 
@@ -121,6 +122,7 @@ class MainWindow(QMainWindow):
         # somewhere - it used to just vanish into command_timeout with
         # nothing listening. Hidden until the first timeout, then
         # auto-hides itself after WARNING_DISPLAY_MS.
+        warning_row = QHBoxLayout()
         self.warning_label = QLabel("")
         self.warning_label.setWordWrap(True)
         self.warning_label.setStyleSheet(
@@ -128,7 +130,19 @@ class MainWindow(QMainWindow):
             f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
         )
         self.warning_label.setVisible(False)
-        outer.addWidget(self.warning_label)
+        warning_row.addWidget(self.warning_label, 1)
+
+        self.clear_log_btn = QPushButton("Clear Log")
+        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
+        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_log_btn.setStyleSheet(
+            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
+            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
+        )
+        self.clear_log_btn.clicked.connect(self._on_clear_log)
+        warning_row.addWidget(self.clear_log_btn, alignment=Qt.AlignTop)
+
+        outer.addLayout(warning_row)
         self._warning_timer = QTimer(self)
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
@@ -192,6 +206,11 @@ class MainWindow(QMainWindow):
     def _on_rescan(self):
         self.status_label.setText("Scanning… checking for channels")
         self.app.channels.start_discovery()
+
+    def _on_clear_log(self):
+        clear_log(self.app.logger)
+        self.warning_label.setVisible(False)
+        self.status_label.setText("Log cleared.")
 
     def _on_manual_ask(self):
         ports = ConnectionController.list_ports()

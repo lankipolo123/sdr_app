@@ -13,7 +13,6 @@ from styles.theme_colors import (
     TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
     ACCENT_BLUE, NAVY,
 )
-from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.logging_service import clear_log
 
 WARNING_DISPLAY_MS = 6000
@@ -91,22 +90,6 @@ class MainWindow(QMainWindow):
         self.rescan_btn.clicked.connect(self._on_rescan)
         status_row.addWidget(self.rescan_btn)
         controls_card.body_layout.addLayout(status_row)
-
-        bulk_row = QHBoxLayout()
-        bulk_caption = QLabel("Set all:")
-        bulk_caption.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        bulk_row.addWidget(bulk_caption)
-        self.bulk_buttons = []
-        for level in range(4):
-            btn = QPushButton(LEVEL_LABELS[level])
-            btn.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
-            btn.setFixedWidth(48)
-            btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-            btn.clicked.connect(lambda _checked, lv=level: self.app.channels.set_all_level(lv))
-            bulk_row.addWidget(btn)
-            self.bulk_buttons.append(btn)
-        bulk_row.addStretch()
-        controls_card.body_layout.addLayout(bulk_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
 

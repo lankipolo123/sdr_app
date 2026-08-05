@@ -11,7 +11,7 @@ from components import (
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
     TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
-    ACCENT_BLUE, ACCENT_BLUE_DARK,
+    ACCENT_BLUE, NAVY,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.logging_service import clear_log
@@ -118,19 +118,6 @@ class MainWindow(QMainWindow):
         top_row.addStretch()
         outer.addLayout(top_row)
 
-        # A command that never got acknowledged (module unplugged
-        # mid-session, real hardware fault, etc.) has to surface
-        # somewhere - it used to just vanish into command_timeout with
-        # nothing listening. Hidden until the first timeout, then
-        # auto-hides itself after WARNING_DISPLAY_MS.
-        self.warning_label = QLabel("")
-        self.warning_label.setWordWrap(True)
-        self.warning_label.setStyleSheet(
-            f"color: {WARNING_TEXT}; background: {WARNING_BG}; border: 1px solid {WARNING_BORDER}; "
-            f"border-radius: 6px; padding: 6px 10px; font-size: 12px;"
-        )
-        self.warning_label.setVisible(False)
-        outer.addWidget(self.warning_label)
         self._warning_timer = QTimer(self)
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
@@ -169,21 +156,41 @@ class MainWindow(QMainWindow):
         txrx_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
         txrx_row = QHBoxLayout(txrx_bar)
         txrx_row.setContentsMargins(16, 8, 16, 8)
+        txrx_row.setSpacing(16)
+
+        # Left group: TX + RX, side by side.
         self.tx_value_label = QLabel("TX : --")
         self.rx_value_label = QLabel("RX : --")
         for lbl in (self.tx_value_label, self.rx_value_label):
             lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: 600; font-size: 12px; border: none;")
         txrx_row.addWidget(self.tx_value_label)
-        txrx_row.addStretch()
         txrx_row.addWidget(self.rx_value_label)
 
+        txrx_row.addStretch()
+
+        # Right group: the "no response"/rejection warning, then Clear
+        # Log - a command that never got acknowledged (module unplugged
+        # mid-session, real hardware fault, etc.) has to surface
+        # somewhere. Hidden until the first one, then auto-hides itself
+        # after WARNING_DISPLAY_MS.
+        self.warning_label = QLabel("")
+        self.warning_label.setStyleSheet(
+            f"color: {WARNING_TEXT}; background: {WARNING_BG}; border: 1px solid {WARNING_BORDER}; "
+            f"border-radius: 6px; padding: 4px 10px; font-size: 12px;"
+        )
+        self.warning_label.setVisible(False)
+        txrx_row.addWidget(self.warning_label)
+
+        # Background/text match the app icon's own colors exactly (NAVY
+        # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
+        # against the actual icon pixels).
         self.clear_log_btn = QPushButton("Clear Log")
         self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
         self.clear_log_btn.setCursor(Qt.PointingHandCursor)
         self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ background: {ACCENT_BLUE_DARK}; border: 1px solid {ACCENT_BLUE_DARK}; "
+            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
             f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: white; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
         )
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         txrx_row.addWidget(self.clear_log_btn)

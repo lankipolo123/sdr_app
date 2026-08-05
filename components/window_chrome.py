@@ -97,15 +97,12 @@ class TitleBar(QWidget):
         # is accepted but silently never drawn (same gotcha ResizableContainer
         # already works around the same way).
         self.setAttribute(Qt.WA_StyledBackground, True)
-        # Rounded bottom corners instead of a flat separator line,
+        # Full border on all four sides, all four corners rounded -
         # matching the rounded-border look used everywhere else (Channels
-        # box, cards, the window itself). No top border/radius needed -
-        # this sits flush against the window's own already-rounded top
-        # edge (clipped by ResizableContainer's mask).
+        # box, cards, the window itself).
         self.setStyleSheet(
             f"#TitleBar {{ background: {SURFACE}; "
-            f"border: 2px solid {BORDER_SUBTLE}; border-top: none; "
-            f"border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }}"
+            f"border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
         # A separate strip for the bottom border, not a border on the row

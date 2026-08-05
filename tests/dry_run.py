@@ -481,7 +481,7 @@ def main():
 
         silent_off_module.silent = True  # stops answering anything, including the off command
         window14._cards[8].disconnect_requested.emit(8)
-        pump(2700)  # past the 2500ms fallback timeout in disconnect_channel_safely
+        pump(1300)  # past the 1000ms fallback timeout in disconnect_channel_safely
         check(
             "disconnects anyway once the off command times out, doesn't hang forever",
             controller14.channels.controllers.get(8) is None,

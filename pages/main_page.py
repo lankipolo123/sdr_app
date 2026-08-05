@@ -263,6 +263,11 @@ class MainWindow(QMainWindow):
         )
         if not confirmed:
             return
+        # Immediate feedback that the click registered - turning the
+        # output off and waiting for that to confirm before actually
+        # disconnecting can take up to ~1s on unresponsive hardware, and
+        # without this it looks like nothing happened during that wait.
+        self.status_label.setText(f"Disconnecting CH{address:02d}…")
         self.app.channels.disconnect_channel_safely(address)
 
     def _on_channel_online(self, address: int):
@@ -274,6 +279,7 @@ class MainWindow(QMainWindow):
         card = self._cards.get(address)
         if card is not None:
             card.set_offline()
+        self.status_label.setText(f"CH{address:02d} disconnected.")
 
     def closeEvent(self, event):
         self.app.shutdown()

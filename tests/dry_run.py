@@ -60,7 +60,8 @@ def main():
     app.setStyleSheet(build_global_qss())
 
     from tests.fake_hardware import (
-        FakeModulePort, FakePortRegistry, FakeSharedBusPort, install_fake_hardware,
+        FakeModulePort, FakePortRegistry, FakeSharedBusPort, FakeAddressedBusPort,
+        install_fake_hardware,
     )
 
     registry = FakePortRegistry()
@@ -397,6 +398,51 @@ def main():
     check("asking a wrong address fails cleanly, no phantom card", 7 not in window12._cards)
 
     controller12.shutdown()
+    pump(50)
+
+    print("\n=== +Addr sharing one port: two addresses, no disconnect needed ===")
+    print("(the actual real-world ask: one physical adapter, ask address A,")
+    print(" then ask address B on the SAME port without disconnecting A -")
+    print(" both should end up live at once, no cross-talk between them)")
+    share_a = FakeModulePort(address=4, freq_mhz=2400)
+    share_b = FakeModulePort(address=6, freq_mhz=5800)
+    addressed_bus = FakeAddressedBusPort([share_a, share_b])
+    registry_share = FakePortRegistry()
+    registry_share.add("FAKE_SHARE", addressed_bus)
+    install_fake_hardware(registry_share)
+    controller13 = make_app_controller()
+    window13 = MainWindow(controller13)
+    window13.show()
+
+    controller13.channels.add_manual_channel("FAKE_SHARE", 4)
+    wait_for(controller13.channels.channel_added, timeout_ms=3000)
+    check("first address found on the shared port", 4 in controller13.channels.states)
+
+    controller13.channels.add_manual_channel("FAKE_SHARE", 6)
+    wait_for(controller13.channels.channel_added, timeout_ms=3000)
+    check("second address found on the SAME port, without disconnecting the first", 6 in controller13.channels.states)
+    check("both addresses stayed live at once", controller13.channels.controllers.get(4) is not None)
+    check(
+        "they really do share one physical connection",
+        controller13.channels.connections[4] is controller13.channels.connections[6],
+    )
+
+    if 4 in window13._cards and 6 in window13._cards:
+        window13._cards[4].toggle.click()
+        pump(200)
+        check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
+        check("address 4 actually turned on", share_a.output_on)
+
+        window13._cards[4].disconnect_requested.emit(4)
+        check(
+            "disconnecting one shared address doesn't kill the connection the other still needs",
+            controller13.channels.controllers.get(6) is not None,
+        )
+        window13._cards[6].toggle.click()
+        pump(200)
+        check("address 6 still works after address 4 disconnected", share_b.output_on)
+
+    controller13.shutdown()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

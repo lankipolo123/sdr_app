@@ -117,6 +117,43 @@ class FakeSharedBusPort:
         return chunk
 
 
+class FakeAddressedBusPort:
+    """The OPTIMISTIC counterpart to FakeSharedBusPort - models two
+    modules sharing one physical line where the app's own code (not the
+    electrical layer) is what's under test: does asking one address at a
+    time, reusing one connection, actually route each response to the
+    right channel without cross-talk. Every write is heard by every
+    module (real shared line), but only the module whose own address
+    matches the frame's target address actually replies - this class
+    doesn't claim that's how the real hardware behaves (the electrical
+    collision is already proven separately), it exists purely to verify
+    ChannelManager's own dispatch-by-address logic is correct when a
+    connection is genuinely shared by more than one address."""
+
+    def __init__(self, modules: list):
+        self.modules = modules
+        self._parser = FrameParser()
+        self._rx = bytearray()
+
+    def write(self, data: bytes):
+        for frame in self._parser.feed(data):
+            target = next((m for m in self.modules if m.address == frame.addr), None)
+            if target is None:
+                continue
+            before = len(target._rx)
+            target._handle(frame)
+            self._rx.extend(target._rx[before:])
+            del target._rx[before:]
+
+    def read(self, size: int = 256) -> bytes:
+        if not self._rx:
+            time.sleep(0.005)
+            return b""
+        chunk = bytes(self._rx[:size])
+        del self._rx[:size]
+        return chunk
+
+
 class FakePortRegistry:
     """What's "plugged in" for a test run - maps fake port names to
     FakeModulePort instances, the same way real ports map to real

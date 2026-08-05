@@ -111,7 +111,7 @@ def main():
         sys.exit(1)
 
     card = window._cards[0]
-    check("card's display number is CH01", card.state.display_number == 1)
+    check("card's display number matches its address (CH00, no +1 offset)", card.state.display_number == 0)
     check("initial state: output off (matches fake module default)", not module.output_on)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)

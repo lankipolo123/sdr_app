@@ -193,10 +193,10 @@ class MainWindow(QMainWindow):
         self._warning_timer.start(WARNING_DISPLAY_MS)
 
     def _on_raw_tx(self, address: int, data: bytes):
-        self.tx_value_label.setText(f"TX : CH{address + 1:02d} {data.hex(' ').upper()}")
+        self.tx_value_label.setText(f"TX : CH{address:02d} {data.hex(' ').upper()}")
 
     def _on_raw_rx(self, address: int, data: bytes):
-        self.rx_value_label.setText(f"RX : CH{address + 1:02d} {data.hex(' ').upper()}")
+        self.rx_value_label.setText(f"RX : CH{address:02d} {data.hex(' ').upper()}")
 
     def _on_channel_added(self, address: int):
         controller = self.app.channels.get_controller(address)

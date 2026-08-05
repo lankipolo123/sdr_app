@@ -10,7 +10,8 @@ from components import (
 )
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
-    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, ACCENT_BLUE,
+    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
+    ACCENT_BLUE, ACCENT_BLUE_DARK,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.logging_service import clear_log
@@ -180,8 +181,9 @@ class MainWindow(QMainWindow):
         self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
         self.clear_log_btn.setCursor(Qt.PointingHandCursor)
         self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; "
-            f"font-size: 11px; padding: 4px 10px; color: {TEXT_MUTED}; }}"
+            f"QPushButton {{ border: 1px solid {ACCENT_BLUE_DARK}; border-radius: 5px; "
+            f"font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE_DARK}; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE_DARK}; color: white; }}"
         )
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         txrx_row.addWidget(self.clear_log_btn)

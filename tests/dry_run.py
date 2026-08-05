@@ -300,7 +300,7 @@ def main():
     window8 = MainWindow(controller8)
     window8.show()
     controller8.channels.add_manual_channel("FAKE_MANUAL_BAD", 0)
-    wait_for(controller8.channels.command_timeout, timeout_ms=4000)
+    wait_for(controller8.channels.command_timeout, timeout_ms=2000)
     check("targeted add on a colliding bus does not fabricate a channel",
           len(controller8.channels.states) == 0)
     check("no port connection leaked after a failed targeted probe",

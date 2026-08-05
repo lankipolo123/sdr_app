@@ -97,10 +97,13 @@ class TitleBar(QWidget):
         # is accepted but silently never drawn (same gotcha ResizableContainer
         # already works around the same way).
         self.setAttribute(Qt.WA_StyledBackground, True)
-        # Full border on all four sides, no rounding - straight edges.
+        # Full border on all four sides. Top corners rounded to match the
+        # window's own rounded top edge; bottom stays a straight line
+        # where it meets the content below.
         self.setStyleSheet(
             f"#TitleBar {{ background: {SURFACE}; "
-            f"border: 2px solid {BORDER_SUBTLE}; }}"
+            f"border: 2px solid {BORDER_SUBTLE}; "
+            f"border-top-left-radius: 10px; border-top-right-radius: 10px; }}"
         )
 
         # A separate strip for the bottom border, not a border on the row

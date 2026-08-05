@@ -10,7 +10,7 @@ from components import (
 )
 from hooks.use_connection import ConnectionController
 from styles.theme_colors import (
-    TEXT_MUTED, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, ACCENT_BLUE,
+    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER, ACCENT_BLUE,
 )
 from state.level_map import LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.logging_service import clear_log
@@ -134,10 +134,24 @@ class MainWindow(QMainWindow):
         self._warning_timer.setSingleShot(True)
         self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
 
+        channels_label = QLabel("Channels")
+        channels_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
+        outer.addWidget(channels_label)
+
+        # Matches Card's own border weight/radius+color exactly (2px
+        # solid BORDER_SUBTLE, 10px radius) so this reads as the same
+        # kind of section as Connection/Controls/Emergency, not a
+        # plain unstyled scroll area. Scoped to #ChannelsScroll so it
+        # doesn't cascade onto the cards placed inside it.
         scroll = QScrollArea()
+        scroll.setObjectName("ChannelsScroll")
+        scroll.setStyleSheet(
+            f"#ChannelsScroll {{ border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; background: #FFFFFF; }}"
+        )
         scroll.setWidgetResizable(True)
         grid_container = QWidget()
         self.grid = QGridLayout(grid_container)
+        self.grid.setContentsMargins(12, 12, 12, 12)
         self.grid.setSpacing(12)
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)

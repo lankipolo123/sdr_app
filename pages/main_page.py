@@ -195,12 +195,7 @@ class MainWindow(QMainWindow):
 
     def _on_manual_ask(self):
         ports = ConnectionController.list_ports()
-        result = ManualAddDialog.ask(self, ports)
-        if result is None:
-            return
-        port, address = result
-        self.status_label.setText(f"Asking address {address} on {port}…")
-        self.app.channels.add_manual_channel(port, address)
+        ManualAddDialog.open(self, self.app.channels, ports)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

@@ -57,7 +57,7 @@ class ChannelManager(QObject):
     def start_discovery(self):
         self._discovery.start(exclude_ports=self._claimed_ports)
 
-    def disconnect_channel_safely(self, address: int, off_timeout_ms: int = 2500):
+    def disconnect_channel_safely(self, address: int, off_timeout_ms: int = 1000):
         """Turns the module's output off first (if it's currently on),
         waits for that to actually be confirmed, THEN disconnects - so a
         module doesn't stay transmitting after it's been physically

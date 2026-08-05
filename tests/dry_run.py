@@ -335,6 +335,35 @@ def main():
     controller10.shutdown()
     pump(50)
 
+    print("\n=== Disconnecting mid-command must not leave a stale timeout ===")
+    print("(a command sent right before Disconnect is clicked has no ack")
+    print(" coming - its response timer used to keep running on the")
+    print(" abandoned controller and fire a misleading warning later)")
+    stale_module = FakeModulePort(address=0)
+    registry_stale = FakePortRegistry()
+    registry_stale.add("FAKE_STALE", stale_module)
+    install_fake_hardware(registry_stale)
+    controller11 = make_app_controller()
+    window11 = MainWindow(controller11)
+    window11.show()
+    window11.rescan_btn.click()
+    wait_for(controller11.channels.discovery_finished)
+    check("stale-test channel discovered", 0 in window11._cards)
+
+    stale_fired = []
+    controller11.channels.command_timeout.connect(lambda msg: stale_fired.append(msg))
+
+    if 0 in window11._cards:
+        stale_module.silent = True  # module stops answering - the next command never gets ack'd
+        window11._cards[0].toggle.click()  # sends a command, starts its 2000ms pending timer
+        pump(50)  # let the send go out, nowhere near the 2000ms timeout yet
+        controller11.channels.disconnect_channel(0)  # released mid-flight
+        pump(2300)  # past RESPONSE_TIMEOUT_MS - must NOT fire from the abandoned controller
+        check("no stale command_timeout fired after disconnecting mid-command", len(stale_fired) == 0)
+
+    controller11.shutdown()
+    pump(50)
+
     print("\n=== Uncaught exceptions during the run ===")
     check("no uncaught exceptions in any Qt slot", len(UNCAUGHT) == 0)
     for tb in UNCAUGHT:

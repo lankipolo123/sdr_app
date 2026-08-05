@@ -30,6 +30,13 @@ class ChannelController(QObject):
     def address(self) -> int:
         return self.state.data.address
 
+    @property
+    def display_name(self) -> str:
+        # Matches ChannelCard's own title exactly (f"CH{display_number:02d}")
+        # - any message shown to the user has to use this, never the raw
+        # protocol address, or it won't match the card it's about.
+        return f"CH{self.state.display_number:02d}"
+
     def turn_output_on(self):
         self._enqueue(commands.output_on(self.address), "Output ON", {"output_on": True})
 
@@ -45,7 +52,7 @@ class ChannelController(QObject):
         d = self.state.data
         if d.mode is None or d.frequency_mhz is None or d.bandwidth_mhz is None:
             msg = (
-                f"Channel {self.address}: no status baseline yet - "
+                f"{self.display_name}: no status baseline yet - "
                 f"can't apply power={power_db}dB without a Status Query first."
             )
             if self.logger:
@@ -108,9 +115,20 @@ class ChannelController(QObject):
             self._pending_label = None
             self._pending_state_update = None
 
+    def cancel_pending(self):
+        """Call when this controller's connection is being torn down (e.g.
+        manual disconnect for a physical module swap) while a command may
+        still be in flight - without this, an already-running response
+        timer keeps ticking on an object nothing else references anymore,
+        and fires a misleading "no response" warning later, possibly
+        after this same address is already back online under a fresh
+        controller."""
+        self._cancel_pending_timeout()
+        self._queue.clear()
+
     def _on_response_timeout(self):
         msg = (
-            f"Channel {self.address}: no response within {RESPONSE_TIMEOUT_MS}ms "
+            f"{self.display_name}: no response within {RESPONSE_TIMEOUT_MS}ms "
             f"for: {self._pending_label}"
         )
         if self.logger:

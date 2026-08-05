@@ -57,8 +57,10 @@ class ChannelManager(QObject):
         session it stays visible, whether or not it's the one currently
         wired in. Does not touch the module's own power/output state -
         it's still whatever it was last set to."""
-        if self.controllers.get(address) is None:
+        controller = self.controllers.get(address)
+        if controller is None:
             return
+        controller.cancel_pending()
         conn = self.connections.pop(address)
         self.controllers[address] = None
         port = self._address_port.pop(address, None)

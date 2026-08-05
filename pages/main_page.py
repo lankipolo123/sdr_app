@@ -165,7 +165,7 @@ class MainWindow(QMainWindow):
         # the text still lines up visually with the cards above it.
         txrx_bar = QWidget()
         txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
-        txrx_bar.setStyleSheet(f"border-top: 1px solid {BORDER_SUBTLE};")
+        txrx_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
         txrx_row = QHBoxLayout(txrx_bar)
         txrx_row.setContentsMargins(16, 8, 16, 8)
         self.tx_value_label = QLabel("TX : --")

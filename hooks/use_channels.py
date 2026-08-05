@@ -15,12 +15,16 @@ MANUAL_MAX_ATTEMPTS = 6  # re-send the targeted query a few times before giving 
 
 
 class ChannelManager(QObject):
-    """Owns one dedicated ConnectionController per discovered channel -
-    unlike the old shared-bus design, each module has its own serial
-    port (RS422 is point-to-point, not a shared bus), so there's no
-    single connection to route frames through anymore. Each port's
-    frame_received is wired directly to that port's own
-    ChannelController."""
+    """Normally owns one dedicated ConnectionController per discovered
+    channel - each module has its own serial port (RS422 is point-to-
+    point, not a shared bus). The one exception is +Addr (
+    add_manual_channel): asking a second address on a port that already
+    has a live channel reuses that connection rather than requiring a
+    disconnect first, so a single physically-shared adapter can still be
+    asked about more than one address without a full swap cycle each
+    time. Frames are routed to the right channel by address
+    (_dispatch_frame) rather than wired directly to one controller, so
+    that sharing doesn't cross-talk between addresses."""
 
     channel_added = Signal(int)          # address - seen for the first time this session
     channel_online = Signal(int)         # address - a known channel is live/controllable again
@@ -40,6 +44,7 @@ class ChannelManager(QObject):
         self.connections: dict[int, ConnectionController] = {}
         self._claimed_ports: set[str] = set()
         self._address_port: dict[int, str] = {}
+        self._dispatch_wired: set[int] = set()  # id(conn) already routed through _dispatch_frame
 
         baud = self.config.get("baud_rate", 115200)
         parity = self.config.get("parity", "N")
@@ -53,14 +58,20 @@ class ChannelManager(QObject):
         self._discovery.start(exclude_ports=self._claimed_ports)
 
     def disconnect_channel(self, address: int):
-        """Manually release one channel and free its port - lets the user
-        physically swap which module is wired to a shared adapter (one
-        module out, the other in) and pick the new one up with a plain
-        Scan, without restarting the app. The channel's card stays put
-        (greyed out, not removed) - once a channel's been seen this
-        session it stays visible, whether or not it's the one currently
-        wired in. Does not touch the module's own power/output state -
-        it's still whatever it was last set to."""
+        """Manually release one channel - lets the user physically swap
+        which module is wired to a shared adapter (one module out, the
+        other in) and pick the new one up with a plain Scan, without
+        restarting the app. The channel's card stays put (greyed out,
+        not removed) - once a channel's been seen this session it stays
+        visible, whether or not it's the one currently wired in. Does
+        not touch the module's own power/output state - it's still
+        whatever it was last set to.
+
+        If this address was sharing its connection with another still-
+        live address (two addresses asked on the same port via +Addr),
+        the physical connection and port stay open for that other
+        address - only actually closes/frees the port once nothing else
+        is using it."""
         controller = self.controllers.get(address)
         if controller is None:
             return
@@ -68,33 +79,50 @@ class ChannelManager(QObject):
         conn = self.connections.pop(address)
         self.controllers[address] = None
         port = self._address_port.pop(address, None)
-        if port:
-            self._claimed_ports.discard(port)
-        conn.disconnect()
+
+        still_shared = any(
+            self.connections.get(a) is conn and self.controllers.get(a) is not None
+            for a in self.connections
+        )
+        if not still_shared:
+            if port:
+                self._claimed_ports.discard(port)
+            conn.disconnect()
+            self._dispatch_wired.discard(id(conn))
         self.channel_offline.emit(address)
+
+    def _connection_for_port(self, port: str) -> ConnectionController | None:
+        for address, p in self._address_port.items():
+            if p == port and self.controllers.get(address) is not None:
+                return self.connections.get(address)
+        return None
 
     def add_manual_channel(self, port: str, address: int):
         """Ask one address directly on one port - skips Scan's broadcast
         Address Query stage entirely, the same "just call the address"
-        approach as the senior described. Retries a few times before
-        giving up; on a real response, hands off to the exact same path
-        a normal Scan uses, so it behaves identically either way (known
-        address comes back online on its existing card, new one gets a
-        fresh card)."""
+        approach as the senior described. If that port already has a
+        live channel on it (asking a second address on the one shared
+        adapter you've actually got), reuses its existing connection
+        instead of requiring it be disconnected first - responses get
+        routed to the right channel by address (_dispatch_frame), so the
+        two don't cross-talk. Retries a few times before giving up; on a
+        real response, hands off to the exact same path a normal Scan
+        uses, so it behaves identically either way (known address comes
+        back online on its existing card, new one gets a fresh card)."""
         if self.controllers.get(address) is not None:
             self.command_timeout.emit(f"Address {address} is already connected.")
             return
-        if port in self._claimed_ports:
-            self.command_timeout.emit(f"{port} is already in use - disconnect that channel first.")
-            return
 
-        baud = self.config.get("baud_rate", 115200)
-        parity = self.config.get("parity", "N")
-        data_bits = self.config.get("data_bits", 8)
-        conn = ConnectionController()
-        if not conn.connect(port, baud, parity, data_bits):
-            self.command_timeout.emit(f"Failed to open {port}.")
-            return
+        conn = self._connection_for_port(port)
+        opened_new = conn is None
+        if opened_new:
+            baud = self.config.get("baud_rate", 115200)
+            parity = self.config.get("parity", "N")
+            data_bits = self.config.get("data_bits", 8)
+            conn = ConnectionController()
+            if not conn.connect(port, baud, parity, data_bits):
+                self.command_timeout.emit(f"Failed to open {port}.")
+                return
 
         timer = QTimer(self)
         timer.setSingleShot(True)
@@ -122,7 +150,10 @@ class ChannelManager(QObject):
                 send_attempt()
                 return
             conn.frame_received.disconnect(on_frame)
-            conn.disconnect()
+            if opened_new:
+                # Only close it if this attempt opened it fresh - a
+                # reused connection belongs to another still-live channel.
+                conn.disconnect()
             msg = (
                 f"No response from address {address} on {port} after "
                 f"{MANUAL_MAX_ATTEMPTS} targeted attempts."
@@ -173,8 +204,21 @@ class ChannelManager(QObject):
 
     def shutdown(self):
         self._discovery.stop()
-        for conn in self.connections.values():
+        # A shared port (two addresses asked on one connection) means
+        # self.connections can hold the same object twice - dedupe by
+        # identity so disconnect() isn't called on it more than once.
+        seen = {id(conn): conn for conn in self.connections.values()}
+        for conn in seen.values():
             conn.disconnect()
+
+    def _dispatch_frame(self, frame: ParsedFrame):
+        # Needed once a connection can be shared by more than one address
+        # (+Addr reusing a port) - a direct connect(controller.handle_frame)
+        # would hand EVERY frame on that connection to EVERY address
+        # sharing it, corrupting whichever one didn't actually send it.
+        controller = self.controllers.get(frame.addr)
+        if controller is not None:
+            controller.handle_frame(frame)
 
     def _on_channel_found(self, port: str, address: int, conn: ConnectionController, initial_frame: ParsedFrame):
         if self.controllers.get(address) is not None:
@@ -202,7 +246,9 @@ class ChannelManager(QObject):
 
         controller = ChannelController(conn, state, self.logger)
         controller.command_timeout.connect(self.command_timeout.emit)
-        conn.frame_received.connect(controller.handle_frame)
+        if id(conn) not in self._dispatch_wired:
+            conn.frame_received.connect(self._dispatch_frame)
+            self._dispatch_wired.add(id(conn))
         conn.raw_tx.connect(lambda data, addr=address: self.raw_tx.emit(addr, data))
         conn.raw_rx.connect(lambda data, addr=address: self.raw_rx.emit(addr, data))
 

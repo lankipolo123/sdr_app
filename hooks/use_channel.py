@@ -60,8 +60,19 @@ class ChannelController(QObject):
             self.command_timeout.emit(msg)
             return
 
+        # Only power_db - NOT output_on. Signal Control doesn't reliably
+        # indicate output state on its own (see resume_output()'s own
+        # comment: it reconfigures parameters but doesn't re-enable the
+        # RF stage by itself). Asserting output_on=True here used to be
+        # harmless when called on an already-on channel, but wrong when
+        # called as the second half of resume_output() and the FIRST
+        # command (turn_output_on) got rejected or timed out - this one
+        # succeeding would silently flip output_on back to True right
+        # after the timeout/rejection path had just correctly reverted
+        # it to False. turn_output_on()'s own state_update is the only
+        # thing that should ever claim output_on=True.
         frame = commands.set_signal(self.address, d.mode, d.frequency_mhz, d.bandwidth_mhz, power_db)
-        self._enqueue(frame, f"Power -> {power_db}dB", {"power_db": power_db, "output_on": True})
+        self._enqueue(frame, f"Power -> {power_db}dB", {"power_db": power_db})
 
     def resume_output(self, power_db: int):
         """Turning back on after being off needs an explicit Output Switch
@@ -136,18 +147,38 @@ class ChannelController(QObject):
         self.command_timeout.emit(msg)
         self._pending_timer = None
         self._pending_label = None
+        self._pending_state_update = None
+        # state.data was never optimistically updated for this command
+        # (see _send()'s own comment - only a confirmed response is
+        # allowed to touch it), so it still holds the real last-confirmed
+        # values. Re-emitting changed with no actual field changes snaps
+        # the card's toggle/slider back to those values instead of
+        # leaving them stuck showing whatever the user clicked, forever,
+        # with nothing to indicate it never actually took effect.
+        self.state.update()
         self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):
         """Called by ChannelManager only for frames whose addr matches ours."""
         pending_update = self._pending_state_update
+        pending_label = self._pending_label
         self._cancel_pending_timeout()
         if self.logger:
             self.logger.info(f"RX ch{self.address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
 
         if frame.type in (c.TYPE_OUTPUT_SWITCH, c.TYPE_SIGNAL_CONTROL) and len(frame.buf) == 1:
-            if frame.buf[0] == c.RESP_SUCCESS and pending_update:
-                self.state.update(**pending_update)
+            if frame.buf[0] == c.RESP_SUCCESS:
+                if pending_update:
+                    self.state.update(**pending_update)
+            else:
+                # Explicit rejection (RESP_FAILED) - same reasoning as the
+                # timeout path: state.data was never touched, so this just
+                # needs to force a resync rather than apply anything.
+                msg = f"{self.display_name}: device rejected {pending_label or 'command'}"
+                if self.logger:
+                    self.logger.warning(msg)
+                self.command_timeout.emit(msg)
+                self.state.update()
             self._send_next()
         elif frame.type == c.TYPE_STATUS_QUERY and len(frame.buf) >= 6:
             output = frame.buf[0]

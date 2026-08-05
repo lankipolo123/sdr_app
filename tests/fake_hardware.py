@@ -33,6 +33,11 @@ class FakeModulePort:
         # plugged in, or a module that's stopped answering mid-session)
         # for testing discovery-timeout and command-timeout handling.
         self.silent = silent
+        # Makes the NEXT Output Switch / Signal Control reply RESP_FAILED
+        # instead of RESP_SUCCESS, then resets itself - simulates a real
+        # device explicitly rejecting a command, as opposed to just not
+        # answering. Nothing previously exercised this path.
+        self.reject_next = False
         self._parser = FrameParser()
         self._rx = bytearray()  # queued module -> app bytes
 
@@ -64,9 +69,17 @@ class FakeModulePort:
             )
             self._reply(c.TYPE_STATUS_QUERY, payload)
         elif frame.type == c.TYPE_OUTPUT_SWITCH and frame.addr == self.address:
+            if self.reject_next:
+                self.reject_next = False
+                self._reply(c.TYPE_OUTPUT_SWITCH, bytes([c.RESP_FAILED]))
+                return
             self.output_on = frame.buf[0] == c.OUTPUT_ON
             self._reply(c.TYPE_OUTPUT_SWITCH, bytes([c.RESP_SUCCESS]))
         elif frame.type == c.TYPE_SIGNAL_CONTROL and frame.addr == self.address:
+            if self.reject_next:
+                self.reject_next = False
+                self._reply(c.TYPE_SIGNAL_CONTROL, bytes([c.RESP_FAILED]))
+                return
             self.mode = frame.buf[0]
             self.freq_mhz = struct.unpack(">H", frame.buf[1:3])[0]
             self.bandwidth_mhz = c.BANDWIDTH_CODES_REV[frame.buf[3]]

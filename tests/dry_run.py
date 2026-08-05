@@ -263,11 +263,87 @@ def main():
     if 0 in window6._cards:
         silent_later_module.silent = True  # module "unplugged" - stops answering
         window6._cards[0].toggle.click()  # sends a command that will never be ack'd
+        check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
         pump(2300)  # RESPONSE_TIMEOUT_MS in hooks/use_channel.py is 2000ms
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
+        check(
+            "toggle reverts back to the real (unconfirmed) state after the timeout, doesn't stay stuck",
+            not window6._cards[0].toggle.isChecked(),
+        )
+        check("hardware itself never actually turned on", not silent_later_module.output_on)
     controller6.shutdown()
     window6.close()
+    pump(50)
+
+    print("\n=== Explicit rejection (RESP_FAILED) also reverts the UI ===")
+    print("(different from a timeout - the device DID respond, just said no.")
+    print(" Previously this path did nothing at all: no revert, no warning,")
+    print(" untestable since the fake always replied success)")
+    # Starts already ON, so clicking the toggle to turn it OFF sends
+    # exactly one command (turn_output_off) - isolates the single-command
+    # rejection path cleanly, since clicking on-from-off instead would go
+    # through resume_output()'s two-command sequence (Output ON, then
+    # Signal Control) and reject_next only rejects the first of the two.
+    reject_module = FakeModulePort(address=0, output_on=True, power_db=0)
+    registry_reject = FakePortRegistry()
+    registry_reject.add("FAKE_REJECT", reject_module)
+    install_fake_hardware(registry_reject)
+    controller15 = make_app_controller()
+    window15 = MainWindow(controller15)
+    window15.show()
+    window15.rescan_btn.click()
+    wait_for(controller15.channels.discovery_finished)
+    check("rejection-test channel discovered", 0 in window15._cards)
+    if 0 in window15._cards:
+        check("starts on, as configured", window15._cards[0].toggle.isChecked())
+
+    if 0 in window15._cards:
+        reject_module.reject_next = True
+        window15._cards[0].toggle.click()  # turns OFF - single command (turn_output_off)
+        check("toggle flips immediately (optimistic UI)", not window15._cards[0].toggle.isChecked())
+        pump(200)  # fake hardware replies near-instantly, no need to wait for the 2000ms timeout
+        check("toggle reverts back on after an explicit device rejection", window15._cards[0].toggle.isChecked())
+        check("hardware itself never actually turned off", reject_module.output_on)
+        check("rejection surfaced as a warning too", window15.warning_label.isVisible())
+
+    controller15.shutdown()
+    window15.close()
+    pump(50)
+
+    print("\n=== resume_output(): if Output ON is rejected, Signal Control")
+    print("    succeeding right after must NOT flip output_on back to True ===")
+    print("(the two-command sequence behind turning a channel back on -")
+    print(" set_power() used to unconditionally claim output_on=True on")
+    print(" its own success, even when the Output ON half of the same")
+    print(" sequence had just failed)")
+    resume_module = FakeModulePort(address=0, output_on=False)
+    registry_resume = FakePortRegistry()
+    registry_resume.add("FAKE_RESUME", resume_module)
+    install_fake_hardware(registry_resume)
+    controller16 = make_app_controller()
+    window16 = MainWindow(controller16)
+    window16.show()
+    window16.rescan_btn.click()
+    wait_for(controller16.channels.discovery_finished)
+    check("resume-test channel discovered", 0 in window16._cards)
+    if 0 in window16._cards:
+        check("starts off, as configured", not window16._cards[0].toggle.isChecked())
+
+        # Only the Output Switch half is rejected - Signal Control (the
+        # second command in the resume_output() sequence) goes through
+        # normally right after, since reject_next resets itself.
+        resume_module.reject_next = True
+        window16._cards[0].toggle.click()  # off -> on: resume_output(), 2 commands
+        pump(400)  # both commands round-trip well under this on fake hardware
+        check(
+            "output stays off - the Signal Control success must not override the Output ON rejection",
+            not resume_module.output_on,
+        )
+        check("card reflects that too, not stuck showing on", not window16._cards[0].toggle.isChecked())
+
+    controller16.shutdown()
+    window16.close()
     pump(50)
 
     print("\n=== One COM port, many addresses (real-world current test rig) ===")

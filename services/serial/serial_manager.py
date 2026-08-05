@@ -28,16 +28,17 @@ class SerialManager:
         self._port: serial.Serial | None = None
 
     def open(self, port_name: str, baud: int = BAUD_RATE, parity: str = "N", data_bits: int = 8):
-        # Configuring dtr/rts False BEFORE open() (not passed to the
-        # constructor - pyserial doesn't accept them there) sets the
-        # initial line state so opening the port doesn't pulse DTR high
-        # on its own. Many cheap USB-serial bridges wire DTR straight to
-        # the attached board's reset pin (the classic reason an Arduino
-        # reboots every time a serial monitor connects to it) - if this
-        # module's board does the same, every connection attempt could
-        # be resetting its controller right as the first query goes out,
-        # which looks identical to "nothing is there" no matter what
-        # address or baud is used.
+        # Only DTR is touched here, not RTS. Setting dtr=False BEFORE
+        # open() (not passed to the constructor - pyserial doesn't accept
+        # it there) means opening the port can't pulse DTR high on its
+        # own - many cheap USB-serial bridges wire DTR straight to the
+        # attached board's reset pin (the classic reason an Arduino
+        # reboots every time a serial monitor connects to it). RTS is
+        # left at pyserial's real default (True) deliberately - a lot of
+        # these same cheap RS422/485 USB adapters use RTS itself as the
+        # converter's transmit-enable line, so forcing it low would stop
+        # the adapter from ever transmitting anything at all, which is a
+        # worse failure than the one this is meant to fix.
         self._port = serial.Serial()
         self._port.port = port_name
         self._port.baudrate = baud
@@ -45,10 +46,7 @@ class SerialManager:
         self._port.parity = PARITY_MAP.get(parity, serial.PARITY_NONE)
         self._port.stopbits = serial.STOPBITS_ONE
         self._port.timeout = 0.2
-        self._port.dsrdtr = False
-        self._port.rtscts = False
         self._port.dtr = False
-        self._port.rts = False
         self._port.open()
 
     def close(self):

@@ -20,17 +20,19 @@ class SerialThread(QThread):
         self.start()
 
     def stop_reading(self):
-        # Only flips the flag - does NOT wait here. The loop below only
-        # notices this between read() calls, and a real serial read can
-        # block for its full configured timeout (or longer, if the port
-        # is in a bad state) before it does. Waiting synchronously right
-        # here, before the port gets closed, meant every disconnect
-        # click blocked the whole UI for however long that read took -
-        # felt like the button just didn't work. See wait_until_stopped().
+        # Waits HERE, before the caller closes the port. A prior version
+        # tried closing first to avoid this wait, but that let the port
+        # get closed from the main thread while this thread could still
+        # be mid-read() on the same handle - a real race (not just a
+        # theoretical one: SerialManager.read() checks is_open() then
+        # touches self._port in two separate steps, and self._port can
+        # turn None in between if close() runs concurrently), which can
+        # leave the OS-level port handle in a state where reopening it
+        # fails. Correctness here matters more than the read's timeout
+        # (already a short 0.2s - see SerialManager) occasionally adding
+        # a brief, bounded wait.
         self._running = False
-
-    def wait_until_stopped(self, timeout_ms: int = 1000):
-        self.wait(timeout_ms)
+        self.wait(1000)
 
     def run(self):
         while self._running and self._manager.is_open():

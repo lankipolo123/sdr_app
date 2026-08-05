@@ -33,16 +33,12 @@ class ConnectionController(QObject):
         return True
 
     def disconnect(self):
-        # Order matters: flag the thread to stop, close the port (which
-        # forces a read() blocked inside the thread's loop to unblock/
-        # error out right away instead of running its full timeout), and
-        # only then wait for the thread to actually finish. Waiting
-        # before closing (the old order) meant every disconnect blocked
-        # the UI for however long that read happened to take - visible
-        # as the disconnect button seeming to just not respond.
+        # stop_reading() waits for the thread to actually finish before
+        # this closes the port - see SerialThread.stop_reading() for why
+        # that order matters (closing first while the thread could still
+        # be mid-read is a real race that can break reopening the port).
         self.thread.stop_reading()
         self.manager.close()
-        self.thread.wait_until_stopped()
         self.connected_changed.emit(False)
 
     def is_connected(self) -> bool:

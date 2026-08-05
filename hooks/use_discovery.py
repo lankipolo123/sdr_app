@@ -7,6 +7,13 @@ from .use_connection import ConnectionController
 
 STEP_TIMEOUT_MS = 500  # generous - includes opening the port plus a real round trip
 
+# Tried in order on a port that doesn't answer at the configured baud, before
+# giving up on it entirely. A slower baud gives each bit a longer window,
+# which can be the difference between unreadable noise and a legible frame
+# on a line under electrical contention (two drivers on one shared wire) -
+# doesn't cost anything to try, no hardware/wiring change involved.
+FALLBACK_BAUDS = [57600, 38400, 19200, 9600]
+
 
 class DiscoveryController(QObject):
     """Probes every available serial port one at a time - not addresses
@@ -40,8 +47,10 @@ class DiscoveryController(QObject):
         self.data_bits = data_bits
         self.max_ports = max_ports
         self.logger = logger
+        self._baud_candidates = [baud] + [b for b in FALLBACK_BAUDS if b != baud]
         self._ports: list[str] = []
         self._index = 0
+        self._baud_index = 0
         self._conn: ConnectionController | None = None
         self._addr: int | None = None
         self._scanning = False
@@ -56,6 +65,7 @@ class DiscoveryController(QObject):
         available = [p for p in list_com_ports() if p not in exclude_ports]
         self._ports = available[: self.max_ports]
         self._index = 0
+        self._baud_index = 0
         self._scanning = True
         self._probe_next()
 
@@ -65,12 +75,13 @@ class DiscoveryController(QObject):
             return
         self.progress.emit(self._index + 1, len(self._ports))
         port = self._ports[self._index]
+        baud = self._baud_candidates[self._baud_index]
         if self.logger:
-            self.logger.info(f"Discovery: probing port {port}")
+            self.logger.info(f"Discovery: probing port {port} at {baud} baud")
 
         conn = ConnectionController()
-        if not conn.connect(port, self.baud, self.parity, self.data_bits):
-            self._advance()
+        if not conn.connect(port, baud, self.parity, self.data_bits):
+            self._advance_port()
             return
 
         self._conn = conn
@@ -95,20 +106,28 @@ class DiscoveryController(QObject):
             self._conn = None
             self._addr = None
             self.channel_found.emit(port, addr, conn, frame)
-            self._advance()
+            self._advance_port()
 
     def _on_timeout(self):
-        # Nothing usable answered on this port within the window - release
-        # it (whatever's there, if anything, isn't one of our modules).
+        # Nothing usable answered on this port within the window at this
+        # baud rate - release the connection and either try the next
+        # fallback baud on the SAME port, or give up on the port entirely
+        # once every candidate baud has been tried.
         if self._conn is not None:
             self._conn.frame_received.disconnect(self._on_frame)
             self._conn.disconnect()
             self._conn = None
         self._addr = None
-        self._advance()
 
-    def _advance(self):
+        if self._baud_index + 1 < len(self._baud_candidates):
+            self._baud_index += 1
+            self._probe_next()
+        else:
+            self._advance_port()
+
+    def _advance_port(self):
         self._index += 1
+        self._baud_index = 0
         self._probe_next()
 
     def _finish(self):

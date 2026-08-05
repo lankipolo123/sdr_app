@@ -114,6 +114,29 @@ class ChannelCard(Card):
             # Signal Control power change (see ChannelController.resume_output).
             self.controller.resume_output(db)
 
+    # --- online/offline (module physically swapped out, on a shared port) --
+
+    def set_offline(self):
+        """Connection released (manual disconnect, e.g. before swapping
+        which module is wired to a shared port) - card stays visible with
+        its last known values, but controls are disabled since there's no
+        live connection to send anything over."""
+        self.controller = None
+        self.toggle.setEnabled(False)
+        self.slider.setEnabled(False)
+        self.status_text.setText("OFFLINE")
+        self.status_text.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; font-weight: 600;")
+        self.status_dot.setStyleSheet(f"background: {TEXT_MUTED}; border-radius: 4px;")
+
+    def set_online(self, controller):
+        """The same address answered again (module physically swapped back
+        in) - re-enable controls. Display already resynced itself via
+        state.changed, since the controller's handle_frame() ran before
+        this is called."""
+        self.controller = controller
+        self.toggle.setEnabled(True)
+        self.slider.setEnabled(True)
+
     # --- real hardware state changes (Status Query responses, etc.) --------
 
     def _on_hardware_state_changed(self):

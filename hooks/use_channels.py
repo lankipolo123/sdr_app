@@ -18,8 +18,9 @@ class ChannelManager(QObject):
     frame_received is wired directly to that port's own
     ChannelController."""
 
-    channel_added = Signal(int)          # address
-    channel_removed = Signal(int)        # address
+    channel_added = Signal(int)          # address - seen for the first time this session
+    channel_online = Signal(int)         # address - a known channel is live/controllable again
+    channel_offline = Signal(int)        # address - a known channel's connection was released
     discovery_progress = Signal(int, int)
     discovery_finished = Signal()
     command_timeout = Signal(str)
@@ -51,20 +52,22 @@ class ChannelManager(QObject):
         """Manually release one channel and free its port - lets the user
         physically swap which module is wired to a shared adapter (one
         module out, the other in) and pick the new one up with a plain
-        Scan, without restarting the app. Does not touch the module's own
-        power/output state - it's still whatever it was last set to."""
-        if address not in self.states:
+        Scan, without restarting the app. The channel's card stays put
+        (greyed out, not removed) - once a channel's been seen this
+        session it stays visible, whether or not it's the one currently
+        wired in. Does not touch the module's own power/output state -
+        it's still whatever it was last set to."""
+        if self.controllers.get(address) is None:
             return
         conn = self.connections.pop(address)
-        self.controllers.pop(address)
-        self.states.pop(address)
+        self.controllers[address] = None
         port = self._address_port.pop(address, None)
         if port:
             self._claimed_ports.discard(port)
         conn.disconnect()
-        self.channel_removed.emit(address)
+        self.channel_offline.emit(address)
 
-    def get_controller(self, address: int) -> ChannelController:
+    def get_controller(self, address: int) -> ChannelController | None:
         return self.controllers[address]
 
     def get_state(self, address: int) -> ChannelState:
@@ -78,16 +81,21 @@ class ChannelManager(QObject):
         self.config.save()
 
     def turn_off_all(self):
-        """Emergency stop: turn every discovered channel's output off."""
+        """Emergency stop: turn off every channel that's currently live -
+        an offline channel (not the one physically wired in right now)
+        has no connection to send anything over."""
         for controller in self.controllers.values():
-            controller.turn_output_off()
+            if controller is not None:
+                controller.turn_output_off()
 
     def set_all_level(self, level: int):
-        """Bulk action: set every discovered channel to the same Level
+        """Bulk action: set every currently-live channel to the same Level
         (L0-L3) at once. One command per channel, no intermediate values -
         the caller passes the final level directly, not a dragged range."""
         db = LEVEL_TO_DB[level]
         for address, controller in self.controllers.items():
+            if controller is None:
+                continue
             if db is None:
                 controller.turn_output_off()
             elif self.states[address].data.output_on:
@@ -101,10 +109,11 @@ class ChannelManager(QObject):
             conn.disconnect()
 
     def _on_channel_found(self, port: str, address: int, conn: ConnectionController, initial_frame: ParsedFrame):
-        if address in self.states:
-            # Two modules reporting the same address (e.g. both still at
-            # factory default) - already have one, so release this
-            # redundant connection rather than silently overwriting it.
+        if self.controllers.get(address) is not None:
+            # Two modules reporting the same address at once (e.g. both
+            # still at factory default) - already have one live, so
+            # release this redundant connection rather than silently
+            # overwriting it.
             if self.logger:
                 self.logger.warning(
                     f"Discovery: {port} reports address {address}, already in use by another port - skipping."
@@ -112,10 +121,16 @@ class ChannelManager(QObject):
             conn.disconnect()
             return
 
-        state = ChannelState(address)
-        saved = self.config.get_channel(address)
-        if saved and "last_level" in saved:
-            state.data.last_level = saved["last_level"]
+        returning = address in self.states
+        if returning:
+            # A known channel physically swapped back in - reuse its
+            # existing state (and card) rather than treating it as new.
+            state = self.states[address]
+        else:
+            state = ChannelState(address)
+            saved = self.config.get_channel(address)
+            if saved and "last_level" in saved:
+                state.data.last_level = saved["last_level"]
 
         controller = ChannelController(conn, state, self.logger)
         controller.command_timeout.connect(self.command_timeout.emit)
@@ -134,4 +149,4 @@ class ChannelManager(QObject):
         # a second, redundant one right after finding the channel.
         controller.handle_frame(initial_frame)
 
-        self.channel_added.emit(address)
+        self.channel_online.emit(address) if returning else self.channel_added.emit(address)

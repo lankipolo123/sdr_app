@@ -285,11 +285,12 @@ def main():
     controller7.shutdown()
     pump(50)
 
-    print("\n=== Manual disconnect + physical swap (reach both, one at a time, no purchase) ===")
+    print("\n=== Manual disconnect + physical swap (see both, control one at a time) ===")
     print("(module A wired in, controlled, disconnected in-app; module B")
     print(" physically wired into the SAME port in its place; a plain")
-    print(" rescan picks it up - the zero-cost 'swap which module is")
-    print(" plugged in' workflow, using only what's already on hand)")
+    print(" rescan picks it up - both cards stay visible the whole time,")
+    print(" only the currently-wired one is live, using only what's")
+    print(" already on hand, no purchase)")
     swap_module_a = FakeModulePort(address=0)
     registry_swap = FakePortRegistry()
     registry_swap.add("FAKE_SWAP", swap_module_a)
@@ -301,11 +302,13 @@ def main():
     wait_for(controller10.channels.discovery_finished)
     check("module A discovered first", 0 in controller10.channels.states)
     check("module A has a card", 0 in window10._cards)
+    check("module A's card starts enabled (live)", window10._cards[0].toggle.isEnabled())
 
     if 0 in window10._cards:
         window10._cards[0].disconnect_requested.emit(0)
-        check("channel released after manual disconnect", 0 not in controller10.channels.states)
-        check("card removed from the UI", 0 not in window10._cards)
+        check("controller cleared after manual disconnect", controller10.channels.controllers.get(0) is None)
+        check("card A stays visible (not removed) after disconnect", 0 in window10._cards)
+        check("card A's controls disabled while offline", not window10._cards[0].toggle.isEnabled())
 
         # Physically swap: module A comes off the shared port, module B
         # goes on in its place (same fake port name = same physical wire).
@@ -314,7 +317,20 @@ def main():
         window10._on_rescan()
         wait_for(controller10.channels.discovery_finished)
         check("module B discovered after the swap", 1 in controller10.channels.states)
-        check("module B has a card", 1 in window10._cards)
+        check("module B has its own new card", 1 in window10._cards)
+        check("both cards visible at once now", 0 in window10._cards and 1 in window10._cards)
+        check("card B is live", window10._cards[1].toggle.isEnabled())
+        check("card A is still offline (not silently reconnected)", not window10._cards[0].toggle.isEnabled())
+
+        # Swap back to module A - it should come back online on its
+        # SAME pre-existing card, not spawn a duplicate. Has to release
+        # B's port first, same as any other swap.
+        window10._cards[1].disconnect_requested.emit(1)
+        registry_swap.modules["FAKE_SWAP"] = swap_module_a
+        window10._on_rescan()
+        wait_for(controller10.channels.discovery_finished)
+        check("module A back online reuses its original card", window10._cards[0].toggle.isEnabled())
+        check("still only 2 cards total, no duplicate", len(window10._cards) == 2)
 
     controller10.shutdown()
     pump(50)

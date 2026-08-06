@@ -128,6 +128,13 @@ class DiscoveryController(QObject):
             if frame.type == c.TYPE_ADDR_QUERY and len(frame.buf) == 1:
                 self._timer.stop()
                 self._addr = frame.buf[0]
+                # Reset here, not just once per port/baud in _probe_next -
+                # a probe is really two separate exchanges (address query,
+                # then status query), and without this the zero-bytes-vs-
+                # garbage timeout message for the SECOND exchange was
+                # contaminated by whatever raw bytes came back for the
+                # FIRST one, even when the second got nothing at all.
+                self._raw_seen = False
                 self._conn.send(commands.query_status(self._addr))
                 self._timer.start(STEP_TIMEOUT_MS)
         elif frame.type == c.TYPE_STATUS_QUERY and frame.addr == self._addr and len(frame.buf) >= 6:

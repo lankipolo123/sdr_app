@@ -253,59 +253,19 @@ class ChannelManager(QObject):
         conn.frame_received.connect(on_frame)
         send_attempt()
 
-    def listen_raw(self, port: str, duration_ms: int = 3000):
-        """Diagnostic only - opens a port and passively listens for
-        duration_ms without sending anything at all, logging every raw
-        byte that shows up. Doesn't touch states/controllers/
-        _claimed_ports - this isn't a real channel connection, just a
-        listen-and-log probe. Point of this: on a shared line with two
-        modules always electrically present, does idle actually produce
-        continuous noise, or true silence with nothing sent? That's a
-        different question from what a query/response test can answer,
-        since every other path here always sends something first."""
-        baud = self.config.get("baud_rate", 115200)
-        parity = self.config.get("parity", "N")
-        data_bits = self.config.get("data_bits", 8)
-        conn = ConnectionController()
-        if not conn.connect(port, baud, parity, data_bits):
-            self.command_timeout.emit(f"Listen: failed to open {port}.")
-            return
-
-        captured = {"bytes": 0}
-
-        def on_raw_rx(data: bytes):
-            captured["bytes"] += len(data)
-            if self.logger:
-                self.logger.info(f"Listen: raw bytes on {port}: {data.hex(' ').upper()}")
-
-        conn.raw_rx.connect(on_raw_rx)
-        if self.logger:
-            self.logger.info(f"Listen: passively listening on {port} for {duration_ms}ms, sending nothing")
-
-        def finish():
-            conn.raw_rx.disconnect(on_raw_rx)
-            conn.disconnect()
-            msg = (
-                f"Listen: {captured['bytes']} byte(s) captured on {port} over "
-                f"{duration_ms}ms with nothing sent."
-            )
-            if self.logger:
-                self.logger.info(msg)
-            self.command_timeout.emit(msg)
-
-        QTimer.singleShot(duration_ms, finish)
-
-    def blind_send(self, address: int, on: bool):
-        """Direct, literal comparison against the reference VB tool's
-        button behavior: brute_force_find_port (COM1-16, first one that
-        opens) for the port, then write the raw Output ON/OFF frame
-        immediately with no query first and no response verification -
-        exactly what that tool's button does, nothing more. Diagnostic
-        only - doesn't touch states/controllers/_claimed_ports, this
-        isn't a real channel connection."""
+    def brute_force_query(self, address: int, on: bool):
+        """Brute-force finds the port (COM1-16, first one that opens -
+        see brute_force_find_port), then sends Output ON/OFF and
+        actually waits for and verifies the response, retrying up to
+        MANUAL_MAX_ATTEMPTS times like every other real command in this
+        app - not a blind fire-and-forget (that was tested and
+        disproven: the module's real output didn't change from a blind
+        send with both modules wired in). Diagnostic only - doesn't
+        touch states/controllers/_claimed_ports, this isn't a real
+        channel connection."""
         port = brute_force_find_port()
         if port is None:
-            self.command_timeout.emit("Blind send: no COM port (1-16) opened successfully.")
+            self.command_timeout.emit("Brute-force query: no COM port (1-16) opened successfully.")
             return
 
         baud = self.config.get("baud_rate", 115200)
@@ -313,23 +273,65 @@ class ChannelManager(QObject):
         data_bits = self.config.get("data_bits", 8)
         conn = ConnectionController()
         if not conn.connect(port, baud, parity, data_bits):
-            self.command_timeout.emit(f"Blind send: failed to open {port}.")
+            self.command_timeout.emit(f"Brute-force query: failed to open {port}.")
             return
 
         label = "ON" if on else "OFF"
         frame = commands.output_on(address) if on else commands.output_off(address)
-        if self.logger:
-            self.logger.info(f"Blind send: {label} to address {address} on {port}, no verification")
-        conn.send(frame)
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        attempts = {"count": 0, "raw_seen": False}
 
-        def finish():
+        def on_raw_rx(data: bytes):
+            attempts["raw_seen"] = True
+            if self.logger:
+                self.logger.info(f"Brute-force query: raw bytes on {port}: {data.hex(' ').upper()}")
+
+        def send_attempt():
+            attempts["count"] += 1
+            attempts["raw_seen"] = False
+            if self.logger:
+                self.logger.info(
+                    f"Brute-force query: {label} to address {address} on {port} "
+                    f"(attempt {attempts['count']}/{MANUAL_MAX_ATTEMPTS})"
+                )
+            conn.send(frame)
+            timer.start(MANUAL_TIMEOUT_MS)
+
+        def on_frame(response: ParsedFrame):
+            if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != address:
+                return
+            timer.stop()
+            conn.frame_received.disconnect(on_frame)
+            conn.raw_rx.disconnect(on_raw_rx)
             conn.disconnect()
+            success = len(response.buf) == 1 and response.buf[0] == c.RESP_SUCCESS
             self.command_timeout.emit(
-                f"Blind send: sent {label} to address {address} on {port} - "
-                f"no response check performed (see log for anything that came back)."
+                f"Brute-force query: {label} to address {address} on {port} - "
+                f"{'confirmed' if success else 'device rejected it'} "
+                f"(attempt {attempts['count']}/{MANUAL_MAX_ATTEMPTS})."
             )
 
-        QTimer.singleShot(500, finish)
+        def on_timeout():
+            if self.logger:
+                status = "bytes came back but never formed a valid response" if attempts["raw_seen"] else \
+                    "zero bytes received, nothing came back at all"
+                self.logger.info(f"Brute-force query: attempt {attempts['count']} timed out on {port} - {status}.")
+            if attempts["count"] < MANUAL_MAX_ATTEMPTS:
+                send_attempt()
+                return
+            conn.frame_received.disconnect(on_frame)
+            conn.raw_rx.disconnect(on_raw_rx)
+            conn.disconnect()
+            self.command_timeout.emit(
+                f"Brute-force query: no response to {label} for address {address} on {port} "
+                f"after {MANUAL_MAX_ATTEMPTS} attempts."
+            )
+
+        timer.timeout.connect(on_timeout)
+        conn.raw_rx.connect(on_raw_rx)
+        conn.frame_received.connect(on_frame)
+        send_attempt()
 
     def get_controller(self, address: int) -> ChannelController | None:
         return self.controllers[address]

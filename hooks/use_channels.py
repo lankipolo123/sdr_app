@@ -129,92 +129,105 @@ class ChannelManager(QObject):
             self._known_ports.discard(port)
         self.channel_offline.emit(address)
 
-    def add_manual_channel(self, port: str, address: int):
-        """Ask one address directly on one port - skips Scan's broadcast
-        Address Query stage entirely, the same "just call the address"
-        approach as the senior described. Nothing holds the port open
-        persistently (see ChannelController), so asking a second address
-        on the same physical adapter needs no special sharing logic -
-        opening it here works fine as long as nothing else happens to be
-        mid-transmission on it at that exact instant. Retries a few
-        times before giving up; on a real response, hands off to the
-        exact same path a normal Scan uses, so it behaves identically
-        either way (known address comes back online on its existing
-        card, new one gets a fresh card)."""
+    def add_manual_channel(self, address: int):
+        """Ask one address directly - skips Scan's broadcast Address
+        Query stage entirely, the same "just call the address" approach
+        as the senior described. Brute-force searches every available
+        port (same "just find one that works" spirit as ChannelController
+        and the Query button) instead of requiring a port to be picked
+        manually - tries each port in turn, with retries, until one
+        answers or all are exhausted. On a real response, hands off to
+        the exact same path a normal Scan uses, so it behaves
+        identically either way (known address comes back online on its
+        existing card, new one gets a fresh card)."""
         if self.controllers.get(address) is not None:
             self.command_timeout.emit(f"Address {address} is already connected.")
+            return
+
+        ports = ConnectionController.list_ports()
+        if not ports:
+            self.command_timeout.emit("Manual ask: no ports available.")
             return
 
         baud = self.config.get("baud_rate", 115200)
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
-        conn = ConnectionController()
-        if not conn.connect(port, baud, parity, data_bits):
-            self.command_timeout.emit(f"Failed to open {port}.")
-            return
 
         timer = QTimer(self)
         timer.setSingleShot(True)
-        attempts = {"count": 0, "raw_seen": False}
+        state = {"port_index": -1, "conn": None, "attempts": 0, "raw_seen": False}
 
         def on_raw_rx(data: bytes):
             # Logged even when nothing parses into a valid frame - tells
             # "truly nothing came back" apart from "something came back
             # but wasn't a legal response," which otherwise look
             # identical from the outside as one generic timeout.
-            attempts["raw_seen"] = True
+            state["raw_seen"] = True
+            port = ports[state["port_index"]]
             if self.logger:
                 self.logger.info(f"Manual ask: raw bytes on {port}: {data.hex(' ').upper()}")
-
-        def send_attempt():
-            attempts["count"] += 1
-            attempts["raw_seen"] = False
-            if self.logger:
-                self.logger.info(
-                    f"Manual ask: address {address} on {port} "
-                    f"(attempt {attempts['count']}/{MANUAL_MAX_ATTEMPTS})"
-                )
-            conn.send(commands.query_status(address))
-            timer.start(MANUAL_TIMEOUT_MS)
 
         def on_frame(frame: ParsedFrame):
             if frame.type != c.TYPE_STATUS_QUERY or frame.addr != address or len(frame.buf) < 6:
                 return
             timer.stop()
+            conn = state["conn"]
             conn.frame_received.disconnect(on_frame)
             conn.raw_rx.disconnect(on_raw_rx)
-            self._on_channel_found(port, address, conn, frame)
+            state["conn"] = None
+            self._on_channel_found(ports[state["port_index"]], address, conn, frame)
+
+        def send_attempt():
+            state["attempts"] += 1
+            state["raw_seen"] = False
+            port = ports[state["port_index"]]
+            if self.logger:
+                self.logger.info(
+                    f"Manual ask: address {address} on {port} "
+                    f"(attempt {state['attempts']}/{MANUAL_MAX_ATTEMPTS})"
+                )
+            state["conn"].send(commands.query_status(address))
+            timer.start(MANUAL_TIMEOUT_MS)
+
+        def try_next_port():
+            state["port_index"] += 1
+            if state["port_index"] >= len(ports):
+                msg = f"No response from address {address} after trying {len(ports)} port(s)."
+                if self.logger:
+                    self.logger.warning(f"Manual ask: {msg}")
+                self.command_timeout.emit(msg)
+                return
+            port = ports[state["port_index"]]
+            conn = ConnectionController()
+            if not conn.connect(port, baud, parity, data_bits):
+                if self.logger:
+                    self.logger.info(f"Manual ask: failed to open {port}, trying next port.")
+                try_next_port()
+                return
+            state["conn"] = conn
+            state["attempts"] = 0
+            conn.raw_rx.connect(on_raw_rx)
+            conn.frame_received.connect(on_frame)
+            send_attempt()
 
         def on_timeout():
+            port = ports[state["port_index"]]
             if self.logger:
-                if attempts["raw_seen"]:
-                    self.logger.info(
-                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
-                        f"bytes came back (see raw log above) but never formed a valid response."
-                    )
-                else:
-                    self.logger.info(
-                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
-                        f"zero bytes received, nothing came back at all."
-                    )
-            if attempts["count"] < MANUAL_MAX_ATTEMPTS:
+                status = "bytes came back but never formed a valid response" if state["raw_seen"] else \
+                    "zero bytes received, nothing came back at all"
+                self.logger.info(f"Manual ask: attempt {state['attempts']} timed out on {port} - {status}.")
+            if state["attempts"] < MANUAL_MAX_ATTEMPTS:
                 send_attempt()
                 return
+            conn = state["conn"]
             conn.frame_received.disconnect(on_frame)
             conn.raw_rx.disconnect(on_raw_rx)
             conn.disconnect()
-            msg = (
-                f"No response from address {address} on {port} after "
-                f"{MANUAL_MAX_ATTEMPTS} targeted attempts."
-            )
-            if self.logger:
-                self.logger.warning(f"Manual ask: {msg}")
-            self.command_timeout.emit(msg)
+            state["conn"] = None
+            try_next_port()
 
         timer.timeout.connect(on_timeout)
-        conn.raw_rx.connect(on_raw_rx)
-        conn.frame_received.connect(on_frame)
-        send_attempt()
+        try_next_port()
 
     def brute_force_query(self, address: int, on: bool):
         """Brute-force finds the port (COM1-16, first one that opens -

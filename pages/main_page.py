@@ -8,7 +8,6 @@ from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from hooks.use_connection import ConnectionController
 from hooks.use_channels import MAX_CHANNELS
 from styles.theme_colors import (
     TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
@@ -247,8 +246,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Log cleared.")
 
     def _on_manual_ask(self):
-        ports = ConnectionController.list_ports()
-        ManualAddDialog.open(self, self.app.channels, ports)
+        ManualAddDialog.open(self, self.app.channels)
 
     def _on_brute_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)

@@ -62,7 +62,7 @@ If you're used to a React project, here's how this maps:
 
 | React concept | Folder here | What's in it |
 |---|---|---|
-| `components/` | `components/` | Reusable UI pieces: `Card`, `PowerButton`, `LevelSlider`, `ChannelCard`, `ConnectionBar`, `ConfirmDialog`, `ManualAddDialog`, `EmergencyStopButton`, `TitleBar`/`ResizableContainer` (custom window chrome) |
+| `components/` | `components/` | Reusable UI pieces: `Card`, `PowerButton`, `LevelSlider`, `ChannelCard`, `ConnectionBar`, `ConfirmDialog`, `ManualAddDialog`, `TitleBar`/`ResizableContainer` (custom window chrome) |
 | `pages/` | `pages/` | The one screen: `main_page.py` (`MainWindow`) |
 | `hooks/` | `hooks/` | Non-UI reactive logic: `use_connection.py` (one serial link per channel), `use_channel.py` (per-channel commands), `use_discovery.py` (per-port scan), `use_channels.py` (ties them together, including manual by-address connect via `add_manual_channel`), `use_app.py` (top-level wiring) |
 | `state/` | `state/` | Data models: `channel_state.py`, `level_map.py` |

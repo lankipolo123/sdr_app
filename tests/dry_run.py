@@ -2,7 +2,7 @@
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, DiscoveryController, ChannelController,
-ChannelCard, ConnectionBar, Emergency Stop, Close App,
+ChannelCard, ConnectionBar, Close App,
 config persistence, and shutdown safety - all against a FakeModulePort
 standing in for a real module, so regressions anywhere in the
 "channel found -> command sent -> state synced -> UI updates" pipeline
@@ -120,7 +120,7 @@ def main():
     check("card's display number matches its address (CH00, no +1 offset)", card.state.display_number == 0)
     check("initial state: output off (matches fake module default)", not module.output_on)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
-    check("initial state: slider at 0 (Off)", card.slider.value() == 0)
+    check("initial state: slider at default resume level (1, Min) - no Off position", card.slider.value() == 1)
 
     print("\n=== Toggle on (UI -> hardware) ===")
     card.toggle.click()
@@ -136,17 +136,18 @@ def main():
     check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
 
-    print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
-    card.slider.setValue(0)
+    print("\n=== Toggle off (no Off position on the slider - toggle is the only way) ===")
+    card.toggle.click()
     pump(200)
     check("hardware output turned off", not module.output_on)
-    check("toggle reactively switched off", not card.toggle.isChecked())
+    check("toggle switched off", not card.toggle.isChecked())
+    check("slider still shows last level (3, Max) - it's not an Off indicator anymore", card.slider.value() == 3)
 
-    print("\n=== Toggle back on (should resume to last non-off level, L3) ===")
+    print("\n=== Toggle back on (should resume to last level, L3) ===")
     card.toggle.click()
     pump(200)
     check("hardware output back on", module.output_on)
-    check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
+    check("slider resumed to last level (3, Max)", card.slider.value() == 3)
     check("hardware power_code matches L3 again", module.power_code == 0x00)
 
     print("\n=== Rescan (port already claimed - must not duplicate) ===")
@@ -157,12 +158,6 @@ def main():
         sum(1 for c in controller.channels.controllers.values() if c is not None) == 1,
     )
     check("still all 16 slots present, no duplicate cards", len(window._cards) == MAX_CHANNELS)
-
-    print("\n=== Emergency Stop ===")
-    window.stop_btn.click()
-    pump(200)
-    check("emergency stop turned hardware off", not module.output_on)
-    check("emergency stop reflected in UI (toggle unchecked)", not card.toggle.isChecked())
 
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")
@@ -243,12 +238,11 @@ def main():
     window5 = MainWindow(controller5)
     window5.show()
     window5.rescan_btn.click()
-    # The dead port alone sweeps every fallback baud before giving up -
-    # SETTLE_DELAY_MS + STEP_TIMEOUT_MS per baud candidate (5 total:
-    # configured + FALLBACK_BAUDS) in hooks/use_discovery.py is already
-    # ~3750ms worst case, then the good port still needs its own round
-    # trip on top of that - 4000ms left almost no slack.
-    wait_for(controller5.channels.discovery_finished, timeout_ms=7000)
+    # The dead port alone now retries the primary baud PROBE_RETRY_ATTEMPTS
+    # times before sweeping the fallback bauds once each - (6 * 750ms) +
+    # (4 * 750ms) = ~7500ms worst case, then the good port still needs its
+    # own round trip on top of that - give it real headroom.
+    wait_for(controller5.channels.discovery_finished, timeout_ms=10000)
     check(
         "exactly one channel found (the live one)",
         sum(1 for c in controller5.channels.controllers.values() if c is not None) == 1,
@@ -284,10 +278,14 @@ def main():
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
         check(
-            "toggle reverts back to the real (unconfirmed) state after the timeout, doesn't stay stuck",
-            not window6._cards[0].toggle.isChecked(),
+            "toggle stays as clicked - applied optimistically since the module often "
+            "receives the command even without a readable ack back",
+            window6._cards[0].toggle.isChecked(),
         )
-        check("hardware itself never actually turned on", not silent_later_module.output_on)
+        check(
+            "but the fake module itself never actually got it this time (genuinely silent)",
+            not silent_later_module.output_on,
+        )
     controller6.shutdown()
     window6.close()
     pump(50)
@@ -376,7 +374,10 @@ def main():
     window7 = MainWindow(controller7)
     window7.show()
     window7.rescan_btn.click()
-    wait_for(controller7.channels.discovery_finished, timeout_ms=4000)
+    # Collision noise never resolves into a valid response, so this now
+    # exhausts every retry at the primary baud plus each fallback baud
+    # once - same ~7500ms worst case as the dead-port test, give headroom.
+    wait_for(controller7.channels.discovery_finished, timeout_ms=10000)
     check(
         "no phantom channel built from collision noise",
         all(c is None for c in controller7.channels.controllers.values()),

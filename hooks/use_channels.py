@@ -346,13 +346,6 @@ class ChannelManager(QObject):
             })
         self.config.save()
 
-    def turn_off_all(self):
-        """Emergency stop: turn off every channel that's currently live -
-        an offline channel (not the one physically wired in right now)
-        has no connection to send anything over."""
-        for controller in self.controllers.values():
-            if controller is not None:
-                controller.turn_output_off()
 
     def shutdown(self):
         self._discovery.stop()

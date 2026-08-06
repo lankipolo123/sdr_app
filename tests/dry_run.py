@@ -283,10 +283,14 @@ def main():
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
         check(
-            "toggle reverts back to the real (unconfirmed) state after the timeout, doesn't stay stuck",
-            not window6._cards[0].toggle.isChecked(),
+            "toggle stays as clicked - applied optimistically since the module often "
+            "receives the command even without a readable ack back",
+            window6._cards[0].toggle.isChecked(),
         )
-        check("hardware itself never actually turned on", not silent_later_module.output_on)
+        check(
+            "but the fake module itself never actually got it this time (genuinely silent)",
+            not silent_later_module.output_on,
+        )
     controller6.shutdown()
     window6.close()
     pump(50)

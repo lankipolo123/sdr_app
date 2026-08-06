@@ -163,26 +163,40 @@ class ChannelController(QObject):
             self._send(frame, label, state_update)
             return
 
-        msg = (
-            f"{self.display_name}: no response after {RETRY_MAX_ATTEMPTS} attempts "
-            f"for: {self._pending_label}"
-        )
-        if self.logger:
-            self.logger.warning(msg)
-        self.command_timeout.emit(msg)
+        label = self._pending_label
+        state_update = self._pending_state_update
         self._pending_timer = None
         self._pending_label = None
         self._pending_state_update = None
         self._pending_frame = None
         self._pending_attempt = 0
-        # state.data was never optimistically updated for this command
-        # (see _send()'s own comment - only a confirmed response is
-        # allowed to touch it), so it still holds the real last-confirmed
-        # values. Re-emitting changed with no actual field changes snaps
-        # the card's toggle/slider back to those values instead of
-        # leaving them stuck showing whatever the user clicked, forever,
-        # with nothing to indicate it never actually took effect.
-        self.state.update()
+
+        if state_update:
+            # Confirmed on real hardware: an unacknowledged Output ON/OFF
+            # often still reaches the module and takes effect even though
+            # the return path never gets a readable response back - the
+            # collision affects both directions, but not always both at
+            # once. Rather than reverting the card back to its last
+            # confirmed state (implying nothing happened when it likely
+            # did), apply the change anyway and say plainly that it's
+            # unconfirmed, not silently pretend it's as good as a real ack.
+            msg = (
+                f"{self.display_name}: no response after {RETRY_MAX_ATTEMPTS} attempts "
+                f"for {label} - applied anyway, UNCONFIRMED (module may not have received it)."
+            )
+            if self.logger:
+                self.logger.warning(msg)
+            self.command_timeout.emit(msg)
+            self.state.update(**state_update)
+        else:
+            # No state to optimistically apply (e.g. a plain status
+            # query) - nothing to do but report the failure and resync
+            # the UI to whatever the real last-confirmed values are.
+            msg = f"{self.display_name}: no response after {RETRY_MAX_ATTEMPTS} attempts for: {label}"
+            if self.logger:
+                self.logger.warning(msg)
+            self.command_timeout.emit(msg)
+            self.state.update()
         self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):

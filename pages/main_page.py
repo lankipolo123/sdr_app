@@ -93,6 +93,15 @@ class MainWindow(QMainWindow):
         self.listen_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.listen_btn.clicked.connect(self._on_listen)
         status_row.addWidget(self.listen_btn)
+        self.blind_send_btn = QPushButton("Blind Send")
+        self.blind_send_btn.setToolTip(
+            "Diagnostic: brute-force find a COM port (COM1-16, first one that opens) "
+            "and write Output ON/OFF directly, no query first, no response check - "
+            "for direct comparison against a reference tool's actual button behavior"
+        )
+        self.blind_send_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.blind_send_btn.clicked.connect(self._on_blind_send)
+        status_row.addWidget(self.blind_send_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -261,6 +270,16 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText(f"Listening on {port} for 3s (sending nothing)…")
         self.app.channels.listen_raw(port)
+
+    def _on_blind_send(self):
+        address, ok = QInputDialog.getInt(self, "Blind Send", "Address to send to:", 1, 0, 199)
+        if not ok:
+            return
+        choice, ok = QInputDialog.getItem(self, "Blind Send", "Output:", ["ON", "OFF"], editable=False)
+        if not ok:
+            return
+        self.status_label.setText(f"Blind-sending {choice} to address {address}…")
+        self.app.channels.blind_send(address, on=(choice == "ON"))
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

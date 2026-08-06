@@ -7,7 +7,14 @@ from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 
-RESPONSE_TIMEOUT_MS = 2000
+RESPONSE_TIMEOUT_MS = 800
+# Collision on a shared line is probabilistic, not a hard 100% wall -
+# confirmed on real hardware: some attempts get a clean response even
+# with two modules wired in, others don't. Retrying several times
+# before giving up meaningfully improves the odds of getting through,
+# instead of reporting failure after a single unlucky attempt. Matches
+# the already-proven MANUAL_MAX_ATTEMPTS pattern used by +Addr.
+RETRY_MAX_ATTEMPTS = 6
 
 
 class ChannelController(QObject):
@@ -24,6 +31,8 @@ class ChannelController(QObject):
         self._pending_timer: QTimer | None = None
         self._pending_label = None
         self._pending_state_update: dict | None = None
+        self._pending_frame: bytes | None = None
+        self._pending_attempt = 0
         self._queue: deque = deque()  # commands waiting for the in-flight one to finish
 
     @property
@@ -97,6 +106,7 @@ class ChannelController(QObject):
         if not self._queue:
             return
         frame, label, state_update = self._queue.popleft()
+        self._pending_attempt = 0
         self._send(frame, label, state_update)
 
     def _send(self, frame: bytes, label: str, state_update: dict | None = None):
@@ -105,13 +115,15 @@ class ChannelController(QObject):
         # signal, or the UI would resync from stale hardware state and
         # visibly snap the slider back before the real ack arrives.
         if self.logger:
-            self.logger.info(f"TX ch{self.address} ({label}): {frame.hex(' ').upper()}")
+            attempt_note = f" (attempt {self._pending_attempt + 1}/{RETRY_MAX_ATTEMPTS})" if self._pending_attempt else ""
+            self.logger.info(f"TX ch{self.address} ({label}){attempt_note}: {frame.hex(' ').upper()}")
 
         sent = self.conn.send(frame)
         if not sent:
             self._send_next()  # this one failed to even go out - move on rather than stall the queue
             return
 
+        self._pending_frame = frame
         self._pending_label = label
         self._pending_state_update = state_update
         self._pending_timer = QTimer()
@@ -125,6 +137,8 @@ class ChannelController(QObject):
             self._pending_timer = None
             self._pending_label = None
             self._pending_state_update = None
+            self._pending_frame = None
+            self._pending_attempt = 0
 
     def cancel_pending(self):
         """Call when this controller's connection is being torn down (e.g.
@@ -138,8 +152,19 @@ class ChannelController(QObject):
         self._queue.clear()
 
     def _on_response_timeout(self):
+        self._pending_attempt += 1
+        if self._pending_attempt < RETRY_MAX_ATTEMPTS:
+            # No response yet, but that's not necessarily a dead
+            # module - on a shared line the failure is probabilistic,
+            # so resend the exact same frame and try again rather than
+            # giving up after one unlucky attempt.
+            frame, label, state_update = self._pending_frame, self._pending_label, self._pending_state_update
+            self._pending_timer = None
+            self._send(frame, label, state_update)
+            return
+
         msg = (
-            f"{self.display_name}: no response within {RESPONSE_TIMEOUT_MS}ms "
+            f"{self.display_name}: no response after {RETRY_MAX_ATTEMPTS} attempts "
             f"for: {self._pending_label}"
         )
         if self.logger:
@@ -148,6 +173,8 @@ class ChannelController(QObject):
         self._pending_timer = None
         self._pending_label = None
         self._pending_state_update = None
+        self._pending_frame = None
+        self._pending_attempt = 0
         # state.data was never optimistically updated for this command
         # (see _send()'s own comment - only a confirmed response is
         # allowed to touch it), so it still holds the real last-confirmed

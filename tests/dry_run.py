@@ -277,7 +277,10 @@ def main():
         silent_later_module.silent = True  # module "unplugged" - stops answering
         window6._cards[0].toggle.click()  # sends a command that will never be ack'd
         check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
-        pump(2300)  # RESPONSE_TIMEOUT_MS in hooks/use_channel.py is 2000ms
+        # RETRY_MAX_ATTEMPTS (6) * RESPONSE_TIMEOUT_MS (800ms) = worst case
+        # ~4800ms before it actually gives up now that a silent module
+        # gets retried instead of failing after one attempt.
+        pump(5200)
         check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
         check("warning text is non-empty", bool(window6.warning_label.text()))
         check(

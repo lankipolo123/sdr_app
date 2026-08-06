@@ -11,10 +11,10 @@ from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABE
 
 class ChannelCard(Card):
     """One hardware channel's controls: a Power button ('Activate' /
-    'Power Off', labeled by the action it performs) + a 3-position
-    Level slider (Min/Med/Max only - no Off position, that's the
-    toggle's job), with plain text labels under the slider marking each
-    position - not buttons, just labels, the active one highlighted.
+    'Power Off', labeled by the action it performs) + a 4-position
+    Level slider (L0-L3), with plain L0/L1/L2/L3 text labels under the
+    slider marking each position - not buttons, just labels, the active
+    one highlighted.
 
     No Mode/Frequency/Bandwidth shown anywhere - the customer never sees
     that data, only Power. No Module Address shown either - the customer
@@ -66,13 +66,13 @@ class ChannelCard(Card):
 
         labels_row = QHBoxLayout()
         labels_row.setContentsMargins(0, 0, 0, 0)
-        self.level_labels = {}
-        for level in (1, 2, 3):
+        self.level_labels = []
+        for level in range(4):
             lbl = QLabel(LEVEL_LABELS[level])
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setToolTip(LEVEL_LABELS_FULL[level])
+            lbl.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
             labels_row.addWidget(lbl)
-            self.level_labels[level] = lbl
+            self.level_labels.append(lbl)
         self.body_layout.addLayout(labels_row)
 
         self.toggle = PowerButton()
@@ -87,31 +87,29 @@ class ChannelCard(Card):
     # --- user-driven changes -------------------------------------------------
 
     def _on_toggle(self, checked: bool):
-        if checked:
-            level = self.state.data.last_level
-            self.slider.blockSignals(True)
-            self.slider.setValue(level)
-            self.slider.blockSignals(False)
-            self._update_status(level, on=True)
-            self._send_level(level)
-        else:
-            self._update_status(self.state.data.last_level, on=False)
-            self.controller.turn_output_off()
+        target_level = self.state.data.last_level if checked else 0
+        self.slider.blockSignals(True)
+        self.slider.setValue(target_level)
+        self.slider.blockSignals(False)
+        self._update_status(target_level)
+        self._send_level(target_level)
 
     def _on_slider(self, value: int):
-        # No Off position on the slider anymore - any drag means "on at
-        # this level," so it always implies the toggle should be checked.
-        self.state.data.last_level = value
-        if not self.toggle.isChecked():
+        if value > 0:
+            self.state.data.last_level = value
+        should_be_checked = value > 0
+        if self.toggle.isChecked() != should_be_checked:
             self.toggle.blockSignals(True)
-            self.toggle.setChecked(True)
+            self.toggle.setChecked(should_be_checked)
             self.toggle.blockSignals(False)
-        self._update_status(value, on=True)
+        self._update_status(value)
         self._send_level(value)
 
     def _send_level(self, level: int):
         code = LEVEL_TO_HEX[level]
-        if self.state.data.output_on:
+        if code is None:
+            self.controller.turn_output_off()
+        elif self.state.data.output_on:
             self.controller.set_power(code)
         else:
             # Was off - needs an explicit Output Switch ON, not just a
@@ -145,12 +143,11 @@ class ChannelCard(Card):
 
     def _on_hardware_state_changed(self):
         d = self.state.data
-        on = d.output_on
-        level = HEX_TO_LEVEL.get(d.power_code, d.last_level) if on else d.last_level
+        level = 0 if not d.output_on else HEX_TO_LEVEL.get(d.power_code, d.last_level)
 
-        if self.toggle.isChecked() != on:
+        if self.toggle.isChecked() != d.output_on:
             self.toggle.blockSignals(True)
-            self.toggle.setChecked(on)
+            self.toggle.setChecked(d.output_on)
             self.toggle.blockSignals(False)
 
         if self.slider.value() != level:
@@ -158,19 +155,20 @@ class ChannelCard(Card):
             self.slider.setValue(level)
             self.slider.blockSignals(False)
 
-        if on:
+        if level > 0:
             d.last_level = level
 
-        self._update_status(level, on)
+        self._update_status(level)
 
-    def _update_status(self, level: int, on: bool):
-        self.status_text.setText(LEVEL_LABELS[level].upper() if on else "STANDBY")
-        color = STATUS_OK if on else TEXT_MUTED
+    def _update_status(self, level: int):
+        is_on = level > 0
+        self.status_text.setText(LEVEL_LABELS[level].upper() if is_on else "STANDBY")
+        color = STATUS_OK if is_on else TEXT_MUTED
         self.status_text.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
 
-        for lvl, lbl in self.level_labels.items():
-            active = on and lvl == level
+        for i, lbl in enumerate(self.level_labels):
+            active = i == level
             lbl.setStyleSheet(
                 f"color: {ACCENT_BLUE if active else TEXT_MUTED}; "
                 f"font-weight: {'700' if active else '400'}; font-size: 11px;"

@@ -10,8 +10,8 @@ def output_off(addr: int) -> bytes:
     return pb.build_output_switch(addr, on=False)
 
 
-def set_signal(addr: int, mode: int, freq_mhz: int, bandwidth_mhz: int, power_db: int) -> bytes:
-    return pb.build_signal_control(addr, mode, freq_mhz, bandwidth_mhz, power_db)
+def set_signal(addr: int, mode: int, freq_mhz: int, bandwidth_mhz: int, power_code: int) -> bytes:
+    return pb.build_signal_control(addr, mode, freq_mhz, bandwidth_mhz, power_code)
 
 
 def query_status(addr: int = 0x00) -> bytes:

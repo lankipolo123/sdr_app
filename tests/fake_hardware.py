@@ -21,13 +21,13 @@ class FakeModulePort:
     (confirmed on real hardware: they don't share a bus)."""
 
     def __init__(self, address: int = 0, mode: int = c.MODE_WHITE_NOISE,
-                 freq_mhz: int = 2450, bandwidth_mhz: int = 100, power_db: int = 0,
+                 freq_mhz: int = 2450, bandwidth_mhz: int = 100, power_code: int = 0x00,
                  output_on: bool = False, silent: bool = False):
         self.address = address
         self.mode = mode
         self.freq_mhz = freq_mhz
         self.bandwidth_mhz = bandwidth_mhz
-        self.power_db = power_db
+        self.power_code = power_code
         self.output_on = output_on
         # Never replies to anything - simulates a dead port (nothing
         # plugged in, or a module that's stopped answering mid-session)
@@ -65,7 +65,7 @@ class FakeModulePort:
             payload = (
                 bytes([int(self.output_on), self.mode])
                 + struct.pack(">H", self.freq_mhz)
-                + bytes([c.BANDWIDTH_CODES[self.bandwidth_mhz], c.POWER_CODES[self.power_db]])
+                + bytes([c.BANDWIDTH_CODES[self.bandwidth_mhz], self.power_code])
             )
             self._reply(c.TYPE_STATUS_QUERY, payload)
         elif frame.type == c.TYPE_OUTPUT_SWITCH and frame.addr == self.address:
@@ -83,7 +83,7 @@ class FakeModulePort:
             self.mode = frame.buf[0]
             self.freq_mhz = struct.unpack(">H", frame.buf[1:3])[0]
             self.bandwidth_mhz = c.BANDWIDTH_CODES_REV[frame.buf[3]]
-            self.power_db = c.POWER_CODES_REV[frame.buf[4]]
+            self.power_code = frame.buf[4]
             # Deliberately does NOT set self.output_on here - matches real
             # hardware (confirmed via spectrum analyzer): Signal Control
             # alone reconfigures parameters but doesn't re-enable the RF

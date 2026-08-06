@@ -78,7 +78,6 @@ def main():
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
-    from state.level_map import LEVEL_TO_DB
 
     # Route confirm dialogs straight to "confirmed" - a real modal exec()
     # loop would just hang forever with nothing to click it.
@@ -123,12 +122,12 @@ def main():
     check("hardware output turned on", module.output_on)
     check("toggle stayed checked", card.toggle.isChecked())
     check("slider resumed to default level 1 (Min)", card.slider.value() == 1)
-    check("hardware power_db matches L1 (-12dB)", module.power_db == -12)
+    check("hardware power_code matches L1 (0x02)", module.power_code == 0x02)
 
     print("\n=== Drag slider to Max (UI -> hardware, and back: hardware ack -> UI resync) ===")
     card.slider.setValue(3)
     pump(200)
-    check("hardware power_db matches L3 (0dB / max)", module.power_db == 0)
+    check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
@@ -142,7 +141,7 @@ def main():
     pump(200)
     check("hardware output back on", module.output_on)
     check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
-    check("hardware power_db matches L3 again", module.power_db == 0)
+    check("hardware power_code matches L3 again", module.power_code == 0x00)
 
     print("\n=== Rescan (port already claimed - must not duplicate) ===")
     window._on_rescan()
@@ -277,7 +276,7 @@ def main():
     # rejection path cleanly, since clicking on-from-off instead would go
     # through resume_output()'s two-command sequence (Output ON, then
     # Signal Control) and reject_next only rejects the first of the two.
-    reject_module = FakeModulePort(address=0, output_on=True, power_db=0)
+    reject_module = FakeModulePort(address=0, output_on=True, power_code=0x00)
     registry_reject = FakePortRegistry()
     registry_reject.add("FAKE_REJECT", reject_module)
     install_fake_hardware(registry_reject)

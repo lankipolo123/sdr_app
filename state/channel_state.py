@@ -11,7 +11,7 @@ class ChannelStateData:
     mode: int | None = None          # populated from Status Query, echoed back unchanged
     frequency_mhz: int | None = None
     bandwidth_mhz: int | None = None
-    power_db: int | None = None
+    power_code: int | None = None    # raw hex byte last confirmed on the wire
     last_level: int = DEFAULT_RESUME_LEVEL  # slider position to resume to on toggle-on
 
 

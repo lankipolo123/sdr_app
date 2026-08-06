@@ -6,7 +6,7 @@ from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
 from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE
-from state.level_map import LEVEL_TO_DB, DB_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
+from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 
 
 class ChannelCard(Card):
@@ -104,15 +104,15 @@ class ChannelCard(Card):
         self._send_level(value)
 
     def _send_level(self, level: int):
-        db = LEVEL_TO_DB[level]
-        if db is None:
+        code = LEVEL_TO_HEX[level]
+        if code is None:
             self.controller.turn_output_off()
         elif self.state.data.output_on:
-            self.controller.set_power(db)
+            self.controller.set_power(code)
         else:
             # Was off - needs an explicit Output Switch ON, not just a
             # Signal Control power change (see ChannelController.resume_output).
-            self.controller.resume_output(db)
+            self.controller.resume_output(code)
 
     # --- online/offline (module physically swapped out, on a shared port) --
 
@@ -141,7 +141,7 @@ class ChannelCard(Card):
 
     def _on_hardware_state_changed(self):
         d = self.state.data
-        level = 0 if not d.output_on else DB_TO_LEVEL.get(d.power_db, d.last_level)
+        level = 0 if not d.output_on else HEX_TO_LEVEL.get(d.power_code, d.last_level)
 
         if self.toggle.isChecked() != d.output_on:
             self.toggle.blockSignals(True)

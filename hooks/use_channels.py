@@ -3,7 +3,6 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
-from state.level_map import LEVEL_TO_DB
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_discovery import DiscoveryController
@@ -255,21 +254,6 @@ class ChannelManager(QObject):
         for controller in self.controllers.values():
             if controller is not None:
                 controller.turn_output_off()
-
-    def set_all_level(self, level: int):
-        """Bulk action: set every currently-live channel to the same Level
-        (L0-L3) at once. One command per channel, no intermediate values -
-        the caller passes the final level directly, not a dragged range."""
-        db = LEVEL_TO_DB[level]
-        for address, controller in self.controllers.items():
-            if controller is None:
-                continue
-            if db is None:
-                controller.turn_output_off()
-            elif self.states[address].data.output_on:
-                controller.set_power(db)
-            else:
-                controller.resume_output(db)
 
     def shutdown(self):
         self._discovery.stop()

@@ -33,7 +33,7 @@ class ParsedFrame:
                 f"mode={c.MODE_NAMES.get(mode, mode)}, "
                 f"freq={freq}MHz, "
                 f"bw={c.BANDWIDTH_CODES_REV.get(bw_code, bw_code)}MHz, "
-                f"power={c.POWER_CODES_REV.get(pw_code, pw_code)}dB"
+                f"power_code=0x{pw_code:02X}"
             )
 
         if self.type == c.TYPE_ADDR_QUERY and len(self.buf) == 1:

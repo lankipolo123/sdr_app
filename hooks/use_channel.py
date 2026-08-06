@@ -43,7 +43,7 @@ class ChannelController(QObject):
     def turn_output_off(self):
         self._enqueue(commands.output_off(self.address), "Output OFF", {"output_on": False})
 
-    def set_power(self, power_db: int):
+    def set_power(self, power_code: int):
         """Resend Signal Control with this channel's own stored Mode/
         Frequency/Bandwidth unchanged, plus the new Power value - the only
         field the customer can actually change. Requires a prior Status
@@ -53,14 +53,14 @@ class ChannelController(QObject):
         if d.mode is None or d.frequency_mhz is None or d.bandwidth_mhz is None:
             msg = (
                 f"{self.display_name}: no status baseline yet - "
-                f"can't apply power={power_db}dB without a Status Query first."
+                f"can't apply power_code=0x{power_code:02X} without a Status Query first."
             )
             if self.logger:
                 self.logger.warning(msg)
             self.command_timeout.emit(msg)
             return
 
-        # Only power_db - NOT output_on. Signal Control doesn't reliably
+        # Only power_code - NOT output_on. Signal Control doesn't reliably
         # indicate output state on its own (see resume_output()'s own
         # comment: it reconfigures parameters but doesn't re-enable the
         # RF stage by itself). Asserting output_on=True here used to be
@@ -71,10 +71,10 @@ class ChannelController(QObject):
         # after the timeout/rejection path had just correctly reverted
         # it to False. turn_output_on()'s own state_update is the only
         # thing that should ever claim output_on=True.
-        frame = commands.set_signal(self.address, d.mode, d.frequency_mhz, d.bandwidth_mhz, power_db)
-        self._enqueue(frame, f"Power -> {power_db}dB", {"power_db": power_db})
+        frame = commands.set_signal(self.address, d.mode, d.frequency_mhz, d.bandwidth_mhz, power_code)
+        self._enqueue(frame, f"Power -> 0x{power_code:02X}", {"power_code": power_code})
 
-    def resume_output(self, power_db: int):
+    def resume_output(self, power_code: int):
         """Turning back on after being off needs an explicit Output Switch
         ON, not just a Signal Control power change - confirmed on real
         hardware (spectrum analyzer) that RF power never actually comes
@@ -83,7 +83,7 @@ class ChannelController(QObject):
         like it turned back on. Output Switch ON is queued first so it's
         acknowledged before Signal Control goes out."""
         self.turn_output_on()
-        self.set_power(power_db)
+        self.set_power(power_code)
 
     def read_status(self):
         self._enqueue(commands.query_status(self.address), "Status query")
@@ -191,6 +191,6 @@ class ChannelController(QObject):
                 mode=mode,
                 frequency_mhz=freq,
                 bandwidth_mhz=c.BANDWIDTH_CODES_REV.get(bw_code),
-                power_db=c.POWER_CODES_REV.get(pw_code),
+                power_code=pw_code,
             )
             self._send_next()

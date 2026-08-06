@@ -1,4 +1,5 @@
 import logging
+import time
 
 import serial
 import serial.tools.list_ports
@@ -10,6 +11,13 @@ import serial.tools.list_ports
 _logger = logging.getLogger("sdr_controller")
 
 BAUD_RATE = 115200
+
+# Gap between asserting RTS and actually writing - some half-duplex
+# adapters need their driver stage a moment to actually enable after
+# RTS goes high; writing in the same instant can clip the very start of
+# the transmission on hardware that needs this. Untried until now;
+# harmless on an adapter that doesn't need it.
+RTS_TURNAROUND_S = 0.005
 
 PARITY_MAP = {
     "N": serial.PARITY_NONE,
@@ -80,6 +88,7 @@ class SerialManager:
         port_name = self._port.port
         _logger.info(f"SerialManager: RTS HIGH on {port_name}, writing {len(data)} bytes: {data.hex(' ').upper()}")
         self._port.rts = True
+        time.sleep(RTS_TURNAROUND_S)
         self._port.write(data)
         self._port.flush()
         self._port.rts = False
@@ -89,3 +98,14 @@ class SerialManager:
         if not self.is_open():
             return b""
         return self._port.read(size)
+
+    def reset_input_buffer(self):
+        # Discards whatever's sitting in the OS-level receive buffer
+        # before a new query goes out - on a shared line, stray idle
+        # noise from the other module could otherwise still be queued up
+        # ahead of the real response, making a clean answer look
+        # corrupted when it wasn't. Safe to call while SerialThread's
+        # background read loop is mid-read on another thread - worst
+        # case is that one read cycle comes back empty.
+        if self.is_open():
+            self._port.reset_input_buffer()

@@ -213,6 +213,9 @@ class FakeSerialManager:
             return b""
         return self._module.read(size)
 
+    def reset_input_buffer(self):
+        pass  # no real OS-level buffer to clear against fake hardware
+
 
 def install_fake_hardware(registry: FakePortRegistry):
     """Reroutes the app's serial layer to the given fake registry. Patches

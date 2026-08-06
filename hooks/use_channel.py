@@ -20,13 +20,13 @@ RETRY_MAX_ATTEMPTS = 6
 
 class ChannelController(QObject):
     """Handles commands + responses for one addressed channel. Each
-    command brute-force finds a port (COM1-16, first one that opens -
-    see services.serial.brute_force_find_port) and opens its own
-    connection fresh, rather than keeping one connection open
-    persistently for the whole time the channel is "online" - matches
-    the reference tool's own actual behavior (find the port, send, per
-    button press), and means the port is never held open between
-    commands, so other addresses on a shared adapter can use it too."""
+    command brute-force finds an available port and opens its own
+    connection fresh (see _find_and_open_connection), rather than
+    keeping one connection open persistently for the whole time the
+    channel is "online" - matches the reference tool's own actual
+    behavior (find the port, send, per button press), and means the
+    port is never held open between commands, so other addresses on a
+    shared adapter can use it too."""
 
     command_timeout = Signal(str)
 
@@ -132,13 +132,9 @@ class ChannelController(QObject):
         # Brute-force find a port fresh for this command - try every
         # currently available port until one opens, same "just find one
         # that works" spirit as the reference tool's button-press
-        # behavior, but through the app's own already-patchable port
-        # listing rather than a hardcoded COM1-16 guess (that hardcoded
-        # version lives in services.serial.brute_force_find_port and is
-        # still what the standalone diagnostic Query button uses, for a
-        # literal comparison against the reference tool). Reused across
-        # this command's own retries (not re-found every retry), closed
-        # once the command finishes (confirmed, rejected, or retries
+        # behavior. Reused across this command's own retries (not
+        # re-found every retry), closed once the command finishes
+        # (confirmed, rejected, or retries
         # exhausted).
         conn = self._find_and_open_connection()
         if conn is None:

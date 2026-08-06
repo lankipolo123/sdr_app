@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog
+    QScrollArea, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -84,15 +84,6 @@ class MainWindow(QMainWindow):
         self.manual_ask_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.manual_ask_btn.clicked.connect(self._on_manual_ask)
         status_row.addWidget(self.manual_ask_btn)
-        self.brute_query_btn = QPushButton("Query")
-        self.brute_query_btn.setToolTip(
-            "Diagnostic: brute-force find a COM port (COM1-16, first one that opens), "
-            "send Output ON/OFF, and retry until a real confirmed response comes back "
-            "(or gives up) - same retry behavior as a normal channel command"
-        )
-        self.brute_query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        self.brute_query_btn.clicked.connect(self._on_brute_query)
-        status_row.addWidget(self.brute_query_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -247,16 +238,6 @@ class MainWindow(QMainWindow):
 
     def _on_manual_ask(self):
         ManualAddDialog.open(self, self.app.channels)
-
-    def _on_brute_query(self):
-        address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
-        if not ok:
-            return
-        choice, ok = QInputDialog.getItem(self, "Query", "Output:", ["ON", "OFF"], editable=False)
-        if not ok:
-            return
-        self.status_label.setText(f"Querying {choice} to address {address}…")
-        self.app.channels.brute_force_query(address, on=(choice == "ON"))
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

@@ -49,29 +49,6 @@ def list_com_ports():
     return [p.device for p in serial.tools.list_ports.comports()]
 
 
-def brute_force_find_port(max_port_number: int = 16) -> str | None:
-    """Mirrors a legacy pattern (seen in a reference VB6 tool): try
-    opening COM1 through COM<max_port_number> in numeric order, stop at
-    the first one that opens without an OS-level error, and use that.
-    Doesn't check whether a real device answers on it - same as the
-    reference version, this only confirms the OS lets the port open,
-    not that a module is actually present and responding. Provided for
-    direct, apples-to-apples comparison against the real per-port probe
-    Scan already does."""
-    for i in range(1, max_port_number + 1):
-        port_name = f"COM{i}"
-        try:
-            port = serial.Serial()
-            port.port = port_name
-            port.baudrate = BAUD_RATE
-            port.open()
-            port.close()
-            return port_name
-        except Exception:
-            continue
-    return None
-
-
 class SerialManager:
     def __init__(self):
         self._port: serial.Serial | None = None

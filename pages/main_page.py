@@ -18,7 +18,6 @@ from utils.logging_service import clear_log
 
 WARNING_DISPLAY_MS = 6000
 
-MAX_COLUMNS = 4
 
 # Connection / Controls / Emergency all share this exact size so the top
 # row reads as three equal panels, not mismatched widgets.
@@ -127,6 +126,7 @@ class MainWindow(QMainWindow):
         # the frame's own rounded background paint through cleanly.
         scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidgetResizable(True)
+        self.channels_scroll = scroll
         grid_container = QWidget()
         self.grid = QGridLayout(grid_container)
         self.grid.setContentsMargins(12, 12, 12, 12)
@@ -258,8 +258,29 @@ class MainWindow(QMainWindow):
         card = ChannelCard(controller, state)
         card.disconnect_requested.connect(self._on_disconnect_requested)
         self._cards[address] = card
-        index = len(self._cards) - 1
-        self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+        self._reflow_grid()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reflow_grid()
+
+    def _reflow_grid(self):
+        # Cards are a fixed width (ChannelCard.WIDTH), so the grid was
+        # stuck at a hardcoded column count regardless of how wide the
+        # window actually was - full screen just left empty space on the
+        # right instead of using it. Recomputing how many columns fit the
+        # Channels box's actual current width, and re-placing every card
+        # accordingly, makes it respond to the real window size instead.
+        if not self._cards:
+            return
+        available = self.channels_scroll.viewport().width()
+        margins = self.grid.contentsMargins()
+        available -= margins.left() + margins.right()
+        spacing = self.grid.spacing()
+        columns = max(1, (available + spacing) // (ChannelCard.WIDTH + spacing))
+        for index, address in enumerate(sorted(self._cards)):
+            row, col = divmod(index, columns)
+            self.grid.addWidget(self._cards[address], row, col)
 
     def _on_channel_added(self, address: int):
         # Only ever fires for an address outside the 16 pre-built slots

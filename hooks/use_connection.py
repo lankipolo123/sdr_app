@@ -66,6 +66,11 @@ class ConnectionController(QObject):
             self.error.emit("Cannot send: not connected")
             return False
         try:
+            # Clear out anything sitting in the receive buffer from
+            # before this query - on a shared line, stray idle noise
+            # from the other module could otherwise still be queued
+            # ahead of the real response.
+            self.manager.reset_input_buffer()
             self.manager.write(data)
             self.raw_tx.emit(data)
             return True

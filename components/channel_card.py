@@ -30,9 +30,11 @@ class ChannelCard(Card):
 
     disconnect_requested = Signal(int)  # address
 
+    WIDTH = 220  # exposed so the grid that lays these out can size columns to match
+
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
-        self.setFixedWidth(220)
+        self.setFixedWidth(self.WIDTH)
         self.controller = controller
         self.state = state
 

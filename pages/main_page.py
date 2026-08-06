@@ -9,6 +9,7 @@ from components import (
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_connection import ConnectionController
+from hooks.use_channels import MAX_CHANNELS
 from styles.theme_colors import (
     TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
     ACCENT_BLUE, NAVY,
@@ -198,6 +199,16 @@ class MainWindow(QMainWindow):
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
+        # All 16 slots are visible from launch - empty/inactive (offline
+        # styling) until Scan or +Addr actually hears from that address.
+        # This does NOT open any port or talk to any hardware by itself;
+        # it just draws the cards for state ChannelManager already built
+        # for all 16 addresses up front (see ChannelManager.__init__).
+        for address in range(MAX_CHANNELS):
+            self._build_card(address)
+            self._cards[address].set_offline()
+
+
         # Deliberately does NOT auto-scan on launch - scanning sends a
         # broadcast Address Query to every available port, and if two
         # modules are still sharing one converter (a real risk on the
@@ -208,7 +219,10 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Scanning… checked port {current}/{total}")
 
     def _on_discovery_finished(self):
-        count = len(self._cards)
+        # len(self._cards) is always MAX_CHANNELS now (every slot is
+        # pre-built at launch) - count actual live connections instead,
+        # or this would claim "16 channel(s) found" no matter what.
+        count = sum(1 for c in self.app.channels.controllers.values() if c is not None)
         self.status_label.setText(
             f"{count} channel(s) found." if count else
             "No devices found. Check wiring and power."
@@ -238,7 +252,7 @@ class MainWindow(QMainWindow):
     def _on_raw_rx(self, address: int, data: bytes):
         self.rx_value_label.setText(f"RX : CH{address:02d} {data.hex(' ').upper()}")
 
-    def _on_channel_added(self, address: int):
+    def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
@@ -246,6 +260,13 @@ class MainWindow(QMainWindow):
         self._cards[address] = card
         index = len(self._cards) - 1
         self.grid.addWidget(card, index // MAX_COLUMNS, index % MAX_COLUMNS)
+
+    def _on_channel_added(self, address: int):
+        # Only ever fires for an address outside the 16 pre-built slots
+        # (e.g. a +Addr manual ask past MAX_CHANNELS) - addresses 0-15
+        # already have a card from launch, so a real find there always
+        # comes through as channel_online instead (see ChannelManager).
+        self._build_card(address)
 
     def _on_disconnect_requested(self, address: int):
         confirmed = ConfirmDialog.ask(

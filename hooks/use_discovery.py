@@ -63,6 +63,7 @@ class DiscoveryController(QObject):
         self._conn: ConnectionController | None = None
         self._addr: int | None = None
         self._scanning = False
+        self._raw_seen = False
 
         self._timer = QTimer()
         self._timer.setSingleShot(True)
@@ -95,6 +96,7 @@ class DiscoveryController(QObject):
 
         self._conn = conn
         self._addr = None
+        self._raw_seen = False
         conn.frame_received.connect(self._on_frame)
         conn.raw_rx.connect(self._on_raw_rx)
         QTimer.singleShot(SETTLE_DELAY_MS, self._send_address_query)
@@ -114,6 +116,7 @@ class DiscoveryController(QObject):
         # collision, a device that talks a different protocol, etc.),
         # which otherwise look identical from the outside as one
         # generic timeout.
+        self._raw_seen = True
         if self.logger:
             port = self._ports[self._index] if self._index < len(self._ports) else "?"
             self.logger.info(f"Discovery: raw bytes on {port}: {data.hex(' ').upper()}")
@@ -142,6 +145,19 @@ class DiscoveryController(QObject):
         # baud rate - release the connection and either try the next
         # fallback baud on the SAME port, or give up on the port entirely
         # once every candidate baud has been tried.
+        if self.logger:
+            port = self._ports[self._index] if self._index < len(self._ports) else "?"
+            baud = self._baud_candidates[self._baud_index]
+            if self._raw_seen:
+                self.logger.info(
+                    f"Discovery: timeout on {port} at {baud} baud - bytes came back "
+                    f"(see raw log above) but never formed a valid response."
+                )
+            else:
+                self.logger.info(
+                    f"Discovery: timeout on {port} at {baud} baud - zero bytes received, "
+                    f"nothing came back at all."
+                )
         if self._conn is not None:
             self._conn.frame_received.disconnect(self._on_frame)
             self._conn.raw_rx.disconnect(self._on_raw_rx)

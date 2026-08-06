@@ -2,7 +2,7 @@
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, DiscoveryController, ChannelController,
-ChannelCard, ConnectionBar, bulk "Set all", Emergency Stop, Close App,
+ChannelCard, ConnectionBar, Emergency Stop, Close App,
 config persistence, and shutdown safety - all against a FakeModulePort
 standing in for a real module, so regressions anywhere in the
 "channel found -> command sent -> state synced -> UI updates" pipeline
@@ -74,11 +74,10 @@ def main():
 
     from utils.config_service import ConfigService
     from utils.logging_service import setup_logger
-    from hooks.use_channels import ChannelManager
+    from hooks.use_channels import ChannelManager, MAX_CHANNELS
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
-    from state.level_map import LEVEL_TO_DB
 
     # Route confirm dialogs straight to "confirmed" - a real modal exec()
     # loop would just hang forever with nothing to click it.
@@ -99,14 +98,20 @@ def main():
     # No more auto-scan on launch - discovery only ever starts from an
     # explicit click (the Scan button) now, so tests trigger it manually,
     # same as a real user would.
-    check("no auto-scan on launch (nothing found yet)", len(controller.channels.states) == 0)
+    check(
+        "no auto-scan on launch (nothing found yet)",
+        all(c is None for c in controller.channels.controllers.values()),
+    )
     window.rescan_btn.click()
     wait_for(controller.channels.discovery_finished)
-    check("discovery finds the fake module", 0 in controller.channels.states)
-    check("exactly one channel discovered (no duplicates)", len(controller.channels.states) == 1)
+    check("discovery finds the fake module", controller.channels.controllers.get(0) is not None)
+    check(
+        "exactly one channel discovered (no duplicates)",
+        sum(1 for c in controller.channels.controllers.values() if c is not None) == 1,
+    )
     check("channel card created in the UI", 0 in window._cards)
 
-    if 0 not in window._cards:
+    if controller.channels.controllers.get(0) is None:
         print("Cannot continue - channel wasn't discovered at all.")
         controller.shutdown()
         sys.exit(1)
@@ -123,12 +128,12 @@ def main():
     check("hardware output turned on", module.output_on)
     check("toggle stayed checked", card.toggle.isChecked())
     check("slider resumed to default level 1 (Min)", card.slider.value() == 1)
-    check("hardware power_db matches L1 (-12dB)", module.power_db == -12)
+    check("hardware power_code matches L1 (0x02)", module.power_code == 0x02)
 
     print("\n=== Drag slider to Max (UI -> hardware, and back: hardware ack -> UI resync) ===")
     card.slider.setValue(3)
     pump(200)
-    check("hardware power_db matches L3 (0dB / max)", module.power_db == 0)
+    check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
@@ -142,21 +147,16 @@ def main():
     pump(200)
     check("hardware output back on", module.output_on)
     check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
-    check("hardware power_db matches L3 again", module.power_db == 0)
-
-    print("\n=== Bulk 'Set all' -> Med ===")
-    med_btn = window.bulk_buttons[2]
-    check("bulk button 2 is labeled Med", med_btn.text() == "Med")
-    med_btn.click()
-    pump(200)
-    check("hardware power_db matches L2 (-6dB)", module.power_db == -6)
-    check("card slider resynced to level 2", card.slider.value() == 2)
+    check("hardware power_code matches L3 again", module.power_code == 0x00)
 
     print("\n=== Rescan (port already claimed - must not duplicate) ===")
     window._on_rescan()
     wait_for(controller.channels.discovery_finished)
-    check("still exactly one channel after rescan", len(controller.channels.states) == 1)
-    check("still exactly one card after rescan", len(window._cards) == 1)
+    check(
+        "still exactly one channel after rescan",
+        sum(1 for c in controller.channels.controllers.values() if c is not None) == 1,
+    )
+    check("still all 16 slots present, no duplicate cards", len(window._cards) == MAX_CHANNELS)
 
     print("\n=== Emergency Stop ===")
     window.stop_btn.click()
@@ -185,12 +185,11 @@ def main():
     window2.show()
     window2.rescan_btn.click()
     wait_for(controller2.channels.discovery_finished)
-    check("second run rediscovers the channel", 0 in controller2.channels.states)
-    if 0 in controller2.channels.states:
-        check(
-            "restored last_level from config, not the hard-coded default",
-            controller2.channels.states[0].data.last_level == last_level_before_shutdown,
-        )
+    check("second run rediscovers the channel", controller2.channels.controllers.get(0) is not None)
+    check(
+        "restored last_level from config, not the hard-coded default",
+        controller2.channels.states[0].data.last_level == last_level_before_shutdown,
+    )
     controller2.shutdown()
     window2.close()
     pump(50)
@@ -222,10 +221,13 @@ def main():
     window4.show()
     window4.rescan_btn.click()
     wait_for(controller4.channels.discovery_finished)
-    check("both modules discovered", len(controller4.channels.states) == 2)
-    check("both channel cards created", len(window4._cards) == 2)
-    check("address 0 present", 0 in controller4.channels.states)
-    check("address 1 present", 1 in controller4.channels.states)
+    check(
+        "both modules discovered",
+        sum(1 for c in controller4.channels.controllers.values() if c is not None) == 2,
+    )
+    check("all 16 channel cards present", len(window4._cards) == MAX_CHANNELS)
+    check("address 0 present", controller4.channels.controllers.get(0) is not None)
+    check("address 1 present", controller4.channels.controllers.get(1) is not None)
     controller4.shutdown()
     window4.close()
     pump(50)
@@ -241,9 +243,20 @@ def main():
     window5 = MainWindow(controller5)
     window5.show()
     window5.rescan_btn.click()
-    wait_for(controller5.channels.discovery_finished, timeout_ms=4000)
-    check("exactly one channel found (the live one)", len(controller5.channels.states) == 1)
-    check("it's the good module's address (5), not the dead one's", 5 in controller5.channels.states)
+    # The dead port alone sweeps every fallback baud before giving up -
+    # SETTLE_DELAY_MS + STEP_TIMEOUT_MS per baud candidate (5 total:
+    # configured + FALLBACK_BAUDS) in hooks/use_discovery.py is already
+    # ~3750ms worst case, then the good port still needs its own round
+    # trip on top of that - 4000ms left almost no slack.
+    wait_for(controller5.channels.discovery_finished, timeout_ms=7000)
+    check(
+        "exactly one channel found (the live one)",
+        sum(1 for c in controller5.channels.controllers.values() if c is not None) == 1,
+    )
+    check(
+        "it's the good module's address (5), not the dead one's",
+        controller5.channels.controllers.get(5) is not None,
+    )
     controller5.shutdown()
     window5.close()
     pump(50)
@@ -258,9 +271,9 @@ def main():
     window6.show()
     window6.rescan_btn.click()
     wait_for(controller6.channels.discovery_finished)
-    check("timeout-test channel discovered", 0 in window6._cards)
+    check("timeout-test channel discovered", controller6.channels.controllers.get(0) is not None)
     check("warning label starts hidden", not window6.warning_label.isVisible())
-    if 0 in window6._cards:
+    if controller6.channels.controllers.get(0) is not None:
         silent_later_module.silent = True  # module "unplugged" - stops answering
         window6._cards[0].toggle.click()  # sends a command that will never be ack'd
         check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
@@ -285,7 +298,7 @@ def main():
     # rejection path cleanly, since clicking on-from-off instead would go
     # through resume_output()'s two-command sequence (Output ON, then
     # Signal Control) and reject_next only rejects the first of the two.
-    reject_module = FakeModulePort(address=0, output_on=True, power_db=0)
+    reject_module = FakeModulePort(address=0, output_on=True, power_code=0x00)
     registry_reject = FakePortRegistry()
     registry_reject.add("FAKE_REJECT", reject_module)
     install_fake_hardware(registry_reject)
@@ -294,11 +307,11 @@ def main():
     window15.show()
     window15.rescan_btn.click()
     wait_for(controller15.channels.discovery_finished)
-    check("rejection-test channel discovered", 0 in window15._cards)
-    if 0 in window15._cards:
+    check("rejection-test channel discovered", controller15.channels.controllers.get(0) is not None)
+    if controller15.channels.controllers.get(0) is not None:
         check("starts on, as configured", window15._cards[0].toggle.isChecked())
 
-    if 0 in window15._cards:
+    if controller15.channels.controllers.get(0) is not None:
         reject_module.reject_next = True
         window15._cards[0].toggle.click()  # turns OFF - single command (turn_output_off)
         check("toggle flips immediately (optimistic UI)", not window15._cards[0].toggle.isChecked())
@@ -326,8 +339,8 @@ def main():
     window16.show()
     window16.rescan_btn.click()
     wait_for(controller16.channels.discovery_finished)
-    check("resume-test channel discovered", 0 in window16._cards)
-    if 0 in window16._cards:
+    check("resume-test channel discovered", controller16.channels.controllers.get(0) is not None)
+    if controller16.channels.controllers.get(0) is not None:
         check("starts off, as configured", not window16._cards[0].toggle.isChecked())
 
         # Only the Output Switch half is rejected - Signal Control (the
@@ -361,7 +374,10 @@ def main():
     window7.show()
     window7.rescan_btn.click()
     wait_for(controller7.channels.discovery_finished, timeout_ms=4000)
-    check("no phantom channel built from collision noise", len(controller7.channels.states) == 0)
+    check(
+        "no phantom channel built from collision noise",
+        all(c is None for c in controller7.channels.controllers.values()),
+    )
     check("status reflects nothing found, not a false success",
           "No devices found" in window7.status_label.text())
     check("no crash/hang scanning a colliding shared bus", True)
@@ -384,11 +400,11 @@ def main():
     window10.show()
     window10.rescan_btn.click()
     wait_for(controller10.channels.discovery_finished)
-    check("module A discovered first", 0 in controller10.channels.states)
+    check("module A discovered first", controller10.channels.controllers.get(0) is not None)
     check("module A has a card", 0 in window10._cards)
     check("module A's card starts enabled (live)", window10._cards[0].toggle.isEnabled())
 
-    if 0 in window10._cards:
+    if controller10.channels.controllers.get(0) is not None:
         window10._cards[0].disconnect_requested.emit(0)
         check("controller cleared after manual disconnect", controller10.channels.controllers.get(0) is None)
         check("card A stays visible (not removed) after disconnect", 0 in window10._cards)
@@ -400,7 +416,7 @@ def main():
         registry_swap.modules["FAKE_SWAP"] = swap_module_b
         window10._on_rescan()
         wait_for(controller10.channels.discovery_finished)
-        check("module B discovered after the swap", 1 in controller10.channels.states)
+        check("module B discovered after the swap", controller10.channels.controllers.get(1) is not None)
         check("module B has its own new card", 1 in window10._cards)
         check("both cards visible at once now", 0 in window10._cards and 1 in window10._cards)
         check("card B is live", window10._cards[1].toggle.isEnabled())
@@ -414,7 +430,7 @@ def main():
         window10._on_rescan()
         wait_for(controller10.channels.discovery_finished)
         check("module A back online reuses its original card", window10._cards[0].toggle.isEnabled())
-        check("still only 2 cards total, no duplicate", len(window10._cards) == 2)
+        check("still all 16 slots present, no duplicate cards", len(window10._cards) == MAX_CHANNELS)
 
     controller10.shutdown()
     window10.close()
@@ -433,12 +449,12 @@ def main():
     window11.show()
     window11.rescan_btn.click()
     wait_for(controller11.channels.discovery_finished)
-    check("stale-test channel discovered", 0 in window11._cards)
+    check("stale-test channel discovered", controller11.channels.controllers.get(0) is not None)
 
     stale_fired = []
     controller11.channels.command_timeout.connect(lambda msg: stale_fired.append(msg))
 
-    if 0 in window11._cards:
+    if controller11.channels.controllers.get(0) is not None:
         stale_module.silent = True  # module stops answering - the next command never gets ack'd
         window11._cards[0].toggle.click()  # sends a command, starts its 2000ms pending timer
         pump(50)  # let the send go out, nowhere near the 2000ms timeout yet
@@ -462,25 +478,31 @@ def main():
     window12 = MainWindow(controller12)
     window12.show()
 
+    # Address 3 is one of the 16 pre-built slots (see ChannelManager), so
+    # finding it now comes through as channel_online, not channel_added -
+    # channel_added only fires for an address outside that range.
     controller12.channels.add_manual_channel("FAKE_ASK", 3)
-    wait_for(controller12.channels.channel_added, timeout_ms=3000)
-    check("manual ask found the address", 3 in controller12.channels.states)
+    wait_for(controller12.channels.channel_online, timeout_ms=3000)
+    check("manual ask found the address", controller12.channels.controllers.get(3) is not None)
     check("manual ask created a card", 3 in window12._cards)
 
-    if 3 in window12._cards:
+    if controller12.channels.controllers.get(3) is not None:
         window12._cards[3].disconnect_requested.emit(3)
         check("disconnect works the same after a manual ask", controller12.channels.controllers.get(3) is None)
 
         controller12.channels.add_manual_channel("FAKE_ASK", 3)
         wait_for(controller12.channels.channel_online, timeout_ms=3000)
         check("asking the same address again reuses its existing card", window12._cards[3].toggle.isEnabled())
-        check("still only 1 card, no duplicate", len(window12._cards) == 1)
+        check("still all 16 slots present, no duplicate cards", len(window12._cards) == MAX_CHANNELS)
 
     wrong_ask_fired = []
     controller12.channels.command_timeout.connect(lambda msg: wrong_ask_fired.append(msg))
     controller12.channels.add_manual_channel("FAKE_ASK", 7)  # nothing at this address
     wait_for(controller12.channels.command_timeout, timeout_ms=4000)
-    check("asking a wrong address fails cleanly, no phantom card", 7 not in window12._cards)
+    check(
+        "asking a wrong address fails cleanly, no phantom live channel",
+        controller12.channels.controllers.get(7) is None,
+    )
 
     controller12.shutdown()
     window12.close()
@@ -501,19 +523,22 @@ def main():
     window13.show()
 
     controller13.channels.add_manual_channel("FAKE_SHARE", 4)
-    wait_for(controller13.channels.channel_added, timeout_ms=3000)
-    check("first address found on the shared port", 4 in controller13.channels.states)
+    wait_for(controller13.channels.channel_online, timeout_ms=3000)
+    check("first address found on the shared port", controller13.channels.controllers.get(4) is not None)
 
     controller13.channels.add_manual_channel("FAKE_SHARE", 6)
-    wait_for(controller13.channels.channel_added, timeout_ms=3000)
-    check("second address found on the SAME port, without disconnecting the first", 6 in controller13.channels.states)
+    wait_for(controller13.channels.channel_online, timeout_ms=3000)
+    check(
+        "second address found on the SAME port, without disconnecting the first",
+        controller13.channels.controllers.get(6) is not None,
+    )
     check("both addresses stayed live at once", controller13.channels.controllers.get(4) is not None)
     check(
         "they really do share one physical connection",
         controller13.channels.connections[4] is controller13.channels.connections[6],
     )
 
-    if 4 in window13._cards and 6 in window13._cards:
+    if controller13.channels.controllers.get(4) is not None and controller13.channels.controllers.get(6) is not None:
         window13._cards[4].toggle.click()
         pump(200)
         check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
@@ -548,9 +573,9 @@ def main():
     window14.show()
     window14.rescan_btn.click()
     wait_for(controller14.channels.discovery_finished)
-    check("silent-off test channel discovered", 8 in window14._cards)
+    check("silent-off test channel discovered", controller14.channels.controllers.get(8) is not None)
 
-    if 8 in window14._cards:
+    if controller14.channels.controllers.get(8) is not None:
         window14._cards[8].toggle.click()
         pump(200)
         check("output turned on before going silent", silent_off_module.output_on)

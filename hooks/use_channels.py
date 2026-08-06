@@ -3,7 +3,6 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
-from state.level_map import LEVEL_TO_DB
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_discovery import DiscoveryController
@@ -39,8 +38,19 @@ class ChannelManager(QObject):
         super().__init__()
         self.config = config_service
         self.logger = logger
+        # All 16 possible channel slots exist from the moment the app
+        # starts, not just the ones a Scan has found - the UI shows all
+        # of them up front (empty/inactive until something answers),
+        # rather than building cards on the fly as they're discovered.
+        # controllers[address] staying None is the same "known but not
+        # currently connected" state already used for a channel that's
+        # gone offline - an unfound slot at startup and a since-
+        # disconnected one look and behave identically.
         self.states: dict[int, ChannelState] = {}
-        self.controllers: dict[int, ChannelController] = {}
+        self.controllers: dict[int, ChannelController | None] = {}
+        for address in range(MAX_CHANNELS):
+            self.states[address] = self._make_state(address)
+            self.controllers[address] = None
         self.connections: dict[int, ConnectionController] = {}
         self._claimed_ports: set[str] = set()
         self._address_port: dict[int, str] = {}
@@ -53,6 +63,13 @@ class ChannelManager(QObject):
         self._discovery.channel_found.connect(self._on_channel_found)
         self._discovery.progress.connect(self.discovery_progress.emit)
         self._discovery.finished.connect(self.discovery_finished.emit)
+
+    def _make_state(self, address: int) -> ChannelState:
+        state = ChannelState(address)
+        saved = self.config.get_channel(address)
+        if saved and "last_level" in saved:
+            state.data.last_level = saved["last_level"]
+        return state
 
     def start_discovery(self):
         self._discovery.start(exclude_ports=self._claimed_ports)
@@ -171,18 +188,20 @@ class ChannelManager(QObject):
 
         timer = QTimer(self)
         timer.setSingleShot(True)
-        attempts = {"count": 0}
+        attempts = {"count": 0, "raw_seen": False}
 
         def on_raw_rx(data: bytes):
             # Logged even when nothing parses into a valid frame - tells
             # "truly nothing came back" apart from "something came back
             # but wasn't a legal response," which otherwise look
             # identical from the outside as one generic timeout.
+            attempts["raw_seen"] = True
             if self.logger:
                 self.logger.info(f"Manual ask: raw bytes on {port}: {data.hex(' ').upper()}")
 
         def send_attempt():
             attempts["count"] += 1
+            attempts["raw_seen"] = False
             if self.logger:
                 self.logger.info(
                     f"Manual ask: address {address} on {port} "
@@ -200,6 +219,17 @@ class ChannelManager(QObject):
             self._on_channel_found(port, address, conn, frame)
 
         def on_timeout():
+            if self.logger:
+                if attempts["raw_seen"]:
+                    self.logger.info(
+                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
+                        f"bytes came back (see raw log above) but never formed a valid response."
+                    )
+                else:
+                    self.logger.info(
+                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
+                        f"zero bytes received, nothing came back at all."
+                    )
             if attempts["count"] < MANUAL_MAX_ATTEMPTS:
                 send_attempt()
                 return
@@ -243,21 +273,6 @@ class ChannelManager(QObject):
             if controller is not None:
                 controller.turn_output_off()
 
-    def set_all_level(self, level: int):
-        """Bulk action: set every currently-live channel to the same Level
-        (L0-L3) at once. One command per channel, no intermediate values -
-        the caller passes the final level directly, not a dragged range."""
-        db = LEVEL_TO_DB[level]
-        for address, controller in self.controllers.items():
-            if controller is None:
-                continue
-            if db is None:
-                controller.turn_output_off()
-            elif self.states[address].data.output_on:
-                controller.set_power(db)
-            else:
-                controller.resume_output(db)
-
     def shutdown(self):
         self._discovery.stop()
         # A shared port (two addresses asked on one connection) means
@@ -291,14 +306,15 @@ class ChannelManager(QObject):
 
         returning = address in self.states
         if returning:
-            # A known channel physically swapped back in - reuse its
-            # existing state (and card) rather than treating it as new.
+            # A known channel (one of the 16 pre-built slots, or one
+            # physically swapped back in) - reuse its existing state (and
+            # card) rather than treating it as new.
             state = self.states[address]
         else:
-            state = ChannelState(address)
-            saved = self.config.get_channel(address)
-            if saved and "last_level" in saved:
-                state.data.last_level = saved["last_level"]
+            # Only reachable for an address outside the 16 pre-built
+            # slots (e.g. a +Addr manual ask past MAX_CHANNELS) - those
+            # still get a card built on the fly.
+            state = self._make_state(address)
 
         controller = ChannelController(conn, state, self.logger)
         controller.command_timeout.connect(self.command_timeout.emit)

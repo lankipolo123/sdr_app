@@ -40,13 +40,6 @@ BANDWIDTH_CODES_REV = {v: k for k, v in BANDWIDTH_CODES.items()}
 
 BANDWIDTH_UNCONFIRMED = frozenset({300})
 
-POWER_CODES = {
-    0: 0x00,
-    -6: 0x01,
-    -12: 0x02,
-}
-POWER_CODES_REV = {v: k for k, v in POWER_CODES.items()}
-
 RESP_FAILED = 0x01
 RESP_SUCCESS = 0xFF
 

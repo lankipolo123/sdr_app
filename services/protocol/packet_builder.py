@@ -25,7 +25,7 @@ def build_output_switch(addr: int, on: bool) -> bytes:
 
 
 def build_signal_control(addr: int, mode: int, freq_mhz: int,
-                          bandwidth_mhz: int, power_db: int) -> bytes:
+                          bandwidth_mhz: int, power_code: int) -> bytes:
     if mode not in c.MODE_NAMES:
         raise ProtocolError(f"Unknown mode: {mode}")
     if not (c.FREQ_MIN_MHZ <= freq_mhz <= c.FREQ_MAX_MHZ):
@@ -35,13 +35,13 @@ def build_signal_control(addr: int, mode: int, freq_mhz: int,
         )
     if bandwidth_mhz not in c.BANDWIDTH_CODES:
         raise ProtocolError(f"Unsupported bandwidth: {bandwidth_mhz} MHz")
-    if power_db not in c.POWER_CODES:
-        raise ProtocolError(f"Unsupported power setting: {power_db} dB")
+    if not (0 <= power_code <= 0xFF):
+        raise ProtocolError(f"Power code out of range for a single byte: {power_code}")
 
     buf = bytes([mode]) \
         + struct.pack(">H", freq_mhz) \
         + bytes([c.BANDWIDTH_CODES[bandwidth_mhz]]) \
-        + bytes([c.POWER_CODES[power_db]])
+        + bytes([power_code])
     return _frame(c.TYPE_SIGNAL_CONTROL, addr, buf)
 
 

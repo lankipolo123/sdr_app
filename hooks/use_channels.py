@@ -2,6 +2,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
+from services.serial import brute_force_find_port
 from state.channel_state import ChannelState
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
@@ -293,6 +294,42 @@ class ChannelManager(QObject):
             self.command_timeout.emit(msg)
 
         QTimer.singleShot(duration_ms, finish)
+
+    def blind_send(self, address: int, on: bool):
+        """Direct, literal comparison against the reference VB tool's
+        button behavior: brute_force_find_port (COM1-16, first one that
+        opens) for the port, then write the raw Output ON/OFF frame
+        immediately with no query first and no response verification -
+        exactly what that tool's button does, nothing more. Diagnostic
+        only - doesn't touch states/controllers/_claimed_ports, this
+        isn't a real channel connection."""
+        port = brute_force_find_port()
+        if port is None:
+            self.command_timeout.emit("Blind send: no COM port (1-16) opened successfully.")
+            return
+
+        baud = self.config.get("baud_rate", 115200)
+        parity = self.config.get("parity", "N")
+        data_bits = self.config.get("data_bits", 8)
+        conn = ConnectionController()
+        if not conn.connect(port, baud, parity, data_bits):
+            self.command_timeout.emit(f"Blind send: failed to open {port}.")
+            return
+
+        label = "ON" if on else "OFF"
+        frame = commands.output_on(address) if on else commands.output_off(address)
+        if self.logger:
+            self.logger.info(f"Blind send: {label} to address {address} on {port}, no verification")
+        conn.send(frame)
+
+        def finish():
+            conn.disconnect()
+            self.command_timeout.emit(
+                f"Blind send: sent {label} to address {address} on {port} - "
+                f"no response check performed (see log for anything that came back)."
+            )
+
+        QTimer.singleShot(500, finish)
 
     def get_controller(self, address: int) -> ChannelController | None:
         return self.controllers[address]

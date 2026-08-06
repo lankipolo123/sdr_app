@@ -243,12 +243,11 @@ def main():
     window5 = MainWindow(controller5)
     window5.show()
     window5.rescan_btn.click()
-    # The dead port alone sweeps every fallback baud before giving up -
-    # SETTLE_DELAY_MS + STEP_TIMEOUT_MS per baud candidate (5 total:
-    # configured + FALLBACK_BAUDS) in hooks/use_discovery.py is already
-    # ~3750ms worst case, then the good port still needs its own round
-    # trip on top of that - 4000ms left almost no slack.
-    wait_for(controller5.channels.discovery_finished, timeout_ms=7000)
+    # The dead port alone now retries the primary baud PROBE_RETRY_ATTEMPTS
+    # times before sweeping the fallback bauds once each - (6 * 750ms) +
+    # (4 * 750ms) = ~7500ms worst case, then the good port still needs its
+    # own round trip on top of that - give it real headroom.
+    wait_for(controller5.channels.discovery_finished, timeout_ms=10000)
     check(
         "exactly one channel found (the live one)",
         sum(1 for c in controller5.channels.controllers.values() if c is not None) == 1,
@@ -376,7 +375,10 @@ def main():
     window7 = MainWindow(controller7)
     window7.show()
     window7.rescan_btn.click()
-    wait_for(controller7.channels.discovery_finished, timeout_ms=4000)
+    # Collision noise never resolves into a valid response, so this now
+    # exhausts every retry at the primary baud plus each fallback baud
+    # once - same ~7500ms worst case as the dead-port test, give headroom.
+    wait_for(controller7.channels.discovery_finished, timeout_ms=10000)
     check(
         "no phantom channel built from collision noise",
         all(c is None for c in controller7.channels.controllers.values()),

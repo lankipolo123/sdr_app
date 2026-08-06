@@ -23,6 +23,14 @@ SETTLE_DELAY_MS = 250
 # doesn't cost anything to try, no hardware/wiring change involved.
 FALLBACK_BAUDS = [57600, 38400, 19200, 9600]
 
+# Confirmed on real hardware: collision on a shared line is probabilistic,
+# not a hard 100% wall - a clean, fully valid response has come through on
+# a shared port, right alongside other attempts on the very same port/baud
+# that got nothing. Retrying the SAME port/baud several times before
+# cycling to a different (probably-wrong) baud gives more real chances to
+# catch a lucky exchange, since baud isn't the actual problem here.
+PROBE_RETRY_ATTEMPTS = 6
+
 
 class DiscoveryController(QObject):
     """Probes every available serial port one at a time - not addresses
@@ -64,6 +72,7 @@ class DiscoveryController(QObject):
         self._addr: int | None = None
         self._scanning = False
         self._raw_seen = False
+        self._probe_attempt = 0
 
         self._timer = QTimer()
         self._timer.setSingleShot(True)
@@ -76,6 +85,7 @@ class DiscoveryController(QObject):
         self._ports = available[: self.max_ports]
         self._index = 0
         self._baud_index = 0
+        self._probe_attempt = 0
         self._scanning = True
         self._probe_next()
 
@@ -87,7 +97,8 @@ class DiscoveryController(QObject):
         port = self._ports[self._index]
         baud = self._baud_candidates[self._baud_index]
         if self.logger:
-            self.logger.info(f"Discovery: probing port {port} at {baud} baud")
+            attempt_note = f" (attempt {self._probe_attempt + 1}/{PROBE_RETRY_ATTEMPTS})" if self._probe_attempt else ""
+            self.logger.info(f"Discovery: probing port {port} at {baud} baud{attempt_note}")
 
         conn = ConnectionController()
         if not conn.connect(port, baud, self.parity, self.data_bits):
@@ -172,7 +183,18 @@ class DiscoveryController(QObject):
             self._conn = None
         self._addr = None
 
-        if self._baud_index + 1 < len(self._baud_candidates):
+        # Retrying only applies at the primary configured baud (index 0) -
+        # that's the one with real evidence it works when it works, so
+        # retrying it is worth the time. The fallback bauds exist for a
+        # different problem (genuinely wrong baud), where retrying the
+        # same wrong baud repeatedly wouldn't help - multiplying retries
+        # across every fallback too would blow up worst-case scan time
+        # for a port with truly nothing on it, for no real benefit.
+        self._probe_attempt += 1
+        if self._baud_index == 0 and self._probe_attempt < PROBE_RETRY_ATTEMPTS:
+            self._probe_next()  # same port, same baud - try again
+        elif self._baud_index + 1 < len(self._baud_candidates):
+            self._probe_attempt = 0
             self._baud_index += 1
             self._probe_next()
         else:
@@ -181,6 +203,7 @@ class DiscoveryController(QObject):
     def _advance_port(self):
         self._index += 1
         self._baud_index = 0
+        self._probe_attempt = 0
         self._probe_next()
 
     def _finish(self):

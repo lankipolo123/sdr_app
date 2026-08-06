@@ -252,6 +252,48 @@ class ChannelManager(QObject):
         conn.frame_received.connect(on_frame)
         send_attempt()
 
+    def listen_raw(self, port: str, duration_ms: int = 3000):
+        """Diagnostic only - opens a port and passively listens for
+        duration_ms without sending anything at all, logging every raw
+        byte that shows up. Doesn't touch states/controllers/
+        _claimed_ports - this isn't a real channel connection, just a
+        listen-and-log probe. Point of this: on a shared line with two
+        modules always electrically present, does idle actually produce
+        continuous noise, or true silence with nothing sent? That's a
+        different question from what a query/response test can answer,
+        since every other path here always sends something first."""
+        baud = self.config.get("baud_rate", 115200)
+        parity = self.config.get("parity", "N")
+        data_bits = self.config.get("data_bits", 8)
+        conn = ConnectionController()
+        if not conn.connect(port, baud, parity, data_bits):
+            self.command_timeout.emit(f"Listen: failed to open {port}.")
+            return
+
+        captured = {"bytes": 0}
+
+        def on_raw_rx(data: bytes):
+            captured["bytes"] += len(data)
+            if self.logger:
+                self.logger.info(f"Listen: raw bytes on {port}: {data.hex(' ').upper()}")
+
+        conn.raw_rx.connect(on_raw_rx)
+        if self.logger:
+            self.logger.info(f"Listen: passively listening on {port} for {duration_ms}ms, sending nothing")
+
+        def finish():
+            conn.raw_rx.disconnect(on_raw_rx)
+            conn.disconnect()
+            msg = (
+                f"Listen: {captured['bytes']} byte(s) captured on {port} over "
+                f"{duration_ms}ms with nothing sent."
+            )
+            if self.logger:
+                self.logger.info(msg)
+            self.command_timeout.emit(msg)
+
+        QTimer.singleShot(duration_ms, finish)
+
     def get_controller(self, address: int) -> ChannelController | None:
         return self.controllers[address]
 

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton
+    QScrollArea, QPushButton, QInputDialog
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -85,6 +85,14 @@ class MainWindow(QMainWindow):
         self.manual_ask_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.manual_ask_btn.clicked.connect(self._on_manual_ask)
         status_row.addWidget(self.manual_ask_btn)
+        self.listen_btn = QPushButton("Listen")
+        self.listen_btn.setToolTip(
+            "Diagnostic: open a port and passively listen for 3s without sending "
+            "anything, to see if a shared line is truly silent at idle or noisy"
+        )
+        self.listen_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.listen_btn.clicked.connect(self._on_listen)
+        status_row.addWidget(self.listen_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -240,6 +248,19 @@ class MainWindow(QMainWindow):
     def _on_manual_ask(self):
         ports = ConnectionController.list_ports()
         ManualAddDialog.open(self, self.app.channels, ports)
+
+    def _on_listen(self):
+        ports = ConnectionController.list_ports()
+        if not ports:
+            self.status_label.setText("No ports available to listen on.")
+            return
+        port, ok = QInputDialog.getItem(
+            self, "Listen", "Port to passively listen on (nothing will be sent):", ports, editable=False,
+        )
+        if not ok:
+            return
+        self.status_label.setText(f"Listening on {port} for 3s (sending nothing)…")
+        self.app.channels.listen_raw(port)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

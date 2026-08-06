@@ -171,18 +171,20 @@ class ChannelManager(QObject):
 
         timer = QTimer(self)
         timer.setSingleShot(True)
-        attempts = {"count": 0}
+        attempts = {"count": 0, "raw_seen": False}
 
         def on_raw_rx(data: bytes):
             # Logged even when nothing parses into a valid frame - tells
             # "truly nothing came back" apart from "something came back
             # but wasn't a legal response," which otherwise look
             # identical from the outside as one generic timeout.
+            attempts["raw_seen"] = True
             if self.logger:
                 self.logger.info(f"Manual ask: raw bytes on {port}: {data.hex(' ').upper()}")
 
         def send_attempt():
             attempts["count"] += 1
+            attempts["raw_seen"] = False
             if self.logger:
                 self.logger.info(
                     f"Manual ask: address {address} on {port} "
@@ -200,6 +202,17 @@ class ChannelManager(QObject):
             self._on_channel_found(port, address, conn, frame)
 
         def on_timeout():
+            if self.logger:
+                if attempts["raw_seen"]:
+                    self.logger.info(
+                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
+                        f"bytes came back (see raw log above) but never formed a valid response."
+                    )
+                else:
+                    self.logger.info(
+                        f"Manual ask: attempt {attempts['count']} timed out on {port} - "
+                        f"zero bytes received, nothing came back at all."
+                    )
             if attempts["count"] < MANUAL_MAX_ATTEMPTS:
                 send_attempt()
                 return

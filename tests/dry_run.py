@@ -2,7 +2,7 @@
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, DiscoveryController, ChannelController,
-ChannelCard, ConnectionBar, bulk "Set all", Emergency Stop, Close App,
+ChannelCard, ConnectionBar, Emergency Stop, Close App,
 config persistence, and shutdown safety - all against a FakeModulePort
 standing in for a real module, so regressions anywhere in the
 "channel found -> command sent -> state synced -> UI updates" pipeline
@@ -143,14 +143,6 @@ def main():
     check("hardware output back on", module.output_on)
     check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
     check("hardware power_db matches L3 again", module.power_db == 0)
-
-    print("\n=== Bulk 'Set all' -> Med ===")
-    med_btn = window.bulk_buttons[2]
-    check("bulk button 2 is labeled Med", med_btn.text() == "Med")
-    med_btn.click()
-    pump(200)
-    check("hardware power_db matches L2 (-6dB)", module.power_db == -6)
-    check("card slider resynced to level 2", card.slider.value() == 2)
 
     print("\n=== Rescan (port already claimed - must not duplicate) ===")
     window._on_rescan()

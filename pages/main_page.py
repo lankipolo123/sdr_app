@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 
 from components import (
-    ConnectionBar, ChannelCard, ConfirmDialog, ManualAddDialog,
+    ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_connection import ConnectionController
@@ -19,8 +19,8 @@ from utils.logging_service import clear_log
 WARNING_DISPLAY_MS = 6000
 
 
-# Connection / Controls share this exact size so the top row reads as
-# equal panels, not mismatched widgets.
+# Connection / Controls / Emergency all share this exact size so the top
+# row reads as three equal panels, not mismatched widgets.
 TOP_CARD_SIZE = (320, 120)
 
 
@@ -101,6 +101,11 @@ class MainWindow(QMainWindow):
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
+
+        self.stop_btn = EmergencyStopButton(icon_size=28, font_size=16)
+        self.stop_btn.setFixedSize(*TOP_CARD_SIZE)
+        self.stop_btn.clicked.connect(self._on_emergency_stop)
+        top_row.addWidget(self.stop_btn, alignment=Qt.AlignTop)
 
         top_row.addStretch()
         outer.addLayout(top_row)
@@ -337,6 +342,18 @@ class MainWindow(QMainWindow):
         self.app.shutdown()
         event.accept()
 
+    def _on_emergency_stop(self):
+        confirmed = ConfirmDialog.ask(
+            self,
+            "Emergency Stop",
+            "Immediately turn off every channel's output?",
+            confirm_text="Turn Off",
+            cancel_text="Cancel",
+            danger=True,
+        )
+        if not confirmed:
+            return
+        self.app.channels.turn_off_all()
 
     def _on_close_app_clicked(self):
         confirmed = ConfirmDialog.ask(

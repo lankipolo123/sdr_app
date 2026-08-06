@@ -5,13 +5,13 @@ from styles.theme_colors import ACCENT_BLUE, BORDER_SUBTLE, NEUTRAL_TRACK
 
 
 class LevelSlider(QSlider):
-    """3 discrete positions (Min/Med/Max), not continuous - no Off
-    position, that's the toggle's job. Position -> hex power code
-    mapping lives in state/level_map.py."""
+    """4 discrete positions (L0-L3), not continuous. Position -> Power dB
+    mapping lives in state/level_map.py, reusing the existing protocol's
+    Power dropdown values."""
 
     def __init__(self, parent=None):
         super().__init__(Qt.Horizontal, parent)
-        self.setRange(1, 3)
+        self.setRange(0, 3)
         self.setSingleStep(1)
         self.setPageStep(1)
         self.setTickInterval(1)

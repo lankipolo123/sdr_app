@@ -2,7 +2,7 @@
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, DiscoveryController, ChannelController,
-ChannelCard, ConnectionBar, Close App,
+ChannelCard, ConnectionBar, Emergency Stop, Close App,
 config persistence, and shutdown safety - all against a FakeModulePort
 standing in for a real module, so regressions anywhere in the
 "channel found -> command sent -> state synced -> UI updates" pipeline
@@ -120,7 +120,7 @@ def main():
     check("card's display number matches its address (CH00, no +1 offset)", card.state.display_number == 0)
     check("initial state: output off (matches fake module default)", not module.output_on)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
-    check("initial state: slider at default resume level (1, Min) - no Off position", card.slider.value() == 1)
+    check("initial state: slider at 0 (Off)", card.slider.value() == 0)
 
     print("\n=== Toggle on (UI -> hardware) ===")
     card.toggle.click()
@@ -136,18 +136,17 @@ def main():
     check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
 
-    print("\n=== Toggle off (no Off position on the slider - toggle is the only way) ===")
-    card.toggle.click()
+    print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
+    card.slider.setValue(0)
     pump(200)
     check("hardware output turned off", not module.output_on)
-    check("toggle switched off", not card.toggle.isChecked())
-    check("slider still shows last level (3, Max) - it's not an Off indicator anymore", card.slider.value() == 3)
+    check("toggle reactively switched off", not card.toggle.isChecked())
 
-    print("\n=== Toggle back on (should resume to last level, L3) ===")
+    print("\n=== Toggle back on (should resume to last non-off level, L3) ===")
     card.toggle.click()
     pump(200)
     check("hardware output back on", module.output_on)
-    check("slider resumed to last level (3, Max)", card.slider.value() == 3)
+    check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
     check("hardware power_code matches L3 again", module.power_code == 0x00)
 
     print("\n=== Rescan (port already claimed - must not duplicate) ===")
@@ -158,6 +157,12 @@ def main():
         sum(1 for c in controller.channels.controllers.values() if c is not None) == 1,
     )
     check("still all 16 slots present, no duplicate cards", len(window._cards) == MAX_CHANNELS)
+
+    print("\n=== Emergency Stop ===")
+    window.stop_btn.click()
+    pump(200)
+    check("emergency stop turned hardware off", not module.output_on)
+    check("emergency stop reflected in UI (toggle unchecked)", not card.toggle.isChecked())
 
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")

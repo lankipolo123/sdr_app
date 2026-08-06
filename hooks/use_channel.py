@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
+from .use_connection import ConnectionController
 
 RESPONSE_TIMEOUT_MS = 800
 # Collision on a shared line is probabilistic, not a hard 100% wall -
@@ -18,16 +19,34 @@ RETRY_MAX_ATTEMPTS = 6
 
 
 class ChannelController(QObject):
-    """Handles commands + responses for one addressed channel, over its
-    own dedicated ConnectionController."""
+    """Handles commands + responses for one addressed channel. Each
+    command brute-force finds a port (COM1-16, first one that opens -
+    see services.serial.brute_force_find_port) and opens its own
+    connection fresh, rather than keeping one connection open
+    persistently for the whole time the channel is "online" - matches
+    the reference tool's own actual behavior (find the port, send, per
+    button press), and means the port is never held open between
+    commands, so other addresses on a shared adapter can use it too."""
 
     command_timeout = Signal(str)
 
-    def __init__(self, connection_controller, state: ChannelState, logger=None):
+    def __init__(self, state: ChannelState, baud: int = 115200, parity: str = "N",
+                 data_bits: int = 8, logger=None, preferred_port: str | None = None):
         super().__init__()
-        self.conn = connection_controller
         self.state = state
+        self.baud = baud
+        self.parity = parity
+        self.data_bits = data_bits
         self.logger = logger
+        # The port this channel was actually discovered on - tried first
+        # on every command before falling back to searching every other
+        # available port. Without this, "just grab whichever port opens
+        # first" would be wrong the moment more than one physical port
+        # is in play (e.g. two modules on two separate adapters) - it
+        # could send address 0's command out a port that only ever had
+        # address 1's module on it, which would simply never answer.
+        self.preferred_port = preferred_port
+        self._temp_conn: ConnectionController | None = None
         self._pending_timer: QTimer | None = None
         self._pending_label = None
         self._pending_state_update: dict | None = None
@@ -99,7 +118,7 @@ class ChannelController(QObject):
 
     def _enqueue(self, frame: bytes, label: str, state_update: dict | None = None):
         self._queue.append((frame, label, state_update))
-        if self._pending_timer is None:
+        if self._pending_timer is None and self._temp_conn is None:
             self._send_next()
 
     def _send_next(self):
@@ -107,7 +126,43 @@ class ChannelController(QObject):
             return
         frame, label, state_update = self._queue.popleft()
         self._pending_attempt = 0
+        self._open_and_send(frame, label, state_update)
+
+    def _open_and_send(self, frame: bytes, label: str, state_update: dict | None):
+        # Brute-force find a port fresh for this command - try every
+        # currently available port until one opens, same "just find one
+        # that works" spirit as the reference tool's button-press
+        # behavior, but through the app's own already-patchable port
+        # listing rather than a hardcoded COM1-16 guess (that hardcoded
+        # version lives in services.serial.brute_force_find_port and is
+        # still what the standalone diagnostic Query button uses, for a
+        # literal comparison against the reference tool). Reused across
+        # this command's own retries (not re-found every retry), closed
+        # once the command finishes (confirmed, rejected, or retries
+        # exhausted).
+        conn = self._find_and_open_connection()
+        if conn is None:
+            if self.logger:
+                self.logger.warning(f"TX ch{self.address} ({label}): no port opened successfully.")
+            self._pending_frame = frame
+            self._pending_label = label
+            self._pending_state_update = state_update
+            self._on_response_timeout()  # feeds the same retry/give-up logic as an unanswered send
+            return
+
+        self._temp_conn = conn
+        conn.frame_received.connect(self._on_frame_received)
         self._send(frame, label, state_update)
+
+    def _find_and_open_connection(self) -> ConnectionController | None:
+        ports = ConnectionController.list_ports()
+        if self.preferred_port in ports:
+            ports = [self.preferred_port] + [p for p in ports if p != self.preferred_port]
+        for port in ports:
+            conn = ConnectionController()
+            if conn.connect(port, self.baud, self.parity, self.data_bits):
+                return conn
+        return None
 
     def _send(self, frame: bytes, label: str, state_update: dict | None = None):
         # Deliberately does NOT call state.update() here - only a confirmed
@@ -118,8 +173,9 @@ class ChannelController(QObject):
             attempt_note = f" (attempt {self._pending_attempt + 1}/{RETRY_MAX_ATTEMPTS})" if self._pending_attempt else ""
             self.logger.info(f"TX ch{self.address} ({label}){attempt_note}: {frame.hex(' ').upper()}")
 
-        sent = self.conn.send(frame)
+        sent = self._temp_conn.send(frame)
         if not sent:
+            self._close_temp_conn()
             self._send_next()  # this one failed to even go out - move on rather than stall the queue
             return
 
@@ -131,24 +187,39 @@ class ChannelController(QObject):
         self._pending_timer.timeout.connect(self._on_response_timeout)
         self._pending_timer.start(RESPONSE_TIMEOUT_MS)
 
+    def _close_temp_conn(self):
+        if self._temp_conn is not None:
+            try:
+                self._temp_conn.frame_received.disconnect(self._on_frame_received)
+            except (TypeError, RuntimeError):
+                pass
+            self._temp_conn.disconnect()
+            self._temp_conn = None
+
+    def _on_frame_received(self, frame: ParsedFrame):
+        if frame.addr != self.address:
+            return  # not addressed to us - stray traffic, ignore
+        self.handle_frame(frame)
+
     def _cancel_pending_timeout(self):
         if self._pending_timer is not None:
             self._pending_timer.stop()
             self._pending_timer = None
-            self._pending_label = None
-            self._pending_state_update = None
-            self._pending_frame = None
-            self._pending_attempt = 0
+        self._pending_label = None
+        self._pending_state_update = None
+        self._pending_frame = None
+        self._pending_attempt = 0
 
     def cancel_pending(self):
-        """Call when this controller's connection is being torn down (e.g.
-        manual disconnect for a physical module swap) while a command may
+        """Call when this channel is being torn down (e.g. manual
+        disconnect for a physical module swap) while a command may
         still be in flight - without this, an already-running response
         timer keeps ticking on an object nothing else references anymore,
         and fires a misleading "no response" warning later, possibly
         after this same address is already back online under a fresh
         controller."""
         self._cancel_pending_timeout()
+        self._close_temp_conn()
         self._queue.clear()
 
     def _on_response_timeout(self):
@@ -160,7 +231,10 @@ class ChannelController(QObject):
             # giving up after one unlucky attempt.
             frame, label, state_update = self._pending_frame, self._pending_label, self._pending_state_update
             self._pending_timer = None
-            self._send(frame, label, state_update)
+            if self._temp_conn is not None and self._temp_conn.is_connected():
+                self._send(frame, label, state_update)
+            else:
+                self._open_and_send(frame, label, state_update)
             return
 
         label = self._pending_label
@@ -170,6 +244,7 @@ class ChannelController(QObject):
         self._pending_state_update = None
         self._pending_frame = None
         self._pending_attempt = 0
+        self._close_temp_conn()
 
         if state_update:
             # Confirmed on real hardware: an unacknowledged Output ON/OFF
@@ -200,10 +275,14 @@ class ChannelController(QObject):
         self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):
-        """Called by ChannelManager only for frames whose addr matches ours."""
+        """Called for any frame addressed to us - either from our own
+        temporary connection's response, or (during initial discovery
+        seeding) passed in directly before this controller manages its
+        own connections."""
         pending_update = self._pending_state_update
         pending_label = self._pending_label
         self._cancel_pending_timeout()
+        self._close_temp_conn()
         if self.logger:
             self.logger.info(f"RX ch{self.address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
 

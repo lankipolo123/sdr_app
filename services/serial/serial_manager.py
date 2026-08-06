@@ -19,6 +19,16 @@ BAUD_RATE = 115200
 # harmless on an adapter that doesn't need it.
 RTS_TURNAROUND_S = 0.005
 
+# Minimum gap enforced between ANY two writes, regardless of which
+# SerialManager instance or port sent them - module-level (not per-
+# instance) because two different channels' commands (e.g. address 1
+# then address 2) can come from two entirely separate SerialManager
+# objects that still end up on the same physical shared adapter. Gives
+# the line a moment to settle between transmissions instead of firing
+# back-to-back with zero gap.
+MIN_SEND_GAP_S = 0.2
+_last_write_time = 0.0
+
 PARITY_MAP = {
     "N": serial.PARITY_NONE,
     "O": serial.PARITY_ODD,
@@ -101,6 +111,12 @@ class SerialManager:
     def write(self, data: bytes):
         if not self.is_open():
             raise RuntimeError("Port not open")
+
+        global _last_write_time
+        elapsed = time.monotonic() - _last_write_time
+        if elapsed < MIN_SEND_GAP_S:
+            time.sleep(MIN_SEND_GAP_S - elapsed)
+
         # Classic manual half-duplex direction control, from the era
         # before adapters did this on their own: assert RTS only for the
         # duration of an actual transmission, drop it immediately after.
@@ -115,6 +131,7 @@ class SerialManager:
         self._port.write(data)
         self._port.flush()
         self._port.rts = False
+        _last_write_time = time.monotonic()
         _logger.info(f"SerialManager: RTS LOW on {port_name}, write complete")
 
     def read(self, size: int = 256) -> bytes:

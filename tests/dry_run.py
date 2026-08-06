@@ -543,8 +543,8 @@ def main():
     )
     check("both addresses stayed live at once", controller13.channels.controllers.get(4) is not None)
     check(
-        "they really do share one physical connection",
-        controller13.channels.connections[4] is controller13.channels.connections[6],
+        "both addresses are recognized as being on the same physical port",
+        controller13.channels._address_port[4] == controller13.channels._address_port[6],
     )
 
     if controller13.channels.controllers.get(4) is not None and controller13.channels.controllers.get(6) is not None:

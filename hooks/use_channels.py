@@ -38,8 +38,19 @@ class ChannelManager(QObject):
         super().__init__()
         self.config = config_service
         self.logger = logger
+        # All 16 possible channel slots exist from the moment the app
+        # starts, not just the ones a Scan has found - the UI shows all
+        # of them up front (empty/inactive until something answers),
+        # rather than building cards on the fly as they're discovered.
+        # controllers[address] staying None is the same "known but not
+        # currently connected" state already used for a channel that's
+        # gone offline - an unfound slot at startup and a since-
+        # disconnected one look and behave identically.
         self.states: dict[int, ChannelState] = {}
-        self.controllers: dict[int, ChannelController] = {}
+        self.controllers: dict[int, ChannelController | None] = {}
+        for address in range(MAX_CHANNELS):
+            self.states[address] = self._make_state(address)
+            self.controllers[address] = None
         self.connections: dict[int, ConnectionController] = {}
         self._claimed_ports: set[str] = set()
         self._address_port: dict[int, str] = {}
@@ -52,6 +63,13 @@ class ChannelManager(QObject):
         self._discovery.channel_found.connect(self._on_channel_found)
         self._discovery.progress.connect(self.discovery_progress.emit)
         self._discovery.finished.connect(self.discovery_finished.emit)
+
+    def _make_state(self, address: int) -> ChannelState:
+        state = ChannelState(address)
+        saved = self.config.get_channel(address)
+        if saved and "last_level" in saved:
+            state.data.last_level = saved["last_level"]
+        return state
 
     def start_discovery(self):
         self._discovery.start(exclude_ports=self._claimed_ports)
@@ -288,14 +306,15 @@ class ChannelManager(QObject):
 
         returning = address in self.states
         if returning:
-            # A known channel physically swapped back in - reuse its
-            # existing state (and card) rather than treating it as new.
+            # A known channel (one of the 16 pre-built slots, or one
+            # physically swapped back in) - reuse its existing state (and
+            # card) rather than treating it as new.
             state = self.states[address]
         else:
-            state = ChannelState(address)
-            saved = self.config.get_channel(address)
-            if saved and "last_level" in saved:
-                state.data.last_level = saved["last_level"]
+            # Only reachable for an address outside the 16 pre-built
+            # slots (e.g. a +Addr manual ask past MAX_CHANNELS) - those
+            # still get a card built on the fly.
+            state = self._make_state(address)
 
         controller = ChannelController(conn, state, self.logger)
         controller.command_timeout.connect(self.command_timeout.emit)

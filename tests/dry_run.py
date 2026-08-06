@@ -490,7 +490,7 @@ def main():
     # Address 3 is one of the 16 pre-built slots (see ChannelManager), so
     # finding it now comes through as channel_online, not channel_added -
     # channel_added only fires for an address outside that range.
-    controller12.channels.add_manual_channel("FAKE_ASK", 3)
+    controller12.channels.add_manual_channel(3)
     wait_for(controller12.channels.channel_online, timeout_ms=3000)
     check("manual ask found the address", controller12.channels.controllers.get(3) is not None)
     check("manual ask created a card", 3 in window12._cards)
@@ -499,14 +499,14 @@ def main():
         window12._cards[3].disconnect_requested.emit(3)
         check("disconnect works the same after a manual ask", controller12.channels.controllers.get(3) is None)
 
-        controller12.channels.add_manual_channel("FAKE_ASK", 3)
+        controller12.channels.add_manual_channel(3)
         wait_for(controller12.channels.channel_online, timeout_ms=3000)
         check("asking the same address again reuses its existing card", window12._cards[3].toggle.isEnabled())
         check("still all 16 slots present, no duplicate cards", len(window12._cards) == MAX_CHANNELS)
 
     wrong_ask_fired = []
     controller12.channels.command_timeout.connect(lambda msg: wrong_ask_fired.append(msg))
-    controller12.channels.add_manual_channel("FAKE_ASK", 7)  # nothing at this address
+    controller12.channels.add_manual_channel(7)  # nothing at this address
     wait_for(controller12.channels.command_timeout, timeout_ms=4000)
     check(
         "asking a wrong address fails cleanly, no phantom live channel",
@@ -531,11 +531,11 @@ def main():
     window13 = MainWindow(controller13)
     window13.show()
 
-    controller13.channels.add_manual_channel("FAKE_SHARE", 4)
+    controller13.channels.add_manual_channel(4)
     wait_for(controller13.channels.channel_online, timeout_ms=3000)
     check("first address found on the shared port", controller13.channels.controllers.get(4) is not None)
 
-    controller13.channels.add_manual_channel("FAKE_SHARE", 6)
+    controller13.channels.add_manual_channel(6)
     wait_for(controller13.channels.channel_online, timeout_ms=3000)
     check(
         "second address found on the SAME port, without disconnecting the first",

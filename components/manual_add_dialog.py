@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QSpinBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QColor, QPainter
@@ -14,14 +14,14 @@ _OVERLAY_COLOR = QColor(31, 41, 55, 90)
 
 
 class ManualAddDialog(QWidget):
-    """Ask one specific address directly on one specific port - skips
-    Scan's broadcast Address Query stage entirely. Stays open across
-    multiple attempts: type an address, hit Ask, see the result right
-    here, change the number, Ask again - switching between address 1
-    and address 2 on the same port doesn't mean reopening this each
-    time, only Close does that."""
+    """Ask one specific address directly - skips Scan's broadcast
+    Address Query stage entirely. Brute-force searches every available
+    port itself (same as clicking a channel card), no port to pick.
+    Stays open across multiple attempts: type an address, hit Ask, see
+    the result right here, change the number, Ask again - only Close
+    closes it."""
 
-    def __init__(self, parent, channels_manager, ports: list[str]):
+    def __init__(self, parent, channels_manager):
         top_level = parent.window() if parent is not None else None
         super().__init__(top_level)
         self.channels = channels_manager
@@ -55,21 +55,13 @@ class ManualAddDialog(QWidget):
         panel_layout.addWidget(title_label)
 
         message_label = QLabel(
-            "Sends straight to this one address, no broadcast. Stays open - "
-            "just change the address and ask again to try another."
+            "Sends straight to this one address, no broadcast - searches every "
+            "available port itself. Stays open - just change the address and "
+            "ask again to try another."
         )
         message_label.setWordWrap(True)
         message_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;")
         panel_layout.addWidget(message_label)
-
-        port_row = QHBoxLayout()
-        port_label = QLabel("Port")
-        port_label.setStyleSheet(f"color: {TEXT_DARK}; font-size: 13px; background: transparent;")
-        port_row.addWidget(port_label)
-        self.port_combo = QComboBox()
-        self.port_combo.addItems(ports)
-        port_row.addWidget(self.port_combo, 1)
-        panel_layout.addLayout(port_row)
 
         addr_row = QHBoxLayout()
         addr_label = QLabel("Address")
@@ -108,7 +100,6 @@ class ManualAddDialog(QWidget):
             f"QPushButton:hover {{ background: {ACCENT_BLUE_DARK}; }}"
             f"QPushButton:pressed {{ background: {ACCENT_BLUE_DARK}; }}"
         )
-        self.ask_btn.setEnabled(bool(ports))
         self.ask_btn.clicked.connect(self._on_ask)
         btn_row.addWidget(self.ask_btn)
 
@@ -131,12 +122,11 @@ class ManualAddDialog(QWidget):
         painter.fillRect(self.rect(), _OVERLAY_COLOR)
 
     def _on_ask(self):
-        port = self.port_combo.currentText()
         address = self.addr_spin.value()
         self._asking_address = address
-        self.status_label.setText(f"Asking address {address} on {port}…")
+        self.status_label.setText(f"Asking address {address}…")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;")
-        self.channels.add_manual_channel(port, address)
+        self.channels.add_manual_channel(address)
 
     def _on_found(self, address: int):
         if address != self._asking_address:
@@ -162,12 +152,12 @@ class ManualAddDialog(QWidget):
             self._loop.quit()
 
     @staticmethod
-    def open(parent, channels_manager, ports: list[str]):
+    def open(parent, channels_manager):
         """Blocks the caller until Close is clicked - the dialog itself
         stays interactive the whole time (Qt's event loop keeps running
         during exec()), so multiple Ask attempts happen without this
         static method returning in between."""
-        dialog = ManualAddDialog(parent, channels_manager, ports)
+        dialog = ManualAddDialog(parent, channels_manager)
         dialog.show()
         dialog.raise_()
         loop = QEventLoop()

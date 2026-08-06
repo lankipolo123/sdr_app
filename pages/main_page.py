@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog
+    QScrollArea, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -8,7 +8,6 @@ from components import (
     ConnectionBar, ChannelCard, EmergencyStopButton, ConfirmDialog, ManualAddDialog,
     TitleBar, ResizableContainer, make_card,
 )
-from hooks.use_connection import ConnectionController
 from hooks.use_channels import MAX_CHANNELS
 from styles.theme_colors import (
     TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
@@ -85,15 +84,6 @@ class MainWindow(QMainWindow):
         self.manual_ask_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.manual_ask_btn.clicked.connect(self._on_manual_ask)
         status_row.addWidget(self.manual_ask_btn)
-        self.brute_query_btn = QPushButton("Query")
-        self.brute_query_btn.setToolTip(
-            "Diagnostic: brute-force find a COM port (COM1-16, first one that opens), "
-            "send Output ON/OFF, and retry until a real confirmed response comes back "
-            "(or gives up) - same retry behavior as a normal channel command"
-        )
-        self.brute_query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        self.brute_query_btn.clicked.connect(self._on_brute_query)
-        status_row.addWidget(self.brute_query_btn)
         self.rescan_btn = QPushButton("Scan")
         self.rescan_btn.setToolTip("Scan for connected channels")
         self.rescan_btn.clicked.connect(self._on_rescan)
@@ -247,18 +237,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Log cleared.")
 
     def _on_manual_ask(self):
-        ports = ConnectionController.list_ports()
-        ManualAddDialog.open(self, self.app.channels, ports)
-
-    def _on_brute_query(self):
-        address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
-        if not ok:
-            return
-        choice, ok = QInputDialog.getItem(self, "Query", "Output:", ["ON", "OFF"], editable=False)
-        if not ok:
-            return
-        self.status_label.setText(f"Querying {choice} to address {address}…")
-        self.app.channels.brute_force_query(address, on=(choice == "ON"))
+        ManualAddDialog.open(self, self.app.channels)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)

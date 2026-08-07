@@ -162,22 +162,12 @@ class ChannelController(QObject):
         self._send(frame, label, state_update)
 
     def _find_and_open_connection(self) -> ConnectionController | None:
-        # Retry-with-sleep on open() is only worth paying for a port we
-        # already have real reason to trust (self.preferred_port, learned
-        # below from the last command that actually worked) - a genuinely
-        # wrong/absent candidate port fails immediately regardless, so
-        # sweeping the rest with retry=False keeps a blind command from
-        # blocking the GUI thread for a multi-second stretch (3 retries x
-        # a sleep each, per wrong port) on every single click.
         ports = ConnectionController.list_ports()
         if self.preferred_port in ports:
-            conn = ConnectionController()
-            if conn.connect(self.preferred_port, self.baud, self.parity, self.data_bits, retry=True):
-                return conn
-            ports = [p for p in ports if p != self.preferred_port]
+            ports = [self.preferred_port] + [p for p in ports if p != self.preferred_port]
         for port in ports:
             conn = ConnectionController()
-            if conn.connect(port, self.baud, self.parity, self.data_bits, retry=False):
+            if conn.connect(port, self.baud, self.parity, self.data_bits):
                 self.preferred_port = port
                 return conn
         return None

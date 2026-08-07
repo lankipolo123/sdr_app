@@ -128,15 +128,6 @@ class ChannelManager(QObject):
                 return
             port = ports[state["port_index"]]
             conn = ConnectionController()
-            # retry=True (the default) - unlike ChannelController's blind
-            # sweep, a failed connect() here is fatal for this whole
-            # Query call (try_next_port only moves on to another port,
-            # it never re-tries this same one) - Query has no other
-            # fallback, so it needs the transient-port-busy protection
-            # (reopening a port that was JUST closed, e.g. by the last
-            # Query attempt or a card's blind send moments ago - very
-            # much the common case on a single shared adapter) more than
-            # it needs to save time skipping a genuinely wrong port.
             if not conn.connect(port, baud, parity, data_bits):
                 if self.logger:
                     self.logger.info(f"Query: failed to open {port}, trying next port.")

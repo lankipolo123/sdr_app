@@ -72,11 +72,16 @@ def main():
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
+    from components.channel_card import SLIDER_SEND_DEBOUNCE_MS
     from services.protocol import constants as c
     from services.protocol.packet_parser import ParsedFrame
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
+    # Slider sends are now debounced (see channel_card.py) - any test that
+    # drags the slider and expects the resulting command to have already
+    # gone out needs to wait out the debounce window first.
+    SLIDER_SETTLE_MS = SLIDER_SEND_DEBOUNCE_MS + 100
 
     # Route confirm dialogs straight to "confirmed" - a real modal exec()
     # loop would just hang forever with nothing to click it.
@@ -159,7 +164,7 @@ def main():
 
     print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
-    pump(300)
+    pump(SLIDER_SETTLE_MS + 300)
     check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
     check("guessed mode used (no real baseline exists)", module.mode == c.BLIND_DEFAULT_MODE)
@@ -170,7 +175,7 @@ def main():
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
     card.slider.setValue(0)
-    pump(300)
+    pump(SLIDER_SETTLE_MS + 300)
     check("hardware output turned off", not module.output_on)
     check("toggle reactively switched off", not card.toggle.isChecked())
 
@@ -318,7 +323,7 @@ def main():
     resume_module.reject_next = True
     window16._cards[0].arm()
     window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands
-    pump(400)  # both commands round-trip well under this on fake hardware
+    pump(SLIDER_SETTLE_MS + 400)  # both commands round-trip well under this on fake hardware
     check(
         "output stays off - the Signal Control success must not override the Output ON rejection",
         not resume_module.output_on,

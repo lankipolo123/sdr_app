@@ -169,6 +169,11 @@ def main():
     check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
     check("ON alone never touches power_code - still the fake module's untouched default", module.power_code == 0x00)
     check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not messages)
+    check(
+        "the TX/RX log actually populated - raw_tx/raw_rx used to be dead signals, never emitted",
+        window.log_list.count() >= 2,  # at least one TX line and one RX line for this command
+    )
+    check("the log's most recent line is CH01's confirmed ack, not stale/wrong-channel data", "CH01" in window.log_list.item(window.log_list.count() - 1).text())
 
     print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
@@ -531,6 +536,10 @@ def main():
     pump(300)
     check("query confirmed a real response", any("confirmed" in m for m in query_results))
     check("query actually turned the module on", query_module.output_on)
+    check(
+        "Query's own traffic shows in the log too, not just cards'",
+        window17.log_list.count() >= 2,
+    )
     check(
         "card 9's toggle stayed put - a standalone query doesn't touch it",
         not window17._cards[9].toggle.isChecked(),

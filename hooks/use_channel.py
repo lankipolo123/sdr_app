@@ -30,6 +30,8 @@ class ChannelController(QObject):
 
     command_timeout = Signal(str)
     busy_changed = Signal(bool)  # True while a command is queued/in-flight - lets the UI show "sending"
+    raw_tx = Signal(bytes)  # forwarded from whichever temp ConnectionController is currently in use
+    raw_rx = Signal(bytes)
 
     def __init__(self, state: ChannelState, baud: int = 115200, parity: str = "N",
                  data_bits: int = 8, logger=None, preferred_port: str | None = None,
@@ -251,6 +253,8 @@ class ChannelController(QObject):
 
         self._temp_conn = conn
         conn.frame_received.connect(self._on_frame_received)
+        conn.raw_tx.connect(self.raw_tx.emit)
+        conn.raw_rx.connect(self.raw_rx.emit)
         self._send(frame, label, state_update)
 
     def _find_and_open_connection(self) -> ConnectionController | None:
@@ -289,10 +293,21 @@ class ChannelController(QObject):
 
     def _close_temp_conn(self):
         if self._temp_conn is not None:
-            try:
-                self._temp_conn.frame_received.disconnect(self._on_frame_received)
-            except (TypeError, RuntimeError):
-                pass
+            # ConnectionController defines its own disconnect() (closes
+            # the port) which shadows QObject's signal-disconnecting one
+            # - it doesn't touch these connections at all, so each has to
+            # be torn down explicitly or the temp connection being
+            # garbage-collected is the only thing that would eventually
+            # clean them up.
+            for signal, slot in (
+                (self._temp_conn.frame_received, self._on_frame_received),
+                (self._temp_conn.raw_tx, self.raw_tx.emit),
+                (self._temp_conn.raw_rx, self.raw_rx.emit),
+            ):
+                try:
+                    signal.disconnect(slot)
+                except (TypeError, RuntimeError):
+                    pass
             self._temp_conn.disconnect()
             self._temp_conn = None
 

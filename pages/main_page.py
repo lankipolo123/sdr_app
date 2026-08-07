@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog, QApplication
+    QScrollArea, QPushButton, QInputDialog, QApplication, QListWidget
 )
 from PySide6.QtCore import Qt, QEvent
 
@@ -13,6 +13,8 @@ from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLU
 from utils.logging_service import clear_log
 
 TOP_CARD_SIZE = (320, 120)
+LOG_CARD_HEIGHT = 120  # matches TOP_CARD_SIZE's height, sits at the same row
+LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 
 
 class MainWindow(QMainWindow):
@@ -25,7 +27,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.app = app_controller
         self.setWindowTitle("SDR App")
-        self.resize(900, 640)
+        self.resize(1200, 720)
+        # Room for at least 4 channel card columns (ChannelCard.WIDTH=220
+        # + spacing) plus the Controls/Logs row side by side without
+        # everything cramming into 1-2 columns - _reflow_grid() still
+        # adds more columns as the window grows past this.
+        self.setMinimumSize(1100, 650)
         # No native OS title bar - a custom one (styled to match the rest
         # of the app) replaces it entirely; see components/window_chrome.py
         # for the drag-to-move logic that replicates.
@@ -86,7 +93,21 @@ class MainWindow(QMainWindow):
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
 
-        top_row.addStretch()
+        # Live TX/RX byte log, right beside Controls - every real write
+        # and every real read, across every card AND Query, land here
+        # (see ChannelManager.raw_tx/raw_rx). Replaces the single
+        # last-value labels that used to sit in the bottom bar - those
+        # were wired to signals that ChannelManager never actually
+        # emitted, so they never updated at all.
+        logs_card = make_card("Logs", icon="fa5s.list")
+        logs_card.setFixedHeight(LOG_CARD_HEIGHT)
+        self.log_list = QListWidget()
+        self.log_list.setStyleSheet(
+            f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
+        )
+        logs_card.body_layout.addWidget(self.log_list)
+        top_row.addWidget(logs_card, 1, alignment=Qt.AlignTop)
+
         outer.addLayout(top_row)
 
         channels_label = QLabel("Channels")
@@ -124,29 +145,23 @@ class MainWindow(QMainWindow):
         # border-top short of the actual window edges instead of letting
         # it span edge to edge like the title bar's own separator does.
         # Its own row supplies matching left/right padding instead, so
-        # the text still lines up visually with the cards above it.
-        txrx_bar = QWidget()
-        txrx_bar.setAttribute(Qt.WA_StyledBackground, True)
-        txrx_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
-        txrx_row = QHBoxLayout(txrx_bar)
-        txrx_row.setContentsMargins(16, 8, 16, 8)
-        txrx_row.setSpacing(16)
-
-        # Left group: TX + RX, side by side.
-        self.tx_value_label = QLabel("TX : --")
-        self.rx_value_label = QLabel("RX : --")
-        for lbl in (self.tx_value_label, self.rx_value_label):
-            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: 600; font-size: 12px; border: none;")
-        txrx_row.addWidget(self.tx_value_label)
-        txrx_row.addWidget(self.rx_value_label)
-
-        txrx_row.addStretch()
+        # the button still lines up visually with the cards above it.
+        bottom_bar = QWidget()
+        bottom_bar.setAttribute(Qt.WA_StyledBackground, True)
+        bottom_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
+        bottom_row = QHBoxLayout(bottom_bar)
+        bottom_row.setContentsMargins(16, 8, 16, 8)
+        bottom_row.setSpacing(16)
+        bottom_row.addStretch()
 
         # Background/text match the app icon's own colors exactly (NAVY
         # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
         # against the actual icon pixels).
         self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.setToolTip("Erase the app's log file (logs/sdr_controller.log)")
+        self.clear_log_btn.setToolTip(
+            "Erase the app's log file (logs/sdr_controller.log) and the "
+            "TX/RX list above"
+        )
         self.clear_log_btn.setCursor(Qt.PointingHandCursor)
         self.clear_log_btn.setStyleSheet(
             f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
@@ -154,9 +169,9 @@ class MainWindow(QMainWindow):
             f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
         )
         self.clear_log_btn.clicked.connect(self._on_clear_log)
-        txrx_row.addWidget(self.clear_log_btn)
+        bottom_row.addWidget(self.clear_log_btn)
 
-        root.addWidget(txrx_bar)
+        root.addWidget(bottom_bar)
 
         self.setCentralWidget(central)
 
@@ -205,13 +220,22 @@ class MainWindow(QMainWindow):
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
+        self.log_list.clear()
         self.status_label.setText("Log cleared.")
 
     def _on_raw_tx(self, address: int, data: bytes):
-        self.tx_value_label.setText(f"TX : CH{address:02d} {data.hex(' ').upper()}")
+        # address is already the wire address (1-16, matches the CH
+        # number on screen) - see ChannelManager.raw_tx.
+        self._append_log(f"TX CH{address:02d}: {data.hex(' ').upper()}")
 
     def _on_raw_rx(self, address: int, data: bytes):
-        self.rx_value_label.setText(f"RX : CH{address:02d} {data.hex(' ').upper()}")
+        self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")
+
+    def _append_log(self, line: str):
+        self.log_list.addItem(line)
+        while self.log_list.count() > LOG_MAX_ENTRIES:
+            self.log_list.takeItem(0)
+        self.log_list.scrollToBottom()
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

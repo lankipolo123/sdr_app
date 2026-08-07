@@ -72,6 +72,11 @@ class ChannelManager(QObject):
                 state, baud, parity, data_bits, self.logger, port_scheduler=self.port_scheduler,
             )
             controller.command_timeout.connect(self.command_timeout.emit)
+            # wire_address (not the raw 0-based address) so this matches
+            # the CH number everywhere else a controller identifies
+            # itself - see ChannelController.wire_address.
+            controller.raw_tx.connect(lambda data, ctrl=controller: self.raw_tx.emit(ctrl.wire_address, data))
+            controller.raw_rx.connect(lambda data, ctrl=controller: self.raw_rx.emit(ctrl.wire_address, data))
             self.states[address] = state
             self.controllers[address] = controller
 
@@ -133,15 +138,20 @@ class ChannelManager(QObject):
             if conn is None:
                 return
             conn.frame_received.disconnect(on_frame)
+            conn.raw_tx.disconnect(on_raw_tx)
             conn.raw_rx.disconnect(on_raw_rx)
             conn.disconnect()
             state["conn"] = None
+
+        def on_raw_tx(data: bytes):
+            self.raw_tx.emit(address, data)
 
         def on_raw_rx(data: bytes):
             state["raw_seen"] = True
             port = ports[state["port_index"]]
             if self.logger:
                 self.logger.info(f"Query: raw bytes on {port}: {data.hex(' ').upper()}")
+            self.raw_rx.emit(address, data)
 
         def on_frame(response: ParsedFrame):
             if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != address:
@@ -176,6 +186,7 @@ class ChannelManager(QObject):
                 advance_port()
                 return
             state["conn"] = conn
+            conn.raw_tx.connect(on_raw_tx)
             conn.raw_rx.connect(on_raw_rx)
             conn.frame_received.connect(on_frame)
             send_attempt()

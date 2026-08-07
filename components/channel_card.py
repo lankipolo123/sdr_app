@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QHBoxLayout, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 from .card import Card
 from .power_button import PowerButton
@@ -32,7 +32,10 @@ class ChannelCard(Card):
     drag/tap (e.g. a scroll gesture that catches a slider handle) firing
     a real command to hardware that's already unpredictable enough on a
     shared, collision-prone line - a genuine send should only ever
-    follow a deliberate interaction with that specific card.
+    follow a deliberate interaction with that specific card. Only one
+    card is ever armed at a time - MainWindow listens for the `armed`
+    signal and locks whichever card was previously armed back down, so
+    arming CH02 doesn't leave CH01 sitting there still enabled too.
 
     Bidirectional reactive sync (toggle <-> slider <-> real hardware
     state), reusing the exact blockSignals() pattern from the old app's
@@ -42,6 +45,8 @@ class ChannelCard(Card):
     """
 
     WIDTH = 220  # exposed so the grid that lays these out can size columns to match
+
+    armed = Signal()  # this card just became the armed one - MainWindow locks any other back down
 
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
@@ -102,10 +107,11 @@ class ChannelCard(Card):
         super().mousePressEvent(event)
 
     def arm(self):
-        """Unlocks this card's slider/ON/OFF buttons. Normally triggered
-        by tapping the card (see mousePressEvent); exposed as a public
-        method too since a real click is the only other way to reach it,
-        which tests (and any future 'select all' style feature) need a
+        """Unlocks this card's slider/ON/OFF buttons and emits `armed` so
+        MainWindow can lock any other card back down - only one card is
+        ever armed at once. Normally triggered by tapping the card (see
+        mousePressEvent); exposed as a public method too since a real
+        click is the only other way to reach it, which tests need a
         direct way to trigger."""
         if self._armed:
             return
@@ -115,6 +121,20 @@ class ChannelCard(Card):
         self.arm_hint.setVisible(False)
         self.setStyleSheet(
             f"#Card {{ background: #FFFFFF; border: 2px solid {ACCENT_BLUE}; border-radius: 10px; }}"
+        )
+        self.armed.emit()
+
+    def disarm(self):
+        """Locks this card back down - called on whichever card was
+        previously armed when a different card gets tapped."""
+        if not self._armed:
+            return
+        self._armed = False
+        self.slider.setEnabled(False)
+        self.toggle.setEnabled(False)
+        self.arm_hint.setVisible(True)
+        self.setStyleSheet(
+            f"#Card {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
     # --- user-driven changes -------------------------------------------------

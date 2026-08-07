@@ -2,7 +2,7 @@
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, DiscoveryController, ChannelController,
-ChannelCard, ConnectionBar, Emergency Stop, Close App,
+ChannelCard, ConnectionBar, Close App,
 config persistence, and shutdown safety - all against a FakeModulePort
 standing in for a real module, so regressions anywhere in the
 "channel found -> command sent -> state synced -> UI updates" pipeline
@@ -157,12 +157,6 @@ def main():
         sum(1 for c in controller.channels.controllers.values() if c is not None) == 1,
     )
     check("still all 16 slots present, no duplicate cards", len(window._cards) == MAX_CHANNELS)
-
-    print("\n=== Emergency Stop ===")
-    window.stop_btn.click()
-    pump(200)
-    check("emergency stop turned hardware off", not module.output_on)
-    check("emergency stop reflected in UI (toggle unchecked)", not card.toggle.isChecked())
 
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")

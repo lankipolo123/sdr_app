@@ -3,7 +3,6 @@ import time
 
 import serial
 import serial.tools.list_ports
-from PySide6.QtCore import QCoreApplication
 
 # Same named logger the rest of the app uses (setup_logger in
 # utils/logging_service.py) - logging.getLogger() with the same name
@@ -30,26 +29,15 @@ RTS_TURNAROUND_S = 0.005
 MIN_SEND_GAP_S = 0.2
 _last_write_time = 0.0
 
-# Slice size for waiting out the write gap below - same technique as
-# SerialThread.stop_reading() uses for its own wait.
-_WRITE_GAP_POLL_S = 0.02
-
-
-def _sleep_responsive(seconds: float):
-    # write() runs on the GUI thread (there's no background write
-    # thread - see SerialThread, which only handles reads), so one long
-    # blocking time.sleep() here froze the whole UI - clicks, repaints,
-    # everything - for up to MIN_SEND_GAP_S on every single command.
-    # Waiting in short slices with processEvents() between each one
-    # gets the exact same total real-world wait (the hardware still
-    # sees the same gap between writes), just without freezing the app
-    # while it happens.
-    remaining = seconds
-    while remaining > 0:
-        slice_s = min(remaining, _WRITE_GAP_POLL_S)
-        time.sleep(slice_s)
-        QCoreApplication.processEvents()
-        remaining -= slice_s
+# Tried making this wait "responsive" with QCoreApplication.processEvents()
+# in short slices (same technique SerialThread.stop_reading() uses) so
+# the UI wouldn't freeze during the gap - but write() runs synchronously
+# inside a button click's own call stack (ChannelController's send state
+# machine isn't written to tolerate being re-entered mid-update), and
+# reentering the event loop from there broke cards sending at all while
+# Query (a separate, simpler closure) kept working. Reverted to a plain
+# blocking sleep - a real UI freeze during the gap, but correct, and the
+# freeze is bounded to MIN_SEND_GAP_S per write.
 
 PARITY_MAP = {
     "N": serial.PARITY_NONE,
@@ -114,7 +102,7 @@ class SerialManager:
         global _last_write_time
         elapsed = time.monotonic() - _last_write_time
         if elapsed < MIN_SEND_GAP_S:
-            _sleep_responsive(MIN_SEND_GAP_S - elapsed)
+            time.sleep(MIN_SEND_GAP_S - elapsed)
 
         # Classic manual half-duplex direction control, from the era
         # before adapters did this on their own: assert RTS only for the

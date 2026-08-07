@@ -113,23 +113,24 @@ def main():
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
     check("no baseline yet - nothing has ever queried status", controller.channels.states[0].data.mode is None)
 
-    print("\n=== Toggle on (blind send -> hardware, guessed defaults since there's no baseline) ===")
+    print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
     pump(300)
     check("hardware output turned on", module.output_on)
     check("toggle stayed checked", card.toggle.isChecked())
-    check("slider resumed to default level 1 (Min)", card.slider.value() == 1)
-    check("hardware power_code matches L1 (0x02)", module.power_code == 0x02)
-    check("guessed mode used (no real baseline exists)", module.mode == c.BLIND_DEFAULT_MODE)
-    check("guessed frequency used", module.freq_mhz == c.BLIND_DEFAULT_FREQ_MHZ)
-    check("guessed bandwidth used", module.bandwidth_mhz == c.BLIND_DEFAULT_BANDWIDTH_MHZ)
-    check("guessed-defaults send surfaced a warning", window.warning_label.isVisible())
+    check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
+    check("ON alone never touches power_code - still the fake module's untouched default", module.power_code == 0x00)
+    check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not window.warning_label.isVisible())
 
-    print("\n=== Drag slider to Max (UI -> hardware) ===")
+    print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
     pump(300)
     check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
+    check("guessed mode used (no real baseline exists)", module.mode == c.BLIND_DEFAULT_MODE)
+    check("guessed frequency used", module.freq_mhz == c.BLIND_DEFAULT_FREQ_MHZ)
+    check("guessed bandwidth used", module.bandwidth_mhz == c.BLIND_DEFAULT_BANDWIDTH_MHZ)
+    check("guessed-defaults send surfaced a warning", window.warning_label.isVisible())
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
     card.slider.setValue(0)
@@ -137,12 +138,12 @@ def main():
     check("hardware output turned off", not module.output_on)
     check("toggle reactively switched off", not card.toggle.isChecked())
 
-    print("\n=== Toggle back on (should resume to last non-off level, L3) ===")
-    card.toggle.click()
+    print("\n=== OFF button turned it off - power_code stays whatever the slider last set it to ===")
+    card.toggle.click()  # off -> on again: still just a single Output ON command
     pump(300)
     check("hardware output back on", module.output_on)
-    check("slider resumed to last non-off level (3, Max)", card.slider.value() == 3)
-    check("hardware power_code matches L3 again", module.power_code == 0x00)
+    check("slider visually resumed to last non-off level (3, Max) - UI-only", card.slider.value() == 3)
+    check("power_code untouched by ON alone - unchanged from the slider's last real send", module.power_code == 0x00)
 
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")
@@ -167,10 +168,13 @@ def main():
         "restored last_level from config, not the hard-coded default",
         controller2.channels.states[0].data.last_level == last_level_before_shutdown,
     )
-    window2._cards[0].toggle.click()  # off -> on: resumes to the restored last_level (3, Max)
+    window2._cards[0].toggle.click()  # off -> on: single Output ON command, same as always
     pump(300)
-    check("second run's blind toggle still reaches the same physical hardware", module.output_on)
-    check("resumed to the level restored from config (L3 / max)", module.power_code == 0x00)
+    check("second run's ON click still reaches the same physical hardware", module.output_on)
+    check(
+        "power_code carries over from the module's last real Signal Control - ON alone doesn't touch it",
+        module.power_code == 0x00,
+    )
     controller2.shutdown()
     window2.close()
     pump(50)
@@ -223,12 +227,10 @@ def main():
     print("(different from a timeout - the device DID respond, just said no)")
     # There's no discovery to seed the card's starting state from real
     # hardware anymore, so every card always starts unchecked (off).
-    # Turn it on first (a normal resume_output(), succeeds), THEN start
-    # rejecting - clicking it off from there sends exactly one command
+    # Turn it on first (a normal single-command ON, succeeds), THEN
+    # start rejecting - clicking OFF from there is also a single command
     # (turn_output_off), isolating the single-command rejection path
-    # cleanly (clicking on-from-off instead would go through
-    # resume_output()'s two-command sequence and reject_next only
-    # rejects the first of the two).
+    # cleanly.
     reject_module = FakeModulePort(address=0)
     registry_reject = FakePortRegistry()
     registry_reject.add("FAKE_REJECT", reject_module)
@@ -236,7 +238,7 @@ def main():
     controller15 = make_app_controller()
     window15 = MainWindow(controller15)
     window15.show()
-    window15._cards[0].toggle.click()  # off -> on: resume_output(), succeeds normally
+    window15._cards[0].toggle.click()  # off -> on: single Output ON command, succeeds normally
     pump(300)
     check("turned on normally first", window15._cards[0].toggle.isChecked())
     check("hardware really turned on", reject_module.output_on)
@@ -255,6 +257,9 @@ def main():
 
     print("\n=== resume_output(): if Output ON is rejected, Signal Control")
     print("    succeeding right after must NOT flip output_on back to True ===")
+    print("(the ON button itself only ever sends a single Output ON command now -")
+    print(" resume_output()'s two-command sequence is only reachable through the")
+    print(" slider, when it's dragged to a level while output is currently off)")
     resume_module = FakeModulePort(address=0, output_on=False)
     registry_resume = FakePortRegistry()
     registry_resume.add("FAKE_RESUME", resume_module)
@@ -268,7 +273,7 @@ def main():
     # second command in the resume_output() sequence) goes through
     # normally right after, since reject_next resets itself.
     resume_module.reject_next = True
-    window16._cards[0].toggle.click()  # off -> on: resume_output(), 2 commands
+    window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands
     pump(400)  # both commands round-trip well under this on fake hardware
     check(
         "output stays off - the Signal Control success must not override the Output ON rejection",

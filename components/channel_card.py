@@ -9,11 +9,11 @@ from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABE
 
 
 class ChannelCard(Card):
-    """One hardware channel's controls: a Power button ('Activate' /
-    'Power Off', labeled by the action it performs) + a 4-position
-    Level slider (L0-L3), with plain L0/L1/L2/L3 text labels under the
-    slider marking each position - not buttons, just labels, the active
-    one highlighted.
+    """One hardware channel's controls: explicit ON/OFF buttons (each
+    sends exactly one command, same simplicity as the standalone Query
+    diagnostic - see PowerButton) + a 4-position Level slider (L0-L3),
+    with plain L0/L1/L2/L3 text labels under the slider marking each
+    position - not buttons, just labels, the active one highlighted.
 
     No Mode/Frequency/Bandwidth shown anywhere - the customer never sees
     that data, only Power. No Module Address shown either - the customer
@@ -76,12 +76,18 @@ class ChannelCard(Card):
     # --- user-driven changes -------------------------------------------------
 
     def _on_toggle(self, checked: bool):
+        # Exactly one command, same simplicity as the standalone Query
+        # diagnostic's ON/OFF - no bundled Signal Control/guessed
+        # defaults riding along with it (see PowerButton).
+        if checked:
+            self.controller.turn_output_on()
+        else:
+            self.controller.turn_output_off()
         target_level = self.state.data.last_level if checked else 0
         self.slider.blockSignals(True)
         self.slider.setValue(target_level)
         self.slider.blockSignals(False)
         self._update_status(target_level)
-        self._send_level(target_level)
 
     def _on_slider(self, value: int):
         if value > 0:

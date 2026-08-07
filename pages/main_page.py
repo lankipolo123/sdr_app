@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 
 from components import (
-    ConnectionBar, ChannelCard, ConfirmDialog, ManualAddDialog,
+    ChannelCard, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_channels import MAX_CHANNELS
@@ -18,15 +18,14 @@ from utils.logging_service import clear_log
 WARNING_DISPLAY_MS = 6000
 
 
-# Connection / Controls share this exact size so the top row reads as
-# equal panels, not mismatched widgets.
 TOP_CARD_SIZE = (320, 120)
 
 
 class MainWindow(QMainWindow):
-    """One screen: a connection bar up top, then a grid of per-channel
-    cards. No Dashboard/Device Control/Communication pages, no sidebar,
-    no Module Address field anywhere."""
+    """One screen: a Controls status bar up top, then a grid of
+    per-channel cards, every one already live and blind-sendable from
+    launch - no Scan/+Addr discovery step. No Dashboard/Device Control/
+    Communication pages, no sidebar, no Module Address field anywhere."""
 
     def __init__(self, app_controller):
         super().__init__()
@@ -67,27 +66,18 @@ class MainWindow(QMainWindow):
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
 
-        self.connection_bar = ConnectionBar(self.app.channels)
-        self.connection_bar.setFixedSize(*TOP_CARD_SIZE)
-        top_row.addWidget(self.connection_bar, alignment=Qt.AlignTop)
-
         controls_card = make_card("Controls", icon="fa5s.sliders-h")
         controls_card.setFixedSize(*TOP_CARD_SIZE)
 
         status_row = QHBoxLayout()
-        self.status_label = QLabel("Not scanned yet.")
+        # Every channel is live and blind-sendable the moment the app
+        # launches - no Scan/+Addr step to wait on (see ChannelManager).
+        # This label is just a running status line for the last action
+        # taken (a blind-send in flight, a disconnect, etc).
+        self.status_label = QLabel("Ready.")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
-        self.manual_ask_btn = QPushButton("+ Addr")
-        self.manual_ask_btn.setToolTip("Ask one specific address directly - no broadcast")
-        self.manual_ask_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        self.manual_ask_btn.clicked.connect(self._on_manual_ask)
-        status_row.addWidget(self.manual_ask_btn)
-        self.rescan_btn = QPushButton("Scan")
-        self.rescan_btn.setToolTip("Scan for connected channels")
-        self.rescan_btn.clicked.connect(self._on_rescan)
-        status_row.addWidget(self.rescan_btn)
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
@@ -184,55 +174,21 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._cards = {}
-        self.app.channels.channel_added.connect(self._on_channel_added)
-        self.app.channels.channel_online.connect(self._on_channel_online)
-        self.app.channels.channel_offline.connect(self._on_channel_offline)
-        self.app.channels.discovery_progress.connect(self._on_discovery_progress)
-        self.app.channels.discovery_finished.connect(self._on_discovery_finished)
         self.app.channels.command_timeout.connect(self._on_command_timeout)
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
-        # All 16 slots are visible from launch - empty/inactive (offline
-        # styling) until Scan or +Addr actually hears from that address.
-        # This does NOT open any port or talk to any hardware by itself;
-        # it just draws the cards for state ChannelManager already built
-        # for all 16 addresses up front (see ChannelManager.__init__).
+        # All 16 slots are visible and live from launch - every card
+        # already has a real ChannelController (see ChannelManager) that
+        # brute-force finds its own port and blind-sends every command,
+        # no prior Scan/+Addr discovery step required.
         for address in range(MAX_CHANNELS):
             self._build_card(address)
-            self._cards[address].set_offline()
-
-
-        # Deliberately does NOT auto-scan on launch - scanning sends a
-        # broadcast Address Query to every available port, and if two
-        # modules are still sharing one converter (a real risk on the
-        # current test rig), that's a bus collision every time it fires.
-        # Scanning only happens when the user explicitly clicks Scan.
-
-    def _on_discovery_progress(self, current: int, total: int):
-        self.status_label.setText(f"Scanning… checked port {current}/{total}")
-
-    def _on_discovery_finished(self):
-        # len(self._cards) is always MAX_CHANNELS now (every slot is
-        # pre-built at launch) - count actual live connections instead,
-        # or this would claim "16 channel(s) found" no matter what.
-        count = sum(1 for c in self.app.channels.controllers.values() if c is not None)
-        self.status_label.setText(
-            f"{count} channel(s) found." if count else
-            "No devices found. Check wiring and power."
-        )
-
-    def _on_rescan(self):
-        self.status_label.setText("Scanning… checking for channels")
-        self.app.channels.start_discovery()
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
         self.warning_label.setVisible(False)
         self.status_label.setText("Log cleared.")
-
-    def _on_manual_ask(self):
-        ManualAddDialog.open(self, self.app.channels)
 
     def _on_command_timeout(self, message: str):
         self.warning_label.setText(message)
@@ -249,7 +205,6 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
-        card.disconnect_requested.connect(self._on_disconnect_requested)
         self._cards[address] = card
         self._reflow_grid()
 
@@ -274,43 +229,6 @@ class MainWindow(QMainWindow):
         for index, address in enumerate(sorted(self._cards)):
             row, col = divmod(index, columns)
             self.grid.addWidget(self._cards[address], row, col)
-
-    def _on_channel_added(self, address: int):
-        # Only ever fires for an address outside the 16 pre-built slots
-        # (e.g. a +Addr manual ask past MAX_CHANNELS) - addresses 0-15
-        # already have a card from launch, so a real find there always
-        # comes through as channel_online instead (see ChannelManager).
-        self._build_card(address)
-
-    def _on_disconnect_requested(self, address: int):
-        confirmed = ConfirmDialog.ask(
-            self,
-            "Disconnect Channel",
-            f"Disconnect CH{address:02d}? Its output will be turned off "
-            f"first, so it's safe to physically swap which module is wired in.",
-            confirm_text="Disconnect",
-            cancel_text="Cancel",
-            danger=True,
-        )
-        if not confirmed:
-            return
-        # Immediate feedback that the click registered - turning the
-        # output off and waiting for that to confirm before actually
-        # disconnecting can take up to ~1s on unresponsive hardware, and
-        # without this it looks like nothing happened during that wait.
-        self.status_label.setText(f"Disconnecting CH{address:02d}…")
-        self.app.channels.disconnect_channel_safely(address)
-
-    def _on_channel_online(self, address: int):
-        card = self._cards.get(address)
-        if card is not None:
-            card.set_online(self.app.channels.get_controller(address))
-
-    def _on_channel_offline(self, address: int):
-        card = self._cards.get(address)
-        if card is not None:
-            card.set_offline()
-        self.status_label.setText(f"CH{address:02d} disconnected.")
 
     def closeEvent(self, event):
         self.app.shutdown()

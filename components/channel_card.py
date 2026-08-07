@@ -1,6 +1,5 @@
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
-from PySide6.QtCore import Qt, Signal
-import qtawesome as qta
+from PySide6.QtWidgets import QHBoxLayout, QLabel
+from PySide6.QtCore import Qt
 
 from .card import Card
 from .power_button import PowerButton
@@ -21,14 +20,18 @@ class ChannelCard(Card):
     only ever sees the display number (CH01, CH02, ...), never the real
     protocol address.
 
+    Every card has a live controller from launch and always sends
+    blind - there's no discovery step and no online/offline state to
+    wait on (see ChannelManager/ChannelController): a click just brute-
+    force finds a port and fires the command, with retries and an
+    optimistic apply if nothing answers.
+
     Bidirectional reactive sync (toggle <-> slider <-> real hardware
     state), reusing the exact blockSignals() pattern from the old app's
     Device Control page so that syncing one widget from another's change
     never re-triggers a redundant hardware command - only a genuine user
     interaction sends a command.
     """
-
-    disconnect_requested = Signal(int)  # address
 
     WIDTH = 220  # exposed so the grid that lays these out can size columns to match
 
@@ -37,20 +40,6 @@ class ChannelCard(Card):
         self.setFixedWidth(self.WIDTH)
         self.controller = controller
         self.state = state
-
-        disconnect_btn = QPushButton()
-        disconnect_btn.setIcon(qta.icon("fa5s.unlink", color=TEXT_MUTED))
-        disconnect_btn.setFixedSize(20, 20)
-        disconnect_btn.setFlat(True)
-        disconnect_btn.setCursor(Qt.PointingHandCursor)
-        disconnect_btn.setToolTip(
-            "Disconnect this channel - use this before swapping which "
-            "module is physically wired to a shared port"
-        )
-        disconnect_btn.clicked.connect(
-            lambda: self.disconnect_requested.emit(self.state.data.address)
-        )
-        self.header_layout.addWidget(disconnect_btn)
 
         status_row = QHBoxLayout()
         self.status_dot = QLabel()
@@ -115,29 +104,6 @@ class ChannelCard(Card):
             # Was off - needs an explicit Output Switch ON, not just a
             # Signal Control power change (see ChannelController.resume_output).
             self.controller.resume_output(code)
-
-    # --- online/offline (module physically swapped out, on a shared port) --
-
-    def set_offline(self):
-        """Connection released (manual disconnect, e.g. before swapping
-        which module is wired to a shared port) - card stays visible with
-        its last known values, but controls are disabled since there's no
-        live connection to send anything over."""
-        self.controller = None
-        self.toggle.setEnabled(False)
-        self.slider.setEnabled(False)
-        self.status_text.setText("OFFLINE")
-        self.status_text.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; font-weight: 600;")
-        self.status_dot.setStyleSheet(f"background: {TEXT_MUTED}; border-radius: 4px;")
-
-    def set_online(self, controller):
-        """The same address answered again (module physically swapped back
-        in) - re-enable controls. Display already resynced itself via
-        state.changed, since the controller's handle_frame() ran before
-        this is called."""
-        self.controller = controller
-        self.toggle.setEnabled(True)
-        self.slider.setEnabled(True)
 
     # --- real hardware state changes (Status Query responses, etc.) --------
 

@@ -219,13 +219,10 @@ class FakeSerialManager:
 
 def install_fake_hardware(registry: FakePortRegistry):
     """Reroutes the app's serial layer to the given fake registry. Patches
-    the names as imported into hooks/use_connection.py and
-    hooks/use_discovery.py (Python binds those at import time, so the
-    real modules are untouched - only these two modules' local
-    references change for the life of the test process)."""
+    the names as imported into hooks/use_connection.py (Python binds
+    those at import time, so the real module is untouched - only this
+    module's local references change for the life of the test process)."""
     import hooks.use_connection as uc
-    import hooks.use_discovery as ud
 
     uc.SerialManager = lambda: FakeSerialManager(registry)
     uc.list_com_ports = registry.list_ports
-    ud.list_com_ports = registry.list_ports

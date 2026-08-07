@@ -82,6 +82,16 @@ class MainWindow(QMainWindow):
         self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.query_btn.clicked.connect(self._on_query)
         status_row.addWidget(self.query_btn)
+        self.reset_all_btn = QPushButton("Reset All")
+        self.reset_all_btn.setToolTip(
+            "Blind-sends Output OFF to every one of the 16 addresses, and clears "
+            "every card's cached state back to fresh/unknown - use if what's on "
+            "screen feels stale or wrong. Doesn't guarantee real hardware actually "
+            "turns off, same honest-attempt-only behavior as any other OFF click."
+        )
+        self.reset_all_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.reset_all_btn.clicked.connect(self._on_reset_all)
+        status_row.addWidget(self.reset_all_btn)
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
@@ -195,6 +205,25 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText(f"Querying {choice} to address {address}…")
         self.app.channels.brute_force_query(address, on=(choice == "ON"))
+
+    def _on_reset_all(self):
+        confirmed = ConfirmDialog.ask(
+            self,
+            "Reset All",
+            "Blind-send Output OFF to all 16 channels and clear every card's "
+            "cached state back to fresh/unknown? This doesn't guarantee real "
+            "hardware actually turns off - same best-effort as any other OFF click.",
+            confirm_text="Reset All",
+            cancel_text="Cancel",
+            danger=True,
+        )
+        if not confirmed:
+            return
+        if self._armed_card is not None:
+            self._armed_card.disarm()
+            self._armed_card = None
+        self.status_label.setText("Resetting all channels…")
+        self.app.channels.reset_all()
 
     def _on_clear_log(self):
         clear_log(self.app.logger)

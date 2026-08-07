@@ -5,6 +5,7 @@ from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
+from .use_port_scheduler import PortScheduler
 
 MAX_CHANNELS = 16  # ceiling on how many addresses the UI shows cards for
 
@@ -37,11 +38,22 @@ class ChannelManager(QObject):
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
 
+        # Shared by every channel AND Query - there's only one physical
+        # port on the confirmed real wiring, so only one command anywhere
+        # is ever allowed to actively use it at a time (see
+        # use_port_scheduler.py). Without this, two channels used close
+        # together could each try to open the same port at once and
+        # collide, repeatedly failing and freezing the GUI while they
+        # fought over it.
+        self.port_scheduler = PortScheduler()
+
         self.states: dict[int, ChannelState] = {}
         self.controllers: dict[int, ChannelController] = {}
         for address in range(MAX_CHANNELS):
             state = self._make_state(address)
-            controller = ChannelController(state, baud, parity, data_bits, self.logger)
+            controller = ChannelController(
+                state, baud, parity, data_bits, self.logger, port_scheduler=self.port_scheduler,
+            )
             controller.command_timeout.connect(self.command_timeout.emit)
             self.states[address] = state
             self.controllers[address] = controller
@@ -67,7 +79,12 @@ class ChannelManager(QObject):
         to it, and actually waits for and verifies the response -
         retrying up to QUERY_MAX_ATTEMPTS times - instead of firing
         blind. Doesn't touch states/controllers or build a card; this
-        isn't a real channel connection, just a one-off check."""
+        isn't a real channel connection, just a one-off check.
+
+        Goes through the same shared port_scheduler every channel does -
+        without it, Query could collide with a card's in-flight command
+        the exact same way two channels used close together used to
+        collide with each other (see PortScheduler)."""
         ports = ConnectionController.list_ports()
         if not ports:
             self.command_timeout.emit("Query: no ports available.")
@@ -79,6 +96,7 @@ class ChannelManager(QObject):
         label = "ON" if on else "OFF"
         frame = commands.output_on(address) if on else commands.output_off(address)
 
+        query_token = object()  # unique per-call identity for the scheduler - Query has no persistent object like a ChannelController does
         timer = QTimer(self)
         timer.setSingleShot(True)
         state = {"port_index": -1, "conn": None, "attempts": 0, "raw_seen": False}
@@ -105,6 +123,7 @@ class ChannelManager(QObject):
                 f"{'confirmed' if success else 'device rejected it'} "
                 f"(attempt {state['attempts']}/{QUERY_MAX_ATTEMPTS})."
             )
+            self.port_scheduler.release(query_token)
 
         def send_attempt():
             state["attempts"] += 1
@@ -125,6 +144,7 @@ class ChannelManager(QObject):
                 if self.logger:
                     self.logger.warning(msg)
                 self.command_timeout.emit(msg)
+                self.port_scheduler.release(query_token)
                 return
             port = ports[state["port_index"]]
             conn = ConnectionController()
@@ -156,7 +176,7 @@ class ChannelManager(QObject):
             try_next_port()
 
         timer.timeout.connect(on_timeout)
-        try_next_port()
+        self.port_scheduler.acquire(query_token, try_next_port)
 
     def save_all(self):
         for address, state in self.states.items():

@@ -30,7 +30,8 @@ class ChannelController(QObject):
     command_timeout = Signal(str)
 
     def __init__(self, state: ChannelState, baud: int = 115200, parity: str = "N",
-                 data_bits: int = 8, logger=None, preferred_port: str | None = None):
+                 data_bits: int = 8, logger=None, preferred_port: str | None = None,
+                 port_scheduler=None):
         super().__init__()
         self.state = state
         self.baud = baud
@@ -45,6 +46,13 @@ class ChannelController(QObject):
         # pays the cost of sweeping unknown ports - every command after
         # that goes straight to the known-good one.
         self.preferred_port = preferred_port
+        # Shared across every channel (and Query) - only one command
+        # anywhere is ever allowed to actively use the port at a time,
+        # see hooks/use_port_scheduler.py. Optional only so this class
+        # stays constructible without one (e.g. quick standalone use);
+        # ChannelManager always provides the real shared instance.
+        self.port_scheduler = port_scheduler
+        self._awaiting_port = False  # requested the scheduler, callback hasn't fired yet
         self._temp_conn: ConnectionController | None = None
         self._pending_timer: QTimer | None = None
         self._pending_label = None
@@ -129,15 +137,30 @@ class ChannelController(QObject):
 
     def _enqueue(self, frame: bytes, label: str, state_update: dict | None = None):
         self._queue.append((frame, label, state_update))
-        if self._pending_timer is None and self._temp_conn is None:
+        if self._pending_timer is None and self._temp_conn is None and not self._awaiting_port:
             self._send_next()
 
     def _send_next(self):
+        # Release the port from whatever command (if any) just finished
+        # before asking for it again for the next one - a no-op if we
+        # aren't actually holding it (e.g. the very first command ever,
+        # nothing to release yet).
+        if self.port_scheduler is not None:
+            self.port_scheduler.release(self)
         if not self._queue:
             return
         frame, label, state_update = self._queue.popleft()
         self._pending_attempt = 0
-        self._open_and_send(frame, label, state_update)
+        self._pending_frame, self._pending_label, self._pending_state_update = frame, label, state_update
+        if self.port_scheduler is None:
+            self._open_and_send(frame, label, state_update)
+            return
+        self._awaiting_port = True
+        self.port_scheduler.acquire(self, self._on_port_granted)
+
+    def _on_port_granted(self):
+        self._awaiting_port = False
+        self._open_and_send(self._pending_frame, self._pending_label, self._pending_state_update)
 
     def _open_and_send(self, frame: bytes, label: str, state_update: dict | None):
         # Brute-force find a port fresh for this command - try every
@@ -225,10 +248,15 @@ class ChannelController(QObject):
         timer keeps ticking on an object nothing else references anymore,
         and fires a misleading "no response" warning later, possibly
         after this same address is already back online under a fresh
-        controller."""
+        controller. Also releases/cancels the shared port scheduler slot
+        if held or queued - otherwise a channel torn down mid-turn would
+        leave every other channel waiting for a turn that never comes."""
         self._cancel_pending_timeout()
         self._close_temp_conn()
         self._queue.clear()
+        self._awaiting_port = False
+        if self.port_scheduler is not None:
+            self.port_scheduler.cancel(self)
 
     def _on_response_timeout(self):
         self._pending_attempt += 1

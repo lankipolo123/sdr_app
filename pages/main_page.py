@@ -2,21 +2,15 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QScrollArea, QPushButton, QInputDialog
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 
 from components import (
     ChannelCard, ConfirmDialog,
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_channels import MAX_CHANNELS
-from styles.theme_colors import (
-    TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, WARNING_TEXT, WARNING_BG, WARNING_BORDER,
-    ACCENT_BLUE, NAVY,
-)
+from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
-
-WARNING_DISPLAY_MS = 6000
-
 
 TOP_CARD_SIZE = (320, 120)
 
@@ -95,10 +89,6 @@ class MainWindow(QMainWindow):
         top_row.addStretch()
         outer.addLayout(top_row)
 
-        self._warning_timer = QTimer(self)
-        self._warning_timer.setSingleShot(True)
-        self._warning_timer.timeout.connect(lambda: self.warning_label.setVisible(False))
-
         channels_label = QLabel("Channels")
         channels_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
         outer.addWidget(channels_label)
@@ -152,19 +142,6 @@ class MainWindow(QMainWindow):
 
         txrx_row.addStretch()
 
-        # Right group: the "no response"/rejection warning, then Clear
-        # Log - a command that never got acknowledged (module unplugged
-        # mid-session, real hardware fault, etc.) has to surface
-        # somewhere. Hidden until the first one, then auto-hides itself
-        # after WARNING_DISPLAY_MS.
-        self.warning_label = QLabel("")
-        self.warning_label.setStyleSheet(
-            f"color: {WARNING_TEXT}; background: {WARNING_BG}; border: 1px solid {WARNING_BORDER}; "
-            f"border-radius: 6px; padding: 4px 10px; font-size: 12px;"
-        )
-        self.warning_label.setVisible(False)
-        txrx_row.addWidget(self.warning_label)
-
         # Background/text match the app icon's own colors exactly (NAVY
         # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
         # against the actual icon pixels).
@@ -184,7 +161,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._cards = {}
-        self.app.channels.command_timeout.connect(self._on_command_timeout)
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
@@ -207,13 +183,7 @@ class MainWindow(QMainWindow):
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
-        self.warning_label.setVisible(False)
         self.status_label.setText("Log cleared.")
-
-    def _on_command_timeout(self, message: str):
-        self.warning_label.setText(message)
-        self.warning_label.setVisible(True)
-        self._warning_timer.start(WARNING_DISPLAY_MS)
 
     def _on_raw_tx(self, address: int, data: bytes):
         self.tx_value_label.setText(f"TX : CH{address:02d} {data.hex(' ').upper()}")

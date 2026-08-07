@@ -4,16 +4,16 @@ from PySide6.QtCore import Qt
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 
 
 class ChannelCard(Card):
-    """One hardware channel's controls: a Power button ('Activate' /
-    'Power Off', labeled by the action it performs) + a 4-position
-    Level slider (L0-L3), with plain L0/L1/L2/L3 text labels under the
-    slider marking each position - not buttons, just labels, the active
-    one highlighted.
+    """One hardware channel's controls: explicit ON/OFF buttons (each
+    sends exactly one command, same simplicity as the standalone Query
+    diagnostic - see PowerButton) + a 4-position Level slider (L0-L3),
+    with plain L0/L1/L2/L3 text labels under the slider marking each
+    position - not buttons, just labels, the active one highlighted.
 
     No Mode/Frequency/Bandwidth shown anywhere - the customer never sees
     that data, only Power. No Module Address shown either - the customer
@@ -25,6 +25,14 @@ class ChannelCard(Card):
     wait on (see ChannelManager/ChannelController): a click just brute-
     force finds a port and fires the command, with retries and an
     optimistic apply if nothing answers.
+
+    Locked until explicitly tapped: the slider and ON/OFF buttons start
+    disabled, so nothing on this card can send until the user has
+    clicked the card itself once first. Guards against an accidental
+    drag/tap (e.g. a scroll gesture that catches a slider handle) firing
+    a real command to hardware that's already unpredictable enough on a
+    shared, collision-prone line - a genuine send should only ever
+    follow a deliberate interaction with that specific card.
 
     Bidirectional reactive sync (toggle <-> slider <-> real hardware
     state), reusing the exact blockSignals() pattern from the old app's
@@ -40,6 +48,7 @@ class ChannelCard(Card):
         self.setFixedWidth(self.WIDTH)
         self.controller = controller
         self.state = state
+        self._armed = False
 
         status_row = QHBoxLayout()
         self.status_dot = QLabel()
@@ -48,6 +57,9 @@ class ChannelCard(Card):
         status_row.addWidget(self.status_dot)
         status_row.addWidget(self.status_text)
         status_row.addStretch()
+        self.arm_hint = QLabel("Tap to enable")
+        self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
+        status_row.addWidget(self.arm_hint)
         self.body_layout.addLayout(status_row)
 
         self.slider = LevelSlider()
@@ -70,18 +82,56 @@ class ChannelCard(Card):
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
 
+        # Locked by default - see _arm()/mousePressEvent below.
+        self.slider.setEnabled(False)
+        self.toggle.setEnabled(False)
+
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
+
+    # --- tap-to-arm lock -------------------------------------------------
+
+    def mousePressEvent(self, event):
+        # Only lands here for a press that isn't consumed by an
+        # interactive child first - which, while locked, is every press
+        # on this card (the slider/toggle are disabled and don't accept
+        # mouse events), and once armed, anywhere that isn't the slider
+        # or the ON/OFF buttons themselves.
+        if not self._armed:
+            self.arm()
+        super().mousePressEvent(event)
+
+    def arm(self):
+        """Unlocks this card's slider/ON/OFF buttons. Normally triggered
+        by tapping the card (see mousePressEvent); exposed as a public
+        method too since a real click is the only other way to reach it,
+        which tests (and any future 'select all' style feature) need a
+        direct way to trigger."""
+        if self._armed:
+            return
+        self._armed = True
+        self.slider.setEnabled(True)
+        self.toggle.setEnabled(True)
+        self.arm_hint.setVisible(False)
+        self.setStyleSheet(
+            f"#Card {{ background: #FFFFFF; border: 2px solid {ACCENT_BLUE}; border-radius: 10px; }}"
+        )
 
     # --- user-driven changes -------------------------------------------------
 
     def _on_toggle(self, checked: bool):
+        # Exactly one command, same simplicity as the standalone Query
+        # diagnostic's ON/OFF - no bundled Signal Control/guessed
+        # defaults riding along with it (see PowerButton).
+        if checked:
+            self.controller.turn_output_on()
+        else:
+            self.controller.turn_output_off()
         target_level = self.state.data.last_level if checked else 0
         self.slider.blockSignals(True)
         self.slider.setValue(target_level)
         self.slider.blockSignals(False)
         self._update_status(target_level)
-        self._send_level(target_level)
 
     def _on_slider(self, value: int):
         if value > 0:

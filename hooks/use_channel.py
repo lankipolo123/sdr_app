@@ -283,18 +283,48 @@ class ChannelController(QObject):
         self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):
-        """Called for any frame addressed to us - either from our own
-        temporary connection's response, or (during initial discovery
-        seeding) passed in directly before this controller manages its
-        own connections."""
-        pending_update = self._pending_state_update
+        """Called for any frame addressed to us, from our own temporary
+        connection's response. Only actually acts on a frame that
+        matches what's currently pending - the protocol has no checksum
+        (confirmed earlier: noise can parse as a structurally valid but
+        semantically bogus frame), so on a collision-prone line, a
+        Status-Query-shaped frame can occasionally arrive while this
+        channel only ever asked for a plain Output ON/OFF ack (nothing
+        in the app calls read_status() right now - every Status Query
+        branch hit is either a real, deliberately requested one, or
+        noise). Blindly trusting anything that merely looks like a
+        valid frame used to stomp the card's real output/power state
+        with effectively random bytes. Anything unexpected is ignored
+        and left for the already-running response timer to handle
+        (retry, or give up and apply optimistically) - same as if
+        nothing had arrived at all."""
         pending_label = self._pending_label
+        is_ack = frame.type in (c.TYPE_OUTPUT_SWITCH, c.TYPE_SIGNAL_CONTROL) and len(frame.buf) == 1
+        is_status = frame.type == c.TYPE_STATUS_QUERY and len(frame.buf) >= 6
+
+        if is_status and pending_label != "Status query":
+            if self.logger:
+                self.logger.warning(
+                    f"{self.display_name}: ignoring unexpected Status Query frame "
+                    f"while waiting for {pending_label or 'nothing'} - likely "
+                    f"collision noise, not a real response: {frame.raw.hex(' ').upper()}"
+                )
+            return
+        if not is_ack and not is_status:
+            if self.logger:
+                self.logger.warning(
+                    f"{self.display_name}: ignoring unrecognized frame while "
+                    f"waiting for {pending_label or 'nothing'}: {frame.raw.hex(' ').upper()}"
+                )
+            return
+
+        pending_update = self._pending_state_update
         self._cancel_pending_timeout()
         self._close_temp_conn()
         if self.logger:
             self.logger.info(f"RX ch{self.address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
 
-        if frame.type in (c.TYPE_OUTPUT_SWITCH, c.TYPE_SIGNAL_CONTROL) and len(frame.buf) == 1:
+        if is_ack:
             if frame.buf[0] == c.RESP_SUCCESS:
                 if pending_update:
                     self.state.update(**pending_update)
@@ -308,7 +338,7 @@ class ChannelController(QObject):
                 self.command_timeout.emit(msg)
                 self.state.update()
             self._send_next()
-        elif frame.type == c.TYPE_STATUS_QUERY and len(frame.buf) >= 6:
+        else:  # is_status
             output = frame.buf[0]
             mode = frame.buf[1]
             freq = struct.unpack(">H", frame.buf[2:4])[0]

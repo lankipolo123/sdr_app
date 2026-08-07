@@ -13,8 +13,7 @@ RESPONSE_TIMEOUT_MS = 800
 # confirmed on real hardware: some attempts get a clean response even
 # with two modules wired in, others don't. Retrying several times
 # before giving up meaningfully improves the odds of getting through,
-# instead of reporting failure after a single unlucky attempt. Matches
-# the already-proven MANUAL_MAX_ATTEMPTS pattern used by +Addr.
+# instead of reporting failure after a single unlucky attempt.
 RETRY_MAX_ATTEMPTS = 6
 
 
@@ -38,13 +37,14 @@ class ChannelController(QObject):
         self.parity = parity
         self.data_bits = data_bits
         self.logger = logger
-        # The port this channel was actually discovered on - tried first
-        # on every command before falling back to searching every other
-        # available port. Without this, "just grab whichever port opens
-        # first" would be wrong the moment more than one physical port
-        # is in play (e.g. two modules on two separate adapters) - it
-        # could send address 0's command out a port that only ever had
-        # address 1's module on it, which would simply never answer.
+        # Optional hint for which port to try first, before falling back
+        # to searching every other available port. Every card blind-sends
+        # without ever learning this (see ChannelManager - no discovery
+        # step populates it), so it's effectively always None in
+        # practice; kept as a constructor option rather than removed,
+        # since a real multi-port setup (two modules on two separate
+        # adapters, each answering a different address) would otherwise
+        # have no way to avoid randomly guessing the wrong port first.
         self.preferred_port = preferred_port
         self._temp_conn: ConnectionController | None = None
         self._pending_timer: QTimer | None = None
@@ -74,19 +74,30 @@ class ChannelController(QObject):
     def set_power(self, power_code: int):
         """Resend Signal Control with this channel's own stored Mode/
         Frequency/Bandwidth unchanged, plus the new Power value - the only
-        field the customer can actually change. Requires a prior Status
-        Query response (discovery seeds this); if we somehow don't have a
-        baseline yet, we refuse rather than invent Frequency/Bandwidth."""
+        field the customer can actually change. A REAL baseline for those
+        three fields only ever comes from a confirmed Status Query
+        response (read_status()), which nothing calls automatically
+        anymore now that there's no discovery step - so in practice this
+        almost always falls back to BLIND_DEFAULT_MODE/FREQ_MHZ/
+        BANDWIDTH_MHZ instead of refusing. Explicitly accepted as a real
+        risk (this can send an incorrect frequency/bandwidth to a module
+        whose actual configuration was never confirmed) so Power can
+        still be blind-sent to any address, same as Output ON/OFF
+        already could."""
         d = self.state.data
-        if d.mode is None or d.frequency_mhz is None or d.bandwidth_mhz is None:
+        blind = d.mode is None or d.frequency_mhz is None or d.bandwidth_mhz is None
+        mode = d.mode if d.mode is not None else c.BLIND_DEFAULT_MODE
+        freq = d.frequency_mhz if d.frequency_mhz is not None else c.BLIND_DEFAULT_FREQ_MHZ
+        bandwidth = d.bandwidth_mhz if d.bandwidth_mhz is not None else c.BLIND_DEFAULT_BANDWIDTH_MHZ
+
+        if blind:
             msg = (
-                f"{self.display_name}: no status baseline yet - "
-                f"can't apply power_code=0x{power_code:02X} without a Status Query first."
+                f"{self.display_name}: no status baseline yet - sending power_code=0x{power_code:02X} "
+                f"with GUESSED mode/frequency/bandwidth defaults (blind, unconfirmed)."
             )
             if self.logger:
                 self.logger.warning(msg)
             self.command_timeout.emit(msg)
-            return
 
         # Only power_code - NOT output_on. Signal Control doesn't reliably
         # indicate output state on its own (see resume_output()'s own
@@ -99,8 +110,9 @@ class ChannelController(QObject):
         # after the timeout/rejection path had just correctly reverted
         # it to False. turn_output_on()'s own state_update is the only
         # thing that should ever claim output_on=True.
-        frame = commands.set_signal(self.address, d.mode, d.frequency_mhz, d.bandwidth_mhz, power_code)
-        self._enqueue(frame, f"Power -> 0x{power_code:02X}", {"power_code": power_code})
+        frame = commands.set_signal(self.address, mode, freq, bandwidth, power_code)
+        label = f"Power -> 0x{power_code:02X}" + (" (blind, guessed mode/freq/bw)" if blind else "")
+        self._enqueue(frame, label, {"power_code": power_code})
 
     def resume_output(self, power_code: int):
         """Turning back on after being off needs an explicit Output Switch

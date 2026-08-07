@@ -48,3 +48,15 @@ FREQ_MAX_MHZ = 6000
 
 ADDR_MIN = 0
 ADDR_MAX = 199
+
+# Only used when sending a Power/level command "blind" - a channel that
+# has never been discovered has no real Mode/Frequency/Bandwidth
+# baseline, and a Signal Control frame requires all three fields
+# alongside Power in one command. These are a guess, not a confirmed
+# value - explicitly accepted as a real risk (an incorrect frequency/
+# bandwidth actually changes RF behavior, unlike an unconfirmed
+# Output ON/OFF) so blind-send can work on an address with no baseline
+# yet, same as Output ON/OFF already could.
+BLIND_DEFAULT_MODE = MODE_WHITE_NOISE
+BLIND_DEFAULT_FREQ_MHZ = 2450
+BLIND_DEFAULT_BANDWIDTH_MHZ = 100

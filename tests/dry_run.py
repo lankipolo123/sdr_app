@@ -72,6 +72,7 @@ def main():
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
     from services.protocol import constants as c
+    from services.protocol.packet_parser import ParsedFrame
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
@@ -349,6 +350,57 @@ def main():
     check("no crash/hang against a colliding shared bus", True)
     controller7.shutdown()
     window7.close()
+    pump(50)
+
+    print("\n=== A spurious Status-Query-shaped frame must NOT stomp real state ===")
+    print("(no checksum in this protocol - collision noise can occasionally parse")
+    print(" as a structurally valid frame that was never actually sent. Nothing in")
+    print(" the app calls read_status() automatically, so a Status Query response")
+    print(" arriving while only a plain Output ON/OFF ack is pending is always")
+    print(" either noise or a genuine bug - either way it must be ignored, not")
+    print(" trusted at face value)")
+    silent_spurious_module = FakeModulePort(address=0, silent=True)
+    registry_spurious = FakePortRegistry()
+    registry_spurious.add("FAKE_SPURIOUS", silent_spurious_module)
+    install_fake_hardware(registry_spurious)
+    controller8 = make_app_controller()
+    window8 = MainWindow(controller8)
+    window8.show()
+    card8 = window8._cards[0]
+    card8.arm()
+
+    card8.toggle.click()  # ON - module is silent, so this stays genuinely pending
+    pump(100)
+    check("output not yet confirmed (module hasn't answered)", card8.controller._pending_label is not None)
+
+    spurious = ParsedFrame(
+        type=c.TYPE_STATUS_QUERY,
+        addr=0,
+        buf=bytes([0x00, 0xAA, 0x00, 0x00, 0x03, 0xAB]),  # claims output OFF, power 0xAB - nobody sent this
+        raw=b"\x7E\x7E\xFF\x00\x06\x00\xAA\x00\x00\x03\xAB\x0A\x0D",
+    )
+    card8.controller.handle_frame(spurious)
+    check(
+        "power_code NOT overwritten by the unrequested Status Query frame's bytes",
+        controller8.channels.states[0].data.power_code != 0xAB,
+    )
+    check(
+        "mode NOT overwritten either",
+        controller8.channels.states[0].data.mode != 0xAA,
+    )
+    check(
+        "the real pending ON command is still tracked (wasn't wiped out by the spurious frame)",
+        card8.controller._pending_label is not None,
+    )
+
+    pump(WORST_CASE_MS)  # let the real (silent) command exhaust retries normally
+    check(
+        "the real command still resolves normally afterward (optimistic apply, undisturbed)",
+        card8.toggle.isChecked(),
+    )
+
+    controller8.shutdown()
+    window8.close()
     pump(50)
 
     print("\n=== Standalone Query (retry-verified, separate from the cards) ===")

@@ -36,6 +36,9 @@ class ChannelCard(Card):
     card is ever armed at a time - MainWindow listens for the `armed`
     signal and locks whichever card was previously armed back down, so
     arming CH02 doesn't leave CH01 sitting there still enabled too.
+    Clicking anywhere outside every card (MainWindow's app-wide event
+    filter) locks the armed one back down as well, so nothing stays
+    unlocked once attention has moved off the cards entirely.
 
     Bidirectional reactive sync (toggle <-> slider <-> real hardware
     state), reusing the exact blockSignals() pattern from the old app's

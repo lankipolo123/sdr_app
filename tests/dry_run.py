@@ -329,6 +329,91 @@ def main():
     window16.close()
     pump(50)
 
+    print("\n=== Port scheduler: a second channel's command waits its turn, doesn't collide ===")
+    print("(before this fix, channel B could try to open the port while channel A")
+    print(" was still using it, colliding and retrying blind against a port it")
+    print(" could never get - now B just waits quietly until A's command is fully")
+    print(" resolved, then runs automatically, no collision)")
+    # One shared port (the real-world case), not two separate ones -
+    # _find_and_open_connection() just grabs whichever port opens first
+    # without verifying a response actually comes from it, so two
+    # separate fake ports would let channel B accidentally latch onto
+    # channel A's (wrong) port on its first attempt - a red herring
+    # unrelated to the scheduler itself. Address 0 (channel A) has no
+    # module in the bus at all, so it's genuinely never answered -
+    # FakeAddressedBusPort.write() finds no target and just drops it,
+    # same net effect as "silent" without also bypassing the module's
+    # own silent-flag check the way routing straight to _handle() would.
+    sched_module_b = FakeModulePort(address=1)  # answers normally, once it actually gets a turn
+    sched_bus = FakeAddressedBusPort([sched_module_b])
+    registry_sched = FakePortRegistry()
+    registry_sched.add("FAKE_SCHED", sched_bus)
+    install_fake_hardware(registry_sched)
+    controller19 = make_app_controller()
+    window19 = MainWindow(controller19)
+    window19.show()
+
+    window19._cards[0].arm()
+    window19._cards[0].toggle.click()  # channel A starts its full retry cycle (silent module)
+    pump(50)
+
+    window19._cards[1].arm()
+    window19._cards[1].toggle.click()  # channel B's command should just wait, not attempt anything yet
+    pump(200)
+    check(
+        "channel B hasn't touched its module yet - still waiting for A to finish",
+        not sched_module_b.output_on,
+    )
+    check(
+        "channel B's controller is queued, not holding the port itself",
+        controller19.channels.controllers[1]._awaiting_port,
+    )
+
+    pump(WORST_CASE_MS)  # let channel A's full retry cycle exhaust and release the port
+    check(
+        "channel B's command finally runs and succeeds once A releases the port",
+        sched_module_b.output_on,
+    )
+    check(
+        "channel A's own UI still shows optimistically applied (unconfirmed)",
+        window19._cards[0].toggle.isChecked(),
+    )
+
+    controller19.shutdown()
+    window19.close()
+    pump(50)
+
+    print("\n=== Port scheduler: Query also waits its turn behind a card's command ===")
+    print("(Query uses the exact same shared scheduler - it's not architecturally")
+    print(" immune to the same collision a second card used to risk)")
+    query_wait_module_b = FakeModulePort(address=1)
+    query_wait_bus = FakeAddressedBusPort([query_wait_module_b])  # address 0 has no module - never answered
+    registry_query_wait = FakePortRegistry()
+    registry_query_wait.add("FAKE_QUERY_WAIT", query_wait_bus)
+    install_fake_hardware(registry_query_wait)
+    controller20 = make_app_controller()
+    window20 = MainWindow(controller20)
+    window20.show()
+
+    window20._cards[0].arm()
+    window20._cards[0].toggle.click()  # channel A starts its full retry cycle (nothing answers)
+    pump(50)
+
+    query_wait_results = []
+    controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
+    controller20.channels.brute_force_query(1, on=True)  # should wait behind channel A, not collide
+    pump(200)
+    check("Query hasn't touched its module yet - still waiting for channel A", not query_wait_module_b.output_on)
+    check("Query produced no result yet (still queued)", not query_wait_results)
+
+    pump(WORST_CASE_MS)  # let channel A's full retry cycle exhaust and release the port
+    check("Query finally runs and confirms once channel A releases the port", query_wait_module_b.output_on)
+    check("Query reported a real confirmed result", any("confirmed" in m for m in query_wait_results))
+
+    controller20.shutdown()
+    window20.close()
+    pump(50)
+
     print("\n=== One shared port, two colliding modules (the actual confirmed wiring) ===")
     print("(single USB-RS422 adapter driving two modules at once - every write")
     print(" is heard by both, but what comes back is never a clean, parseable")

@@ -358,7 +358,7 @@ def main():
 
     window19._cards[1].arm()
     window19._cards[1].toggle.click()  # channel B's command queues behind A's in-flight attempt
-    pump(200)
+    pump(RESPONSE_TIMEOUT_MS // 2)
     check(
         "channel B hasn't touched its module yet - A's 1st attempt hasn't timed out yet",
         not sched_module_b.output_on,
@@ -403,7 +403,7 @@ def main():
     query_wait_results = []
     controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
     controller20.channels.brute_force_query(1, on=True)  # queues behind channel A's in-flight attempt
-    pump(200)
+    pump(RESPONSE_TIMEOUT_MS // 2)
     check("Query hasn't touched its module yet - channel A's 1st attempt hasn't timed out yet", not query_wait_module_b.output_on)
     check("Query produced no result yet (still queued)", not query_wait_results)
 

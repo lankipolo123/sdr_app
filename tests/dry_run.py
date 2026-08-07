@@ -66,7 +66,7 @@ def main():
 
     from utils.config_service import ConfigService
     from utils.logging_service import setup_logger
-    from hooks.use_channels import ChannelManager, MAX_CHANNELS
+    from hooks.use_channels import ChannelManager, MAX_CHANNELS, QUERY_TIMEOUT_MS, QUERY_MAX_ATTEMPTS
     from hooks.use_channel import RESPONSE_TIMEOUT_MS, RETRY_MAX_ATTEMPTS
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
@@ -74,6 +74,7 @@ def main():
     from services.protocol import constants as c
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
+    QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
 
     # Route confirm dialogs straight to "confirmed" - a real modal exec()
     # loop would just hang forever with nothing to click it.
@@ -304,6 +305,45 @@ def main():
     check("no crash/hang against a colliding shared bus", True)
     controller7.shutdown()
     window7.close()
+    pump(50)
+
+    print("\n=== Standalone Query (retry-verified, separate from the cards) ===")
+    print("(type an address directly, brute-force find the port, and actually")
+    print(" wait for and verify a REAL response, unlike the cards' blind sends)")
+    query_module = FakeModulePort(address=9)
+    registry_query = FakePortRegistry()
+    registry_query.add("FAKE_QUERY", query_module)
+    install_fake_hardware(registry_query)
+    controller17 = make_app_controller()
+    window17 = MainWindow(controller17)
+    window17.show()
+
+    controller_before = controller17.channels.controllers.get(9)
+    query_results = []
+    controller17.channels.command_timeout.connect(lambda msg: query_results.append(msg))
+    controller17.channels.brute_force_query(9, on=True)
+    pump(300)
+    check("query confirmed a real response", any("confirmed" in m for m in query_results))
+    check("query actually turned the module on", query_module.output_on)
+    check(
+        "card 9's toggle stayed put - a standalone query doesn't touch it",
+        not window17._cards[9].toggle.isChecked(),
+    )
+    check(
+        "a standalone query doesn't replace any card's controller",
+        controller17.channels.controllers.get(9) is controller_before,
+    )
+
+    query_results.clear()
+    controller17.channels.brute_force_query(2, on=True)  # nothing at address 2
+    pump(QUERY_WORST_CASE_MS)
+    check(
+        "querying a wrong address reports no response, not a false confirm",
+        any("no response" in m for m in query_results),
+    )
+
+    controller17.shutdown()
+    window17.close()
     pump(50)
 
     print("\n=== Two addresses sharing one physical port ===")

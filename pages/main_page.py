@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton
+    QScrollArea, QPushButton, QInputDialog
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -78,6 +78,16 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         status_row.addWidget(self.status_label)
         status_row.addStretch()
+        self.query_btn = QPushButton("Query")
+        self.query_btn.setToolTip(
+            "Diagnostic: ask one specific address directly, brute-force "
+            "finding the port, and actually wait for and verify a real "
+            "confirmed response (or report failure) - separate from the "
+            "cards, which still send blind"
+        )
+        self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        self.query_btn.clicked.connect(self._on_query)
+        status_row.addWidget(self.query_btn)
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
@@ -184,6 +194,16 @@ class MainWindow(QMainWindow):
         # no prior Scan/+Addr discovery step required.
         for address in range(MAX_CHANNELS):
             self._build_card(address)
+
+    def _on_query(self):
+        address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
+        if not ok:
+            return
+        choice, ok = QInputDialog.getItem(self, "Query", "Output:", ["ON", "OFF"], editable=False)
+        if not ok:
+            return
+        self.status_label.setText(f"Querying {choice} to address {address}…")
+        self.app.channels.brute_force_query(address, on=(choice == "ON"))
 
     def _on_clear_log(self):
         clear_log(self.app.logger)

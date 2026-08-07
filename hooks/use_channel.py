@@ -37,14 +37,13 @@ class ChannelController(QObject):
         self.parity = parity
         self.data_bits = data_bits
         self.logger = logger
-        # Optional hint for which port to try first, before falling back
-        # to searching every other available port. Every card blind-sends
-        # without ever learning this (see ChannelManager - no discovery
-        # step populates it), so it's effectively always None in
-        # practice; kept as a constructor option rather than removed,
-        # since a real multi-port setup (two modules on two separate
-        # adapters, each answering a different address) would otherwise
-        # have no way to avoid randomly guessing the wrong port first.
+        # Which port to try first, before falling back to sweeping every
+        # other available port. Starts None (no discovery step to seed
+        # it anymore) but self-learns from here on: the first command
+        # that finds a working port remembers it (see
+        # _find_and_open_connection), so only that first command ever
+        # pays the cost of sweeping unknown ports - every command after
+        # that goes straight to the known-good one.
         self.preferred_port = preferred_port
         self._temp_conn: ConnectionController | None = None
         self._pending_timer: QTimer | None = None
@@ -163,12 +162,23 @@ class ChannelController(QObject):
         self._send(frame, label, state_update)
 
     def _find_and_open_connection(self) -> ConnectionController | None:
+        # Retry-with-sleep on open() is only worth paying for a port we
+        # already have real reason to trust (self.preferred_port, learned
+        # below from the last command that actually worked) - a genuinely
+        # wrong/absent candidate port fails immediately regardless, so
+        # sweeping the rest with retry=False keeps a blind command from
+        # blocking the GUI thread for a multi-second stretch (3 retries x
+        # a sleep each, per wrong port) on every single click.
         ports = ConnectionController.list_ports()
         if self.preferred_port in ports:
-            ports = [self.preferred_port] + [p for p in ports if p != self.preferred_port]
+            conn = ConnectionController()
+            if conn.connect(self.preferred_port, self.baud, self.parity, self.data_bits, retry=True):
+                return conn
+            ports = [p for p in ports if p != self.preferred_port]
         for port in ports:
             conn = ConnectionController()
-            if conn.connect(port, self.baud, self.parity, self.data_bits):
+            if conn.connect(port, self.baud, self.parity, self.data_bits, retry=False):
+                self.preferred_port = port
                 return conn
         return None
 

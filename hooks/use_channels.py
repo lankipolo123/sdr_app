@@ -128,7 +128,11 @@ class ChannelManager(QObject):
                 return
             port = ports[state["port_index"]]
             conn = ConnectionController()
-            if not conn.connect(port, baud, parity, data_bits):
+            # retry=False - sweeping unknown candidate ports, same
+            # reasoning as ChannelController._find_and_open_connection:
+            # a wrong port fails immediately, no need to block on a
+            # retry-with-sleep for each one while searching.
+            if not conn.connect(port, baud, parity, data_bits, retry=False):
                 if self.logger:
                     self.logger.info(f"Query: failed to open {port}, trying next port.")
                 try_next_port()

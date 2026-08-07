@@ -131,6 +131,15 @@ def main():
     check("arming enables the toggle", card.toggle.isEnabled())
     check("arming enables the slider", card.slider.isEnabled())
 
+    print("\n=== Arming is exclusive - a second card locks the first back down ===")
+    other_card = window._cards[1]
+    other_card.arm()
+    check("arming CH01 locks CH00 back down", not card.toggle.isEnabled())
+    check("CH00's slider is locked too", not card.slider.isEnabled())
+    check("CH01 itself is armed", other_card.toggle.isEnabled())
+    card.arm()  # switch attention back to CH00 for the rest of this run
+    check("re-arming CH00 locks CH01 back down", not other_card.toggle.isEnabled())
+
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
     pump(300)
@@ -395,13 +404,17 @@ def main():
     window13 = MainWindow(controller13)
     window13.show()
 
+    # Arming is exclusive - only one card unlocked at a time - so each
+    # address gets armed right before it's used, same as a real user
+    # selecting one card, acting on it, then selecting the next.
     window13._cards[4].arm()
-    window13._cards[6].arm()
     window13._cards[4].toggle.click()
     pump(300)
     check("address 4 turned on", share_a.output_on)
     check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
 
+    window13._cards[6].arm()
+    check("arming CH06 locked CH04 back down", not window13._cards[4].toggle.isEnabled())
     window13._cards[6].toggle.click()
     pump(300)
     check("address 6 also works on the same shared port", share_b.output_on)

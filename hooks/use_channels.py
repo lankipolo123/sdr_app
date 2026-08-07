@@ -10,7 +10,7 @@ from .use_port_scheduler import PortScheduler
 MAX_CHANNELS = 16  # ceiling on how many addresses the UI shows cards for
 
 QUERY_TIMEOUT_MS = 300
-QUERY_MAX_ATTEMPTS = 6  # re-send the targeted query a few times before giving up
+QUERY_MAX_ATTEMPTS = 4  # re-send the targeted query a few times before giving up
 
 
 class ChannelManager(QObject):

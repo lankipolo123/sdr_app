@@ -14,7 +14,7 @@ RESPONSE_TIMEOUT_MS = 400
 # with two modules wired in, others don't. Retrying several times
 # before giving up meaningfully improves the odds of getting through,
 # instead of reporting failure after a single unlucky attempt.
-RETRY_MAX_ATTEMPTS = 6
+RETRY_MAX_ATTEMPTS = 4
 
 
 class ChannelController(QObject):

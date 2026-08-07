@@ -98,7 +98,7 @@ def main():
         return controller
 
     print("=== Run 1: every channel already live at launch, no discovery step ===")
-    module = FakeModulePort(address=0)
+    module = FakeModulePort(address=1)  # wire address (1-16, matches CH01) - not the internal 0-based address card index 0 uses
     registry = FakePortRegistry()
     registry.add("FAKE0", module)
     install_fake_hardware(registry)
@@ -222,7 +222,7 @@ def main():
     pump(50)
 
     print("\n=== Shutdown while a command is still mid-flight (must not crash) ===")
-    silent_module = FakeModulePort(address=0, silent=True)
+    silent_module = FakeModulePort(address=1, silent=True)  # wire address (matches CH01, card index 0)
     registry_silent = FakePortRegistry()
     registry_silent.add("FAKE_SILENT", silent_module)
     install_fake_hardware(registry_silent)
@@ -239,7 +239,7 @@ def main():
     check("mid-command shutdown completed without raising", True)
 
     print("\n=== Command timeout (module goes silent), applies optimistically, still logged ===")
-    silent_later_module = FakeModulePort(address=0)
+    silent_later_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
     registry_timeout = FakePortRegistry()
     registry_timeout.add("FAKE_TIMEOUT", silent_later_module)
     install_fake_hardware(registry_timeout)
@@ -276,7 +276,7 @@ def main():
     # start rejecting - clicking OFF from there is also a single command
     # (turn_output_off), isolating the single-command rejection path
     # cleanly.
-    reject_module = FakeModulePort(address=0)
+    reject_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
     registry_reject = FakePortRegistry()
     registry_reject.add("FAKE_REJECT", reject_module)
     install_fake_hardware(registry_reject)
@@ -308,7 +308,7 @@ def main():
     print("(the ON button itself only ever sends a single Output ON command now -")
     print(" resume_output()'s two-command sequence is only reachable through the")
     print(" slider, when it's dragged to a level while output is currently off)")
-    resume_module = FakeModulePort(address=0, output_on=False)
+    resume_module = FakeModulePort(address=1, output_on=False)  # wire address (matches CH01, card index 0)
     registry_resume = FakePortRegistry()
     registry_resume.add("FAKE_RESUME", resume_module)
     install_fake_hardware(registry_resume)
@@ -343,12 +343,13 @@ def main():
     # without verifying a response actually comes from it, so two
     # separate fake ports would let channel B accidentally latch onto
     # channel A's (wrong) port on its first attempt - a red herring
-    # unrelated to the scheduler itself. Address 0 (channel A) has no
-    # module in the bus at all, so it's genuinely never answered -
-    # FakeAddressedBusPort.write() finds no target and just drops it,
-    # same net effect as "silent" without also bypassing the module's
-    # own silent-flag check the way routing straight to _handle() would.
-    sched_module_b = FakeModulePort(address=1)  # answers normally, once it actually gets a turn
+    # unrelated to the scheduler itself. Wire address 1 (channel A, card
+    # index 0) has no module in the bus at all, so it's genuinely never
+    # answered - FakeAddressedBusPort.write() finds no target and just
+    # drops it, same net effect as "silent" without also bypassing the
+    # module's own silent-flag check the way routing straight to
+    # _handle() would.
+    sched_module_b = FakeModulePort(address=2)  # wire address (matches CH02, card index 1) - answers normally once it gets a turn
     sched_bus = FakeAddressedBusPort([sched_module_b])
     registry_sched = FakePortRegistry()
     registry_sched.add("FAKE_SCHED", sched_bus)
@@ -392,8 +393,8 @@ def main():
     print("\n=== Port scheduler: Query also waits its turn behind a card's command ===")
     print("(Query releases the port between its own attempts too - it only waits")
     print(" out channel A's current attempt, not A's whole retry cycle)")
-    query_wait_module_b = FakeModulePort(address=1)
-    query_wait_bus = FakeAddressedBusPort([query_wait_module_b])  # address 0 has no module - never answered
+    query_wait_module_b = FakeModulePort(address=2)  # wire address (matches CH02, card index 1)
+    query_wait_bus = FakeAddressedBusPort([query_wait_module_b])  # wire address 1 (channel A, card index 0) has no module - never answered
     registry_query_wait = FakePortRegistry()
     registry_query_wait.add("FAKE_QUERY_WAIT", query_wait_bus)
     install_fake_hardware(registry_query_wait)
@@ -407,7 +408,7 @@ def main():
 
     query_wait_results = []
     controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
-    controller20.channels.brute_force_query(1, on=True)  # queues behind channel A's in-flight attempt
+    controller20.channels.brute_force_query(2, on=True)  # wire address 2 (matches CH02/module_b) - queues behind channel A's in-flight attempt
     pump(200)
     check("Query hasn't touched its module yet - channel A's 1st attempt hasn't timed out yet", not query_wait_module_b.output_on)
     check("Query produced no result yet (still queued)", not query_wait_results)
@@ -544,8 +545,8 @@ def main():
     print("(the real-world setup: one adapter, ask address A, then address B on")
     print(" the SAME port - both just blind-send independently, no claiming or")
     print(" disconnecting needed between them anymore)")
-    share_a = FakeModulePort(address=4, freq_mhz=2400)
-    share_b = FakeModulePort(address=6, freq_mhz=5800)
+    share_a = FakeModulePort(address=5, freq_mhz=2400)  # wire address (matches CH05, card index 4)
+    share_b = FakeModulePort(address=7, freq_mhz=5800)  # wire address (matches CH07, card index 6)
     addressed_bus = FakeAddressedBusPort([share_a, share_b])
     registry_share = FakePortRegistry()
     registry_share.add("FAKE_SHARE", addressed_bus)
@@ -560,15 +561,15 @@ def main():
     window13._cards[4].arm()
     window13._cards[4].toggle.click()
     pump(300)
-    check("address 4 turned on", share_a.output_on)
-    check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
+    check("CH05 turned on", share_a.output_on)
+    check("turning CH05 on doesn't leak into CH07", not share_b.output_on)
 
     window13._cards[6].arm()
     check("arming CH07 locked CH05 back down", not window13._cards[4].toggle.isEnabled())
     window13._cards[6].toggle.click()
     pump(300)
-    check("address 6 also works on the same shared port", share_b.output_on)
-    check("address 4 still on, unaffected by address 6's command", share_a.output_on)
+    check("CH07 also works on the same shared port", share_b.output_on)
+    check("CH05 still on, unaffected by CH07's command", share_a.output_on)
 
     controller13.shutdown()
     window13.close()

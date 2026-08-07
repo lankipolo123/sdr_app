@@ -68,6 +68,17 @@ class ChannelController(QObject):
         return self.state.data.address
 
     @property
+    def wire_address(self) -> int:
+        # The byte that actually goes out on the wire (and that a real
+        # module echoes back in its response) is 1-16, matching CH01-16
+        # exactly - not the internal 0-based address used everywhere
+        # else (loop indices, dict keys, config storage). Every frame
+        # this controller sends/checks must use this, never the raw
+        # address, or CH02 would talk to whatever's actually configured
+        # as address 1 while showing itself as "2".
+        return self.state.display_number
+
+    @property
     def display_name(self) -> str:
         # Matches ChannelCard's own title exactly (f"CH{display_number:02d}")
         # - any message shown to the user has to use this, never the raw
@@ -75,10 +86,10 @@ class ChannelController(QObject):
         return f"CH{self.state.display_number:02d}"
 
     def turn_output_on(self):
-        self._enqueue(commands.output_on(self.address), "Output ON", {"output_on": True})
+        self._enqueue(commands.output_on(self.wire_address), "Output ON", {"output_on": True})
 
     def turn_output_off(self):
-        self._enqueue(commands.output_off(self.address), "Output OFF", {"output_on": False})
+        self._enqueue(commands.output_off(self.wire_address), "Output OFF", {"output_on": False})
 
     def set_power(self, power_code: int):
         """Resend Signal Control with this channel's own stored Mode/
@@ -119,7 +130,7 @@ class ChannelController(QObject):
         # after the timeout/rejection path had just correctly reverted
         # it to False. turn_output_on()'s own state_update is the only
         # thing that should ever claim output_on=True.
-        frame = commands.set_signal(self.address, mode, freq, bandwidth, power_code)
+        frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
         label = f"Power -> 0x{power_code:02X}" + (" (blind, guessed mode/freq/bw)" if blind else "")
         self._enqueue(frame, label, {"power_code": power_code})
 
@@ -135,7 +146,7 @@ class ChannelController(QObject):
         self.set_power(power_code)
 
     def read_status(self):
-        self._enqueue(commands.query_status(self.address), "Status query")
+        self._enqueue(commands.query_status(self.wire_address), "Status query")
 
     def _enqueue(self, frame: bytes, label: str, state_update: dict | None = None):
         self._queue.append((frame, label, state_update))
@@ -198,7 +209,7 @@ class ChannelController(QObject):
         conn = self._find_and_open_connection()
         if conn is None:
             if self.logger:
-                self.logger.warning(f"TX ch{self.address} ({label}): no port opened successfully.")
+                self.logger.warning(f"TX ch{self.wire_address} ({label}): no port opened successfully.")
             self._pending_frame = frame
             self._pending_label = label
             self._pending_state_update = state_update
@@ -227,7 +238,7 @@ class ChannelController(QObject):
         # visibly snap the slider back before the real ack arrives.
         if self.logger:
             attempt_note = f" (attempt {self._pending_attempt + 1}/{RETRY_MAX_ATTEMPTS})" if self._pending_attempt else ""
-            self.logger.info(f"TX ch{self.address} ({label}){attempt_note}: {frame.hex(' ').upper()}")
+            self.logger.info(f"TX ch{self.wire_address} ({label}){attempt_note}: {frame.hex(' ').upper()}")
 
         sent = self._temp_conn.send(frame)
         if not sent:
@@ -253,7 +264,7 @@ class ChannelController(QObject):
             self._temp_conn = None
 
     def _on_frame_received(self, frame: ParsedFrame):
-        if frame.addr != self.address:
+        if frame.addr != self.wire_address:
             return  # not addressed to us - stray traffic, ignore
         self.handle_frame(frame)
 
@@ -379,7 +390,7 @@ class ChannelController(QObject):
         self._cancel_pending_timeout()
         self._close_temp_conn()
         if self.logger:
-            self.logger.info(f"RX ch{self.address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
+            self.logger.info(f"RX ch{self.wire_address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
 
         if is_ack:
             if frame.buf[0] == c.RESP_SUCCESS:

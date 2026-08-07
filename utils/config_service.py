@@ -9,7 +9,6 @@ DEFAULT_CONFIG = {
     "parity": "N",
     "data_bits": 8,
     "log_folder": default_log_folder(),
-    "channels": {},   # address (str) -> {"last_level": int}
 }
 
 CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")
@@ -44,9 +43,3 @@ class ConfigService:
 
     def set(self, key, value):
         self.data[key] = value
-
-    def get_channel(self, address: int) -> dict | None:
-        return self.data.get("channels", {}).get(str(address))
-
-    def set_channel(self, address: int, channel_data: dict):
-        self.data.setdefault("channels", {})[str(address)] = channel_data

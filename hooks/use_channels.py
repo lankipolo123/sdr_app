@@ -1,8 +1,11 @@
+import os
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
+from utils.channel_store import load_channel_states, save_channel_states
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_port_scheduler import PortScheduler
@@ -38,6 +41,14 @@ class ChannelManager(QObject):
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
 
+        # Lives next to config.json, in whatever directory THIS
+        # ConfigService instance actually points at - not a fixed global
+        # path, or every ConfigService instance (e.g. two isolated test
+        # runs, each with their own tmp config dir) would read/write the
+        # exact same real channels.ini and cross-contaminate each other's
+        # channel state.
+        self._channels_path = os.path.join(os.path.dirname(self.config.path), "channels.ini")
+
         # Shared by every channel AND Query - there's only one physical
         # port on the confirmed real wiring, so only one command anywhere
         # is ever allowed to actively use it at a time (see
@@ -47,22 +58,43 @@ class ChannelManager(QObject):
         # fought over it.
         self.port_scheduler = PortScheduler()
 
+        # Every channel's own mode/power/output is persisted to a single
+        # flat .ini file (see utils/channel_store.py), not this JSON
+        # config - read once up front rather than re-reading the file
+        # for every one of the 16 channels being constructed.
+        saved_states = load_channel_states(self._channels_path)
+
         self.states: dict[int, ChannelState] = {}
         self.controllers: dict[int, ChannelController] = {}
         for address in range(MAX_CHANNELS):
-            state = self._make_state(address)
+            state = self._make_state(address, saved_states.get(address))
             controller = ChannelController(
                 state, baud, parity, data_bits, self.logger, port_scheduler=self.port_scheduler,
             )
             controller.command_timeout.connect(self.command_timeout.emit)
+            # wire_address (not the raw 0-based address) so this matches
+            # the CH number everywhere else a controller identifies
+            # itself - see ChannelController.wire_address.
+            controller.raw_tx.connect(lambda data, ctrl=controller: self.raw_tx.emit(ctrl.wire_address, data))
+            controller.raw_rx.connect(lambda data, ctrl=controller: self.raw_rx.emit(ctrl.wire_address, data))
             self.states[address] = state
             self.controllers[address] = controller
 
-    def _make_state(self, address: int) -> ChannelState:
+    def _make_state(self, address: int, saved: dict | None) -> ChannelState:
         state = ChannelState(address)
-        saved = self.config.get_channel(address)
-        if saved and "last_level" in saved:
-            state.data.last_level = saved["last_level"]
+        if saved:
+            # UI-only restore - shows the card looking like it did last
+            # session (mode dropdown, slider position, toggle state), but
+            # nothing here actually sends a command. Matches the app's
+            # existing "nothing happens automatically on launch" design
+            # (no auto-scan, no auto-query) - a real send only ever
+            # follows an explicit tap/interaction with that specific card.
+            if "mode" in saved:
+                state.data.mode = saved["mode"]
+            if "last_level" in saved:
+                state.data.last_level = saved["last_level"]
+            if "output_on" in saved:
+                state.data.output_on = saved["output_on"]
         return state
 
     def get_controller(self, address: int) -> ChannelController:
@@ -106,15 +138,20 @@ class ChannelManager(QObject):
             if conn is None:
                 return
             conn.frame_received.disconnect(on_frame)
+            conn.raw_tx.disconnect(on_raw_tx)
             conn.raw_rx.disconnect(on_raw_rx)
             conn.disconnect()
             state["conn"] = None
+
+        def on_raw_tx(data: bytes):
+            self.raw_tx.emit(address, data)
 
         def on_raw_rx(data: bytes):
             state["raw_seen"] = True
             port = ports[state["port_index"]]
             if self.logger:
                 self.logger.info(f"Query: raw bytes on {port}: {data.hex(' ').upper()}")
+            self.raw_rx.emit(address, data)
 
         def on_frame(response: ParsedFrame):
             if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != address:
@@ -149,6 +186,7 @@ class ChannelManager(QObject):
                 advance_port()
                 return
             state["conn"] = conn
+            conn.raw_tx.connect(on_raw_tx)
             conn.raw_rx.connect(on_raw_rx)
             conn.frame_received.connect(on_frame)
             send_attempt()
@@ -193,11 +231,7 @@ class ChannelManager(QObject):
         advance_port()
 
     def save_all(self):
-        for address, state in self.states.items():
-            self.config.set_channel(address, {
-                "last_level": state.data.last_level,
-            })
-        self.config.save()
+        save_channel_states(self.states, self._channels_path)
 
     def shutdown(self):
         for controller in self.controllers.values():

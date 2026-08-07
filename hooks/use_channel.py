@@ -28,6 +28,7 @@ class ChannelController(QObject):
     shared adapter can use it too."""
 
     command_timeout = Signal(str)
+    busy_changed = Signal(bool)  # True while a command is queued/in-flight - lets the UI show "sending"
 
     def __init__(self, state: ChannelState, baud: int = 115200, parity: str = "N",
                  data_bits: int = 8, logger=None, preferred_port: str | None = None,
@@ -60,6 +61,7 @@ class ChannelController(QObject):
         self._pending_frame: bytes | None = None
         self._pending_attempt = 0
         self._queue: deque = deque()  # commands waiting for the in-flight one to finish
+        self._busy = False
 
     @property
     def address(self) -> int:
@@ -140,6 +142,12 @@ class ChannelController(QObject):
         if self._pending_timer is None and self._temp_conn is None and not self._awaiting_port:
             self._send_next()
 
+    def _set_busy(self, value: bool):
+        if self._busy == value:
+            return
+        self._busy = value
+        self.busy_changed.emit(value)
+
     def _send_next(self):
         if not self._queue:
             # Nothing left for us to do - release whatever slot we
@@ -147,10 +155,12 @@ class ChannelController(QObject):
             # next thing in line, if anything, can get its turn.
             if self.port_scheduler is not None:
                 self.port_scheduler.release(self)
+            self._set_busy(False)
             return
         frame, label, state_update = self._queue.popleft()
         self._pending_attempt = 0
         self._pending_frame, self._pending_label, self._pending_state_update = frame, label, state_update
+        self._set_busy(True)
         self._request_attempt()  # releases our own held slot (if any) and re-acquires for this attempt
 
     def _request_attempt(self):
@@ -272,6 +282,7 @@ class ChannelController(QObject):
         self._awaiting_port = False
         if self.port_scheduler is not None:
             self.port_scheduler.cancel(self)
+        self._set_busy(False)
 
     def _on_response_timeout(self):
         self._pending_attempt += 1

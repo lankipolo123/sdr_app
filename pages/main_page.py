@@ -161,6 +161,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._cards = {}
+        self._armed_card = None  # only one card unlocked at a time - see _on_card_armed
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
@@ -195,8 +196,17 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
+        card.armed.connect(lambda c=card: self._on_card_armed(c))
         self._cards[address] = card
         self._reflow_grid()
+
+    def _on_card_armed(self, card: ChannelCard):
+        # Only one card is ever armed at once - tapping a new one locks
+        # whichever was previously armed back down, so its controls
+        # can't still send by accident once attention has moved on.
+        if self._armed_card is not None and self._armed_card is not card:
+            self._armed_card.disarm()
+        self._armed_card = card
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

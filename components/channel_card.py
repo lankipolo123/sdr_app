@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import QHBoxLayout, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 
 
@@ -26,6 +26,17 @@ class ChannelCard(Card):
     force finds a port and fires the command, with retries and an
     optimistic apply if nothing answers.
 
+    Locked until explicitly tapped: the slider and ON/OFF buttons start
+    disabled, so nothing on this card can send until the user has
+    clicked the card itself once first. Guards against an accidental
+    drag/tap (e.g. a scroll gesture that catches a slider handle) firing
+    a real command to hardware that's already unpredictable enough on a
+    shared, collision-prone line - a genuine send should only ever
+    follow a deliberate interaction with that specific card. Only one
+    card is ever armed at a time - MainWindow listens for the `armed`
+    signal and locks whichever card was previously armed back down, so
+    arming CH02 doesn't leave CH01 sitting there still enabled too.
+
     Bidirectional reactive sync (toggle <-> slider <-> real hardware
     state), reusing the exact blockSignals() pattern from the old app's
     Device Control page so that syncing one widget from another's change
@@ -35,11 +46,14 @@ class ChannelCard(Card):
 
     WIDTH = 220  # exposed so the grid that lays these out can size columns to match
 
+    armed = Signal()  # this card just became the armed one - MainWindow locks any other back down
+
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
         self.setFixedWidth(self.WIDTH)
         self.controller = controller
         self.state = state
+        self._armed = False
 
         status_row = QHBoxLayout()
         self.status_dot = QLabel()
@@ -48,6 +62,9 @@ class ChannelCard(Card):
         status_row.addWidget(self.status_dot)
         status_row.addWidget(self.status_text)
         status_row.addStretch()
+        self.arm_hint = QLabel("Tap to enable")
+        self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
+        status_row.addWidget(self.arm_hint)
         self.body_layout.addLayout(status_row)
 
         self.slider = LevelSlider()
@@ -70,8 +87,55 @@ class ChannelCard(Card):
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
 
+        # Locked by default - see _arm()/mousePressEvent below.
+        self.slider.setEnabled(False)
+        self.toggle.setEnabled(False)
+
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
+
+    # --- tap-to-arm lock -------------------------------------------------
+
+    def mousePressEvent(self, event):
+        # Only lands here for a press that isn't consumed by an
+        # interactive child first - which, while locked, is every press
+        # on this card (the slider/toggle are disabled and don't accept
+        # mouse events), and once armed, anywhere that isn't the slider
+        # or the ON/OFF buttons themselves.
+        if not self._armed:
+            self.arm()
+        super().mousePressEvent(event)
+
+    def arm(self):
+        """Unlocks this card's slider/ON/OFF buttons and emits `armed` so
+        MainWindow can lock any other card back down - only one card is
+        ever armed at once. Normally triggered by tapping the card (see
+        mousePressEvent); exposed as a public method too since a real
+        click is the only other way to reach it, which tests need a
+        direct way to trigger."""
+        if self._armed:
+            return
+        self._armed = True
+        self.slider.setEnabled(True)
+        self.toggle.setEnabled(True)
+        self.arm_hint.setVisible(False)
+        self.setStyleSheet(
+            f"#Card {{ background: #FFFFFF; border: 2px solid {ACCENT_BLUE}; border-radius: 10px; }}"
+        )
+        self.armed.emit()
+
+    def disarm(self):
+        """Locks this card back down - called on whichever card was
+        previously armed when a different card gets tapped."""
+        if not self._armed:
+            return
+        self._armed = False
+        self.slider.setEnabled(False)
+        self.toggle.setEnabled(False)
+        self.arm_hint.setVisible(True)
+        self.setStyleSheet(
+            f"#Card {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+        )
 
     # --- user-driven changes -------------------------------------------------
 

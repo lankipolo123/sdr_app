@@ -28,7 +28,12 @@ toggle, each sending exactly one command (see `components/power_button.py`).
 - **Per channel, exactly two controls:** explicit ON/OFF buttons and a
   4-position Level slider (L0-L3), kept in bidirectional reactive sync
   with each other and with whatever the last confirmed (or optimistically
-  applied) hardware state is. Always clickable - no lock/arm step.
+  applied) hardware state is. Each card starts locked - the slider and
+  ON/OFF buttons are disabled until the card itself is tapped once, and
+  only one card is ever armed at a time (tapping a different card locks
+  the previous one back down) - a guard against an accidental
+  drag/scroll firing a real command on hardware that's already
+  unpredictable enough on a shared line.
 - **A separate "Query" diagnostic** (top Controls bar) exists alongside
   the cards - type in a specific address, and unlike a card's blind
   send, it actually brute-force finds the port and waits for/verifies a

@@ -111,6 +111,8 @@ class ChannelCard(Card):
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
 
+        self.controller.busy_changed.connect(self._on_busy_changed)
+
     # --- tap-to-arm lock -------------------------------------------------
 
     def mousePressEvent(self, event):
@@ -204,6 +206,24 @@ class ChannelCard(Card):
             # Was off - needs an explicit Output Switch ON, not just a
             # Signal Control power change (see ChannelController.resume_output).
             self.controller.resume_output(code)
+
+    # --- in-flight feedback --------------------------------------------------
+
+    def _on_busy_changed(self, busy: bool):
+        # Fires while this card's controller has a command queued or
+        # in-flight (see ChannelController.busy_changed) - shows plainly
+        # that something is happening instead of leaving the card looking
+        # idle for the ~1-2s a retry cycle can take. Not a popup/dialog -
+        # reuses the card's own status line, same as the confirmed/
+        # rejected/on/off states already do, so it doesn't block anything
+        # and doesn't reintroduce the separate confirmation banner that
+        # was removed earlier for not syncing well with real usage.
+        if busy:
+            self.status_text.setText("SENDING...")
+            self.status_text.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
+            self.status_dot.setStyleSheet(f"background: {ACCENT_BLUE}; border-radius: 4px;")
+        else:
+            self._update_status(self.slider.value())
 
     # --- real hardware state changes (Status Query responses, etc.) --------
 

@@ -202,7 +202,21 @@ class MainWindow(QMainWindow):
         # click on a card in the first place, so there's nothing to
         # check - but it also isn't a reason to disarm (a native window
         # event isn't the user clicking away from the card).
-        if event.type() == QEvent.MouseButtonPress and self._armed_card is not None and isinstance(obj, QWidget):
+        #
+        # A combo box's dropdown list is its own top-level popup, not a
+        # child of the card in Qt's widget tree - isAncestorOf() would
+        # say a click on an item in that list is "outside" the card and
+        # disarm it mid-selection, disabling the combo box right as Qt
+        # is processing the click that was supposed to pick a mode.
+        # QApplication.activePopupWidget() is non-None for exactly this
+        # kind of transient popup (combo dropdowns, context menus) -
+        # skip the disarm check entirely while one's open.
+        if (
+            event.type() == QEvent.MouseButtonPress
+            and self._armed_card is not None
+            and isinstance(obj, QWidget)
+            and QApplication.activePopupWidget() is None
+        ):
             if not (obj is self._armed_card or self._armed_card.isAncestorOf(obj)):
                 self._armed_card.disarm()
                 self._armed_card = None

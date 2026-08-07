@@ -27,23 +27,16 @@ class ConnectionController(QObject):
     def list_ports():
         return list_com_ports()
 
-    def connect(self, port_name: str, baud: int = 115200, parity: str = "N", data_bits: int = 8,
-                retry: bool = True) -> bool:
+    def connect(self, port_name: str, baud: int = 115200, parity: str = "N", data_bits: int = 8) -> bool:
         # Windows can briefly hold a COM port after a prior close() even
         # though close() has already returned - opening it again right
         # away can fail with "Access is denied" for a moment before the
-        # OS actually releases it. Worth a short bounded retry when
-        # reopening a port we have real reason to trust (the one this
-        # channel was just using, or its preferred_port - see
-        # ChannelController._find_and_open_connection). retry=False skips
-        # that wait entirely - used when brute-force sweeping many
-        # candidate ports we know nothing about yet, where a genuinely
-        # wrong/absent port fails immediately anyway and retrying it 3x
-        # with a sleep between each attempt just blocks the GUI thread
-        # for no benefit, once per wrong port, on every single command.
+        # OS actually releases it. This app opens/closes ports often
+        # (every blind-sent command opens its own connection fresh), so
+        # a short bounded retry here is worth it rather than treating
+        # that transient race as a hard "nothing's there."
         last_error = None
-        attempts = CONNECT_RETRY_ATTEMPTS if retry else 1
-        for attempt in range(attempts):
+        for attempt in range(CONNECT_RETRY_ATTEMPTS):
             try:
                 self.manager.open(port_name, baud, parity, data_bits)
                 self.thread.start_reading()
@@ -51,7 +44,7 @@ class ConnectionController(QObject):
                 return True
             except Exception as e:
                 last_error = e
-                if attempt < attempts - 1:
+                if attempt < CONNECT_RETRY_ATTEMPTS - 1:
                     time.sleep(CONNECT_RETRY_DELAY_S)
         self.error.emit(f"Failed to open {port_name}: {last_error}")
         return False

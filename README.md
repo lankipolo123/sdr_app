@@ -2,11 +2,12 @@
 
 A new, simplified app built from the original `sdr_controller` project.
 Reuses the parts of that codebase that were already solid (protocol
-layer, serial I/O, the `Card` widget, the toggle-sync `blockSignals`
+layer, serial I/O, the `Card` widget, the reactive-sync `blockSignals`
 pattern) and drops or rewrites the rest for a customer-facing,
 single-page, multi-channel control surface. `ToggleSwitch` was reused
-initially but has since been replaced by `PowerButton` (a plain
-checkable `QPushButton` with the same API) and removed as dead code.
+initially, replaced by a checkable `PowerButton`, then replaced again
+by the current `PowerButton` - two plain ON/OFF buttons instead of one
+toggle, each sending exactly one command (see `components/power_button.py`).
 
 ## What this app is
 
@@ -24,10 +25,22 @@ checkable `QPushButton` with the same API) and removed as dead code.
   a confirmed discovery response before allowing any control only means
   sometimes waiting on something that never comes, when the blind
   command would likely have gotten through anyway.
-- **Per channel, exactly two controls:** an On/Off toggle and a
+- **Per channel, exactly two controls:** explicit ON/OFF buttons and a
   4-position Level slider (L0-L3), kept in bidirectional reactive sync
   with each other and with whatever the last confirmed (or optimistically
-  applied) hardware state is.
+  applied) hardware state is. Each card starts locked - the slider and
+  ON/OFF buttons are disabled until the card itself is tapped once, and
+  only one card is ever armed at a time (tapping a different card locks
+  the previous one back down) - a guard against an accidental
+  drag/scroll firing a real command on hardware that's already
+  unpredictable enough on a shared line.
+- **A separate "Query" diagnostic** (top Controls bar) exists alongside
+  the cards - type in a specific address, and unlike a card's blind
+  send, it actually brute-force finds the port and waits for/verifies a
+  real confirmed response (retrying up to `QUERY_MAX_ATTEMPTS` times)
+  before reporting success or failure. Useful for confirming what
+  address a physical module is really configured to before relying on
+  that address's card.
 - **No Module Address anywhere in the UI.** The customer sees CH00,
   CH01, CH02, ... (display number = real protocol address, no offset -
   an earlier +1 offset was removed after it caused a warning showing
@@ -102,6 +115,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-No real hardware connected? The app will show "No channels responded"
-after scanning - that's expected, it just means no module answered the
-discovery probe.
+No real hardware connected? Cards will send blind and just never get
+confirmed (retries exhaust, the state applies optimistically anyway -
+see `hooks/use_channel.py`) - there's no discovery step to report "no
+devices found" up front anymore. `logs/sdr_controller.log` still
+records every send/timeout/rejection even though the UI no longer
+shows a warning banner for them.

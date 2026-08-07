@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtTest import QTest
 
 FAILURES = []
 UNCAUGHT = []
@@ -140,6 +141,12 @@ def main():
     check("CH01 itself is armed", other_card.toggle.isEnabled())
     card.arm()  # switch attention back to CH00 for the rest of this run
     check("re-arming CH00 locks CH01 back down", not other_card.toggle.isEnabled())
+
+    print("\n=== Clicking outside every card locks the armed one back down too ===")
+    QTest.mouseClick(window.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
+    check("clicking outside CH00 locks it back down", not card.toggle.isEnabled())
+    check("no card is armed anymore", window._armed_card is None)
+    card.arm()  # re-arm CH00 for the rest of this run
 
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()

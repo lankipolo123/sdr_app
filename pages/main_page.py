@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog
+    QScrollArea, QPushButton, QInputDialog, QApplication
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 
 from components import (
     ChannelCard, ConfirmDialog,
@@ -172,6 +172,27 @@ class MainWindow(QMainWindow):
         for address in range(MAX_CHANNELS):
             self._build_card(address)
 
+        # App-wide filter (not just a handler on this window) so a click
+        # ANYWHERE that isn't on the currently-armed card - empty space,
+        # another button, a dialog - locks it back down too, not just a
+        # click on a different card. A card left armed with nothing else
+        # going on is still a card whose controls could send by accident.
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        # The app-wide filter sees every QObject's events, not just
+        # QWidgets - a real windowing system also routes clicks through
+        # QWindow (native window decorations, etc.), and isAncestorOf()
+        # only accepts a QWidget. Anything that isn't one can't be a
+        # click on a card in the first place, so there's nothing to
+        # check - but it also isn't a reason to disarm (a native window
+        # event isn't the user clicking away from the card).
+        if event.type() == QEvent.MouseButtonPress and self._armed_card is not None and isinstance(obj, QWidget):
+            if not (obj is self._armed_card or self._armed_card.isAncestorOf(obj)):
+                self._armed_card.disarm()
+                self._armed_card = None
+        return super().eventFilter(obj, event)
+
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
         if not ok:
@@ -231,6 +252,7 @@ class MainWindow(QMainWindow):
             self.grid.addWidget(self._cards[address], row, col)
 
     def closeEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
         self.app.shutdown()
         event.accept()
 

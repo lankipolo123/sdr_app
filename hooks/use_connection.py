@@ -39,17 +39,6 @@ class ConnectionController(QObject):
         for attempt in range(CONNECT_RETRY_ATTEMPTS):
             try:
                 self.manager.open(port_name, baud, parity, data_bits)
-                # Flush whatever's already sitting in the OS receive
-                # buffer BEFORE the background read thread starts
-                # consuming it - every command opens its own fresh
-                # connection on a port other commands were just using, so
-                # a late-arriving response to a PREVIOUS command (or
-                # stray collision noise) could otherwise get read and
-                # handed to this new command as if it were the response
-                # to THIS one. send()'s own reset_input_buffer() call
-                # happens too late to catch this - by the time it runs,
-                # the read thread has already been running for a moment.
-                self.manager.reset_input_buffer()
                 self.thread.start_reading()
                 self.connected_changed.emit(True)
                 return True

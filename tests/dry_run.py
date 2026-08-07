@@ -26,8 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QEventLoop, QTimer, Qt
-from PySide6.QtTest import QTest
+from PySide6.QtCore import QEventLoop, QTimer
 
 FAILURES = []
 UNCAUGHT = []
@@ -141,12 +140,6 @@ def main():
     check("CH01 itself is armed", other_card.toggle.isEnabled())
     card.arm()  # switch attention back to CH00 for the rest of this run
     check("re-arming CH00 locks CH01 back down", not other_card.toggle.isEnabled())
-
-    print("\n=== Clicking outside every card locks the armed one back down too ===")
-    QTest.mouseClick(window.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
-    check("clicking outside CH00 locks it back down", not card.toggle.isEnabled())
-    check("no card is armed anymore", window._armed_card is None)
-    card.arm()  # re-arm CH00 for the rest of this run
 
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
@@ -481,52 +474,6 @@ def main():
 
     controller13.shutdown()
     window13.close()
-    pump(50)
-
-    print("\n=== Reset All: OFF to every address + clear every card's cached state ===")
-    print("(only one real module in the registry - the point here is the cached-")
-    print(" state clearing, which is deterministic; other addresses just blind-send")
-    print(" into nothing, same as normal, and shouldn't crash or block on it)")
-    reset_module = FakeModulePort(address=0, output_on=True, power_code=0x00)
-    registry_reset = FakePortRegistry()
-    registry_reset.add("FAKE_RESET", reset_module)
-    install_fake_hardware(registry_reset)
-    controller18 = make_app_controller()
-    window18 = MainWindow(controller18)
-    window18.show()
-
-    # Give channel 0 a real (non-default) baseline first, and arm a
-    # card, so Reset All actually has something to clear.
-    window18._cards[0].arm()
-    window18._cards[0].slider.setValue(3)  # off -> level 3: resume_output(), 2 commands in sequence
-    pump(600)
-    # Only power_code ever gets a real confirmed value from a Signal
-    # Control ack - mode/frequency/bandwidth only ever come from a real
-    # Status Query response, which nothing in the app requests
-    # automatically, so they stay None no matter what's sent.
-    check("channel 0 has a real confirmed power_code before reset", controller18.channels.states[0].data.power_code == 0x00)
-    check("a card is armed before reset", window18._armed_card is not None)
-
-    window18.reset_all_btn.click()
-    pump(WORST_CASE_MS)  # channel 0's OFF needs a real round trip; others just retry into nothing
-
-    check(
-        "every channel's cached mode cleared back to unknown",
-        all(controller18.channels.states[a].data.mode is None for a in range(MAX_CHANNELS)),
-    )
-    check(
-        "every channel's cached power_code cleared",
-        all(controller18.channels.states[a].data.power_code is None for a in range(MAX_CHANNELS)),
-    )
-    check(
-        "every channel's last_level reset to the default resume level",
-        all(controller18.channels.states[a].data.last_level == 1 for a in range(MAX_CHANNELS)),
-    )
-    check("no card left armed after Reset All", window18._armed_card is None)
-    check("channel 0's real module actually got turned off", not reset_module.output_on)
-
-    controller18.shutdown()
-    window18.close()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

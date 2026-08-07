@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog, QApplication
+    QScrollArea, QPushButton, QInputDialog
 )
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt
 
 from components import (
     ChannelCard, ConfirmDialog,
@@ -82,16 +82,6 @@ class MainWindow(QMainWindow):
         self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.query_btn.clicked.connect(self._on_query)
         status_row.addWidget(self.query_btn)
-        self.reset_all_btn = QPushButton("Reset All")
-        self.reset_all_btn.setToolTip(
-            "Blind-sends Output OFF to every one of the 16 addresses, and clears "
-            "every card's cached state back to fresh/unknown - use if what's on "
-            "screen feels stale or wrong. Doesn't guarantee real hardware actually "
-            "turns off, same honest-attempt-only behavior as any other OFF click."
-        )
-        self.reset_all_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        self.reset_all_btn.clicked.connect(self._on_reset_all)
-        status_row.addWidget(self.reset_all_btn)
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
@@ -182,27 +172,6 @@ class MainWindow(QMainWindow):
         for address in range(MAX_CHANNELS):
             self._build_card(address)
 
-        # App-wide filter (not just a handler on this window) so a click
-        # ANYWHERE that isn't on the currently-armed card - empty space,
-        # another button, a dialog - locks it back down too, not just a
-        # click on a different card. A card left armed with nothing else
-        # going on is still a card whose controls could send by accident.
-        QApplication.instance().installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        # The app-wide filter sees every QObject's events, not just
-        # QWidgets - a real windowing system also routes clicks through
-        # QWindow (native window decorations, etc.), and isAncestorOf()
-        # only accepts a QWidget. Anything that isn't one can't be a
-        # click on a card in the first place, so there's nothing to
-        # check - but it also isn't a reason to disarm (a native window
-        # event isn't the user clicking away from the card).
-        if event.type() == QEvent.MouseButtonPress and self._armed_card is not None and isinstance(obj, QWidget):
-            if not (obj is self._armed_card or self._armed_card.isAncestorOf(obj)):
-                self._armed_card.disarm()
-                self._armed_card = None
-        return super().eventFilter(obj, event)
-
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
         if not ok:
@@ -212,25 +181,6 @@ class MainWindow(QMainWindow):
             return
         self.status_label.setText(f"Querying {choice} to address {address}…")
         self.app.channels.brute_force_query(address, on=(choice == "ON"))
-
-    def _on_reset_all(self):
-        confirmed = ConfirmDialog.ask(
-            self,
-            "Reset All",
-            "Blind-send Output OFF to all 16 channels and clear every card's "
-            "cached state back to fresh/unknown? This doesn't guarantee real "
-            "hardware actually turns off - same best-effort as any other OFF click.",
-            confirm_text="Reset All",
-            cancel_text="Cancel",
-            danger=True,
-        )
-        if not confirmed:
-            return
-        if self._armed_card is not None:
-            self._armed_card.disarm()
-            self._armed_card = None
-        self.status_label.setText("Resetting all channels…")
-        self.app.channels.reset_all()
 
     def _on_clear_log(self):
         clear_log(self.app.logger)
@@ -281,7 +231,6 @@ class MainWindow(QMainWindow):
             self.grid.addWidget(self._cards[address], row, col)
 
     def closeEvent(self, event):
-        QApplication.instance().removeEventFilter(self)
         self.app.shutdown()
         event.accept()
 

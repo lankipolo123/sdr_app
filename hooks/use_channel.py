@@ -8,13 +8,13 @@ from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 from .use_connection import ConnectionController
 
-RESPONSE_TIMEOUT_MS = 800
+RESPONSE_TIMEOUT_MS = 400
 # Collision on a shared line is probabilistic, not a hard 100% wall -
 # confirmed on real hardware: some attempts get a clean response even
 # with two modules wired in, others don't. Retrying several times
 # before giving up meaningfully improves the odds of getting through,
 # instead of reporting failure after a single unlucky attempt.
-RETRY_MAX_ATTEMPTS = 6
+RETRY_MAX_ATTEMPTS = 4
 
 
 class ChannelController(QObject):

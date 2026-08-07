@@ -117,7 +117,7 @@ def main():
     check("all 16 channel cards built", len(window._cards) == MAX_CHANNELS)
 
     card = window._cards[0]
-    check("card's display number matches its address (CH00, no +1 offset)", card.state.display_number == 0)
+    check("card's display number is address+1 (CH01 for address 0)", card.state.display_number == 1)
     check("initial state: output off (matches fake module default)", not module.output_on)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
@@ -136,17 +136,17 @@ def main():
     print("\n=== Arming is exclusive - a second card locks the first back down ===")
     other_card = window._cards[1]
     other_card.arm()
-    check("arming CH01 locks CH00 back down", not card.toggle.isEnabled())
-    check("CH00's slider is locked too", not card.slider.isEnabled())
-    check("CH01 itself is armed", other_card.toggle.isEnabled())
-    card.arm()  # switch attention back to CH00 for the rest of this run
-    check("re-arming CH00 locks CH01 back down", not other_card.toggle.isEnabled())
+    check("arming CH02 locks CH01 back down", not card.toggle.isEnabled())
+    check("CH01's slider is locked too", not card.slider.isEnabled())
+    check("CH02 itself is armed", other_card.toggle.isEnabled())
+    card.arm()  # switch attention back to CH01 for the rest of this run
+    check("re-arming CH01 locks CH02 back down", not other_card.toggle.isEnabled())
 
     print("\n=== Clicking outside every card locks the armed one back down too ===")
     QTest.mouseClick(window.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
-    check("clicking outside CH00 locks it back down", not card.toggle.isEnabled())
+    check("clicking outside CH01 locks it back down", not card.toggle.isEnabled())
     check("no card is armed anymore", window._armed_card is None)
-    card.arm()  # re-arm CH00 for the rest of this run
+    card.arm()  # re-arm CH01 for the rest of this run
 
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
@@ -559,7 +559,7 @@ def main():
     check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
 
     window13._cards[6].arm()
-    check("arming CH06 locked CH04 back down", not window13._cards[4].toggle.isEnabled())
+    check("arming CH07 locked CH05 back down", not window13._cards[4].toggle.isEnabled())
     window13._cards[6].toggle.click()
     pump(300)
     check("address 6 also works on the same shared port", share_b.output_on)

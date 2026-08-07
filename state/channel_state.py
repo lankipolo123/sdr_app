@@ -29,13 +29,13 @@ class ChannelState(QObject):
 
     @property
     def display_number(self) -> int:
-        # CHn's n IS the address, always, everywhere - no +1 offset. Two
-        # different numbers for the same channel is exactly what caused
-        # "Channel 2" (a warning using the raw address) to look like a
-        # different, missing channel from "CH03" (the card, which used to
-        # add 1) - removing the offset entirely means there's no second
-        # numbering scheme left to drift out of sync with the first.
-        return self.data.address
+        # The one and only place the UI-facing channel number is
+        # computed - CH01..CH16 for internal addresses 0..15. Every
+        # user-facing label (card title, command_timeout messages) goes
+        # through this same property/display_name, so there's still
+        # only one numbering scheme to stay in sync - it just now
+        # starts at 1 instead of matching the raw address directly.
+        return self.data.address + 1
 
     def update(self, **kwargs):
         for k, v in kwargs.items():

@@ -100,6 +100,14 @@ def main():
     window = MainWindow(controller)
     window.show()
 
+    # There's no warning banner in the UI anymore (removed - it gave
+    # misleading "no response"/rejection reports even on commands that
+    # had actually reached the hardware, on a line where confirmation
+    # itself is unreliable). command_timeout still fires and still gets
+    # logged - just captured directly here instead of read off a label.
+    messages = []
+    controller.channels.command_timeout.connect(lambda msg: messages.append(msg))
+
     check(
         "all 16 controllers live immediately",
         all(controller.channels.controllers.get(a) is not None for a in range(MAX_CHANNELS)),
@@ -120,7 +128,7 @@ def main():
     check("toggle stayed checked", card.toggle.isChecked())
     check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
     check("ON alone never touches power_code - still the fake module's untouched default", module.power_code == 0x00)
-    check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not window.warning_label.isVisible())
+    check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not messages)
 
     print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
@@ -130,7 +138,8 @@ def main():
     check("guessed mode used (no real baseline exists)", module.mode == c.BLIND_DEFAULT_MODE)
     check("guessed frequency used", module.freq_mhz == c.BLIND_DEFAULT_FREQ_MHZ)
     check("guessed bandwidth used", module.bandwidth_mhz == c.BLIND_DEFAULT_BANDWIDTH_MHZ)
-    check("guessed-defaults send surfaced a warning", window.warning_label.isVisible())
+    check("guessed-defaults send logged a warning (no more UI banner for it)", any("GUESSED" in m for m in messages))
+    messages.clear()
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
     card.slider.setValue(0)
@@ -195,7 +204,7 @@ def main():
     pump(50)
     check("mid-command shutdown completed without raising", True)
 
-    print("\n=== Command timeout (module goes silent) surfaces in the UI, applies optimistically ===")
+    print("\n=== Command timeout (module goes silent), applies optimistically, still logged ===")
     silent_later_module = FakeModulePort(address=0)
     registry_timeout = FakePortRegistry()
     registry_timeout.add("FAKE_TIMEOUT", silent_later_module)
@@ -203,13 +212,14 @@ def main():
     controller6 = make_app_controller()
     window6 = MainWindow(controller6)
     window6.show()
-    check("warning label starts hidden", not window6.warning_label.isVisible())
+    messages6 = []
+    controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
     silent_later_module.silent = True  # module "unplugged" - stops answering
     window6._cards[0].toggle.click()  # sends a command that will never be ack'd
     check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
-    check("command_timeout reached the UI (warning now visible)", window6.warning_label.isVisible())
-    check("warning text is non-empty", bool(window6.warning_label.text()))
+    check("command_timeout still fires (no UI banner, but still logged/emitted)", bool(messages6))
+    check("timeout message is non-empty", bool(messages6[0]) if messages6 else False)
     check(
         "toggle stays as clicked - applied optimistically since the module often "
         "receives the command even without a readable ack back",
@@ -238,6 +248,8 @@ def main():
     controller15 = make_app_controller()
     window15 = MainWindow(controller15)
     window15.show()
+    messages15 = []
+    controller15.channels.command_timeout.connect(lambda msg: messages15.append(msg))
     window15._cards[0].toggle.click()  # off -> on: single Output ON command, succeeds normally
     pump(300)
     check("turned on normally first", window15._cards[0].toggle.isChecked())
@@ -249,7 +261,7 @@ def main():
     pump(200)  # fake hardware replies near-instantly, no need to wait for the full timeout
     check("toggle reverts back on after an explicit device rejection", window15._cards[0].toggle.isChecked())
     check("hardware itself never actually turned off", reject_module.output_on)
-    check("rejection surfaced as a warning too", window15.warning_label.isVisible())
+    check("rejection still fires command_timeout (no UI banner, but still logged/emitted)", bool(messages15))
 
     controller15.shutdown()
     window15.close()
@@ -298,6 +310,8 @@ def main():
     controller7 = make_app_controller()
     window7 = MainWindow(controller7)
     window7.show()
+    messages7 = []
+    controller7.channels.command_timeout.connect(lambda msg: messages7.append(msg))
     window7._cards[0].toggle.click()  # blind send straight into collision noise
     check("optimistic UI applies immediately, before any response", window7._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -306,7 +320,7 @@ def main():
         "(optimistic apply-on-timeout - real hardware showed unconfirmed commands often land anyway)",
         window7._cards[0].toggle.isChecked(),
     )
-    check("collision surfaced as a warning", window7.warning_label.isVisible())
+    check("collision still fires command_timeout (no UI banner, but still logged/emitted)", bool(messages7))
     check("no crash/hang against a colliding shared bus", True)
     controller7.shutdown()
     window7.close()

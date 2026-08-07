@@ -141,20 +141,35 @@ class ChannelController(QObject):
             self._send_next()
 
     def _send_next(self):
-        # Release the port from whatever command (if any) just finished
-        # before asking for it again for the next one - a no-op if we
-        # aren't actually holding it (e.g. the very first command ever,
-        # nothing to release yet).
-        if self.port_scheduler is not None:
-            self.port_scheduler.release(self)
         if not self._queue:
+            # Nothing left for us to do - release whatever slot we
+            # might still be holding (a no-op if we aren't) so the
+            # next thing in line, if anything, can get its turn.
+            if self.port_scheduler is not None:
+                self.port_scheduler.release(self)
             return
         frame, label, state_update = self._queue.popleft()
         self._pending_attempt = 0
         self._pending_frame, self._pending_label, self._pending_state_update = frame, label, state_update
+        self._request_attempt()  # releases our own held slot (if any) and re-acquires for this attempt
+
+    def _request_attempt(self):
+        # Asks for the port for exactly ONE attempt at the currently
+        # pending command - not for the whole command's retry cycle.
+        # Called again for every retry (see _on_response_timeout), so a
+        # channel stuck retrying a dead address only ever holds the
+        # port for one attempt at a time before giving someone else
+        # (another channel, Query) a turn, instead of hogging it for
+        # the full ~5-6s worst case.
         if self.port_scheduler is None:
-            self._open_and_send(frame, label, state_update)
+            self._open_and_send(self._pending_frame, self._pending_label, self._pending_state_update)
             return
+        # Release our own held slot first (a no-op if we aren't holding
+        # it, e.g. the very first attempt) - otherwise a retry would
+        # re-acquire while still marked as the current holder and just
+        # queue behind itself, since the scheduler only grants
+        # immediately when nobody holds it.
+        self.port_scheduler.release(self)
         self._awaiting_port = True
         self.port_scheduler.acquire(self, self._on_port_granted)
 
@@ -166,10 +181,10 @@ class ChannelController(QObject):
         # Brute-force find a port fresh for this command - try every
         # currently available port until one opens, same "just find one
         # that works" spirit as the reference tool's button-press
-        # behavior. Reused across this command's own retries (not
-        # re-found every retry), closed once the command finishes
-        # (confirmed, rejected, or retries
-        # exhausted).
+        # behavior. Opened fresh for every individual attempt (including
+        # retries - see _on_response_timeout) and closed right after,
+        # so the port scheduler slot is only ever held for one attempt
+        # at a time, not the whole command's retry cycle.
         conn = self._find_and_open_connection()
         if conn is None:
             if self.logger:
@@ -264,13 +279,16 @@ class ChannelController(QObject):
             # No response yet, but that's not necessarily a dead
             # module - on a shared line the failure is probabilistic,
             # so resend the exact same frame and try again rather than
-            # giving up after one unlucky attempt.
-            frame, label, state_update = self._pending_frame, self._pending_label, self._pending_state_update
+            # giving up after one unlucky attempt. Releases the port
+            # scheduler and re-acquires it for this next attempt (via
+            # _request_attempt) instead of just reusing the held
+            # connection - otherwise this one channel would keep the
+            # port to itself for every retry in a row, starving every
+            # other channel and Query for the whole cycle instead of
+            # just this one attempt.
             self._pending_timer = None
-            if self._temp_conn is not None and self._temp_conn.is_connected():
-                self._send(frame, label, state_update)
-            else:
-                self._open_and_send(frame, label, state_update)
+            self._close_temp_conn()
+            self._request_attempt()
             return
 
         label = self._pending_label

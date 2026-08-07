@@ -330,10 +330,9 @@ def main():
     pump(50)
 
     print("\n=== Port scheduler: a second channel's command waits its turn, doesn't collide ===")
-    print("(before this fix, channel B could try to open the port while channel A")
-    print(" was still using it, colliding and retrying blind against a port it")
-    print(" could never get - now B just waits quietly until A's command is fully")
-    print(" resolved, then runs automatically, no collision)")
+    print("(channel A now holds the port for one attempt at a time, not its whole")
+    print(" retry cycle - channel B gets a fair turn as soon as A's current attempt")
+    print(" times out, instead of waiting out A's entire ~5-6s worst case)")
     # One shared port (the real-world case), not two separate ones -
     # _find_and_open_connection() just grabs whichever port opens first
     # without verifying a response actually comes from it, so two
@@ -354,14 +353,14 @@ def main():
     window19.show()
 
     window19._cards[0].arm()
-    window19._cards[0].toggle.click()  # channel A starts its full retry cycle (silent module)
+    window19._cards[0].toggle.click()  # channel A starts its retry cycle (silent module) - holds the port for its 1st attempt
     pump(50)
 
     window19._cards[1].arm()
-    window19._cards[1].toggle.click()  # channel B's command should just wait, not attempt anything yet
+    window19._cards[1].toggle.click()  # channel B's command queues behind A's in-flight attempt
     pump(200)
     check(
-        "channel B hasn't touched its module yet - still waiting for A to finish",
+        "channel B hasn't touched its module yet - A's 1st attempt hasn't timed out yet",
         not sched_module_b.output_on,
     )
     check(
@@ -369,13 +368,15 @@ def main():
         controller19.channels.controllers[1]._awaiting_port,
     )
 
-    pump(WORST_CASE_MS)  # let channel A's full retry cycle exhaust and release the port
+    pump(RESPONSE_TIMEOUT_MS + 300)  # A's 1st attempt times out and releases the port - B shouldn't have to wait any longer than that
     check(
-        "channel B's command finally runs and succeeds once A releases the port",
+        "channel B's command runs and succeeds as soon as A's current attempt releases the port, not after A's whole cycle",
         sched_module_b.output_on,
     )
+
+    pump(WORST_CASE_MS + 500)  # A yielded one attempt to B, so give it that much extra room to finish its own cycle
     check(
-        "channel A's own UI still shows optimistically applied (unconfirmed)",
+        "channel A's own UI still shows optimistically applied (unconfirmed) once its cycle finally exhausts",
         window19._cards[0].toggle.isChecked(),
     )
 
@@ -384,8 +385,8 @@ def main():
     pump(50)
 
     print("\n=== Port scheduler: Query also waits its turn behind a card's command ===")
-    print("(Query uses the exact same shared scheduler - it's not architecturally")
-    print(" immune to the same collision a second card used to risk)")
+    print("(Query releases the port between its own attempts too - it only waits")
+    print(" out channel A's current attempt, not A's whole retry cycle)")
     query_wait_module_b = FakeModulePort(address=1)
     query_wait_bus = FakeAddressedBusPort([query_wait_module_b])  # address 0 has no module - never answered
     registry_query_wait = FakePortRegistry()
@@ -396,18 +397,18 @@ def main():
     window20.show()
 
     window20._cards[0].arm()
-    window20._cards[0].toggle.click()  # channel A starts its full retry cycle (nothing answers)
+    window20._cards[0].toggle.click()  # channel A starts its retry cycle (nothing answers) - holds the port for its 1st attempt
     pump(50)
 
     query_wait_results = []
     controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
-    controller20.channels.brute_force_query(1, on=True)  # should wait behind channel A, not collide
+    controller20.channels.brute_force_query(1, on=True)  # queues behind channel A's in-flight attempt
     pump(200)
-    check("Query hasn't touched its module yet - still waiting for channel A", not query_wait_module_b.output_on)
+    check("Query hasn't touched its module yet - channel A's 1st attempt hasn't timed out yet", not query_wait_module_b.output_on)
     check("Query produced no result yet (still queued)", not query_wait_results)
 
-    pump(WORST_CASE_MS)  # let channel A's full retry cycle exhaust and release the port
-    check("Query finally runs and confirms once channel A releases the port", query_wait_module_b.output_on)
+    pump(RESPONSE_TIMEOUT_MS + 300)  # channel A's 1st attempt times out and releases the port - Query shouldn't have to wait any longer than that
+    check("Query runs and confirms as soon as channel A's current attempt releases the port, not after A's whole cycle", query_wait_module_b.output_on)
     check("Query reported a real confirmed result", any("confirmed" in m for m in query_wait_results))
 
     controller20.shutdown()

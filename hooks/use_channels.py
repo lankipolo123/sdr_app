@@ -101,6 +101,15 @@ class ChannelManager(QObject):
         timer.setSingleShot(True)
         state = {"port_index": -1, "conn": None, "attempts": 0, "raw_seen": False}
 
+        def close_conn():
+            conn = state["conn"]
+            if conn is None:
+                return
+            conn.frame_received.disconnect(on_frame)
+            conn.raw_rx.disconnect(on_raw_rx)
+            conn.disconnect()
+            state["conn"] = None
+
         def on_raw_rx(data: bytes):
             state["raw_seen"] = True
             port = ports[state["port_index"]]
@@ -111,11 +120,8 @@ class ChannelManager(QObject):
             if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != address:
                 return
             timer.stop()
-            conn = state["conn"]
-            conn.frame_received.disconnect(on_frame)
-            conn.raw_rx.disconnect(on_raw_rx)
-            conn.disconnect()
-            state["conn"] = None
+            close_conn()
+            self.port_scheduler.release(query_token)
             success = len(response.buf) == 1 and response.buf[0] == c.RESP_SUCCESS
             port = ports[state["port_index"]]
             self.command_timeout.emit(
@@ -123,7 +129,29 @@ class ChannelManager(QObject):
                 f"{'confirmed' if success else 'device rejected it'} "
                 f"(attempt {state['attempts']}/{QUERY_MAX_ATTEMPTS})."
             )
-            self.port_scheduler.release(query_token)
+
+        def request_attempt():
+            # Asks for the port for exactly ONE attempt (open, send,
+            # wait) rather than for this whole address's entire
+            # sweep-and-retry cycle - otherwise an unanswering address
+            # would hold the shared port for up to QUERY_MAX_ATTEMPTS *
+            # len(ports) attempts in a row, freezing every channel card
+            # queued behind it for that whole stretch.
+            self.port_scheduler.acquire(query_token, on_port_granted)
+
+        def on_port_granted():
+            port = ports[state["port_index"]]
+            conn = ConnectionController()
+            if not conn.connect(port, baud, parity, data_bits):
+                if self.logger:
+                    self.logger.info(f"Query: failed to open {port}, trying next port.")
+                self.port_scheduler.release(query_token)
+                advance_port()
+                return
+            state["conn"] = conn
+            conn.raw_rx.connect(on_raw_rx)
+            conn.frame_received.connect(on_frame)
+            send_attempt()
 
         def send_attempt():
             state["attempts"] += 1
@@ -137,27 +165,16 @@ class ChannelManager(QObject):
             state["conn"].send(frame)
             timer.start(QUERY_TIMEOUT_MS)
 
-        def try_next_port():
+        def advance_port():
             state["port_index"] += 1
+            state["attempts"] = 0
             if state["port_index"] >= len(ports):
                 msg = f"Query: no response from address {address} after trying {len(ports)} port(s)."
                 if self.logger:
                     self.logger.warning(msg)
                 self.command_timeout.emit(msg)
-                self.port_scheduler.release(query_token)
                 return
-            port = ports[state["port_index"]]
-            conn = ConnectionController()
-            if not conn.connect(port, baud, parity, data_bits):
-                if self.logger:
-                    self.logger.info(f"Query: failed to open {port}, trying next port.")
-                try_next_port()
-                return
-            state["conn"] = conn
-            state["attempts"] = 0
-            conn.raw_rx.connect(on_raw_rx)
-            conn.frame_received.connect(on_frame)
-            send_attempt()
+            request_attempt()
 
         def on_timeout():
             port = ports[state["port_index"]]
@@ -165,18 +182,15 @@ class ChannelManager(QObject):
                 status = "bytes came back but never formed a valid response" if state["raw_seen"] else \
                     "zero bytes received, nothing came back at all"
                 self.logger.info(f"Query: attempt {state['attempts']} timed out on {port} - {status}.")
+            close_conn()
+            self.port_scheduler.release(query_token)
             if state["attempts"] < QUERY_MAX_ATTEMPTS:
-                send_attempt()
+                request_attempt()
                 return
-            conn = state["conn"]
-            conn.frame_received.disconnect(on_frame)
-            conn.raw_rx.disconnect(on_raw_rx)
-            conn.disconnect()
-            state["conn"] = None
-            try_next_port()
+            advance_port()
 
         timer.timeout.connect(on_timeout)
-        self.port_scheduler.acquire(query_token, try_next_port)
+        advance_port()
 
     def save_all(self):
         for address, state in self.states.items():

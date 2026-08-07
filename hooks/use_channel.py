@@ -8,7 +8,7 @@ from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 from .use_connection import ConnectionController
 
-RESPONSE_TIMEOUT_MS = 200
+RESPONSE_TIMEOUT_MS = 300
 # Collision on a shared line is probabilistic, not a hard 100% wall -
 # confirmed on real hardware: some attempts get a clean response even
 # with two modules wired in, others don't. Retrying several times

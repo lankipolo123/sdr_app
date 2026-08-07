@@ -120,6 +120,16 @@ def main():
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
     check("no baseline yet - nothing has ever queried status", controller.channels.states[0].data.mode is None)
+    check("card starts locked - toggle disabled until tapped", not card.toggle.isEnabled())
+    check("card starts locked - slider disabled until tapped", not card.slider.isEnabled())
+
+    print("\n=== Tap-to-arm: locked controls can't send until the card itself is clicked ===")
+    card.toggle.click()  # disabled - click() is a no-op on a disabled QPushButton
+    pump(100)
+    check("a click on a still-locked toggle does nothing", not module.output_on)
+    card.arm()
+    check("arming enables the toggle", card.toggle.isEnabled())
+    check("arming enables the slider", card.slider.isEnabled())
 
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
@@ -177,6 +187,7 @@ def main():
         "restored last_level from config, not the hard-coded default",
         controller2.channels.states[0].data.last_level == last_level_before_shutdown,
     )
+    window2._cards[0].arm()
     window2._cards[0].toggle.click()  # off -> on: single Output ON command, same as always
     pump(300)
     check("second run's ON click still reaches the same physical hardware", module.output_on)
@@ -196,6 +207,7 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
+    window3._cards[0].arm()
     window3._cards[0].toggle.click()  # sends a command that will never be ack'd
     # Deliberately no pump() here - shut down while the retry/response
     # timer is still running.
@@ -215,6 +227,7 @@ def main():
     messages6 = []
     controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
     silent_later_module.silent = True  # module "unplugged" - stops answering
+    window6._cards[0].arm()
     window6._cards[0].toggle.click()  # sends a command that will never be ack'd
     check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -250,6 +263,7 @@ def main():
     window15.show()
     messages15 = []
     controller15.channels.command_timeout.connect(lambda msg: messages15.append(msg))
+    window15._cards[0].arm()
     window15._cards[0].toggle.click()  # off -> on: single Output ON command, succeeds normally
     pump(300)
     check("turned on normally first", window15._cards[0].toggle.isChecked())
@@ -285,6 +299,7 @@ def main():
     # second command in the resume_output() sequence) goes through
     # normally right after, since reject_next resets itself.
     resume_module.reject_next = True
+    window16._cards[0].arm()
     window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands
     pump(400)  # both commands round-trip well under this on fake hardware
     check(
@@ -312,6 +327,7 @@ def main():
     window7.show()
     messages7 = []
     controller7.channels.command_timeout.connect(lambda msg: messages7.append(msg))
+    window7._cards[0].arm()
     window7._cards[0].toggle.click()  # blind send straight into collision noise
     check("optimistic UI applies immediately, before any response", window7._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -379,6 +395,8 @@ def main():
     window13 = MainWindow(controller13)
     window13.show()
 
+    window13._cards[4].arm()
+    window13._cards[6].arm()
     window13._cards[4].toggle.click()
     pump(300)
     check("address 4 turned on", share_a.output_on)

@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtTest import QTest
 
 FAILURES = []
 UNCAUGHT = []
@@ -121,6 +122,31 @@ def main():
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
     check("no baseline yet - nothing has ever queried status", controller.channels.states[0].data.mode is None)
+    check("card starts locked - toggle disabled until tapped", not card.toggle.isEnabled())
+    check("card starts locked - slider disabled until tapped", not card.slider.isEnabled())
+
+    print("\n=== Tap-to-arm: locked controls can't send until the card itself is clicked ===")
+    card.toggle.click()  # disabled - click() is a no-op on a disabled QPushButton
+    pump(100)
+    check("a click on a still-locked toggle does nothing", not module.output_on)
+    card.arm()
+    check("arming enables the toggle", card.toggle.isEnabled())
+    check("arming enables the slider", card.slider.isEnabled())
+
+    print("\n=== Arming is exclusive - a second card locks the first back down ===")
+    other_card = window._cards[1]
+    other_card.arm()
+    check("arming CH01 locks CH00 back down", not card.toggle.isEnabled())
+    check("CH00's slider is locked too", not card.slider.isEnabled())
+    check("CH01 itself is armed", other_card.toggle.isEnabled())
+    card.arm()  # switch attention back to CH00 for the rest of this run
+    check("re-arming CH00 locks CH01 back down", not other_card.toggle.isEnabled())
+
+    print("\n=== Clicking outside every card locks the armed one back down too ===")
+    QTest.mouseClick(window.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
+    check("clicking outside CH00 locks it back down", not card.toggle.isEnabled())
+    check("no card is armed anymore", window._armed_card is None)
+    card.arm()  # re-arm CH00 for the rest of this run
 
     print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
     card.toggle.click()
@@ -178,6 +204,7 @@ def main():
         "restored last_level from config, not the hard-coded default",
         controller2.channels.states[0].data.last_level == last_level_before_shutdown,
     )
+    window2._cards[0].arm()
     window2._cards[0].toggle.click()  # off -> on: single Output ON command, same as always
     pump(300)
     check("second run's ON click still reaches the same physical hardware", module.output_on)
@@ -197,6 +224,7 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
+    window3._cards[0].arm()
     window3._cards[0].toggle.click()  # sends a command that will never be ack'd
     # Deliberately no pump() here - shut down while the retry/response
     # timer is still running.
@@ -216,6 +244,7 @@ def main():
     messages6 = []
     controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
     silent_later_module.silent = True  # module "unplugged" - stops answering
+    window6._cards[0].arm()
     window6._cards[0].toggle.click()  # sends a command that will never be ack'd
     check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -251,6 +280,7 @@ def main():
     window15.show()
     messages15 = []
     controller15.channels.command_timeout.connect(lambda msg: messages15.append(msg))
+    window15._cards[0].arm()
     window15._cards[0].toggle.click()  # off -> on: single Output ON command, succeeds normally
     pump(300)
     check("turned on normally first", window15._cards[0].toggle.isChecked())
@@ -286,6 +316,7 @@ def main():
     # second command in the resume_output() sequence) goes through
     # normally right after, since reject_next resets itself.
     resume_module.reject_next = True
+    window16._cards[0].arm()
     window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands
     pump(400)  # both commands round-trip well under this on fake hardware
     check(
@@ -313,6 +344,7 @@ def main():
     window7.show()
     messages7 = []
     controller7.channels.command_timeout.connect(lambda msg: messages7.append(msg))
+    window7._cards[0].arm()
     window7._cards[0].toggle.click()  # blind send straight into collision noise
     check("optimistic UI applies immediately, before any response", window7._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -342,6 +374,7 @@ def main():
     window8 = MainWindow(controller8)
     window8.show()
     card8 = window8._cards[0]
+    card8.arm()
 
     card8.toggle.click()  # ON - module is silent, so this stays genuinely pending
     pump(100)
@@ -430,11 +463,17 @@ def main():
     window13 = MainWindow(controller13)
     window13.show()
 
+    # Arming is exclusive - only one card unlocked at a time - so each
+    # address gets armed right before it's used, same as a real user
+    # selecting one card, acting on it, then selecting the next.
+    window13._cards[4].arm()
     window13._cards[4].toggle.click()
     pump(300)
     check("address 4 turned on", share_a.output_on)
     check("turning address 4 on doesn't leak into address 6", not share_b.output_on)
 
+    window13._cards[6].arm()
+    check("arming CH06 locked CH04 back down", not window13._cards[4].toggle.isEnabled())
     window13._cards[6].toggle.click()
     pump(300)
     check("address 6 also works on the same shared port", share_b.output_on)
@@ -442,6 +481,52 @@ def main():
 
     controller13.shutdown()
     window13.close()
+    pump(50)
+
+    print("\n=== Reset All: OFF to every address + clear every card's cached state ===")
+    print("(only one real module in the registry - the point here is the cached-")
+    print(" state clearing, which is deterministic; other addresses just blind-send")
+    print(" into nothing, same as normal, and shouldn't crash or block on it)")
+    reset_module = FakeModulePort(address=0, output_on=True, power_code=0x00)
+    registry_reset = FakePortRegistry()
+    registry_reset.add("FAKE_RESET", reset_module)
+    install_fake_hardware(registry_reset)
+    controller18 = make_app_controller()
+    window18 = MainWindow(controller18)
+    window18.show()
+
+    # Give channel 0 a real (non-default) baseline first, and arm a
+    # card, so Reset All actually has something to clear.
+    window18._cards[0].arm()
+    window18._cards[0].slider.setValue(3)  # off -> level 3: resume_output(), 2 commands in sequence
+    pump(600)
+    # Only power_code ever gets a real confirmed value from a Signal
+    # Control ack - mode/frequency/bandwidth only ever come from a real
+    # Status Query response, which nothing in the app requests
+    # automatically, so they stay None no matter what's sent.
+    check("channel 0 has a real confirmed power_code before reset", controller18.channels.states[0].data.power_code == 0x00)
+    check("a card is armed before reset", window18._armed_card is not None)
+
+    window18.reset_all_btn.click()
+    pump(WORST_CASE_MS)  # channel 0's OFF needs a real round trip; others just retry into nothing
+
+    check(
+        "every channel's cached mode cleared back to unknown",
+        all(controller18.channels.states[a].data.mode is None for a in range(MAX_CHANNELS)),
+    )
+    check(
+        "every channel's cached power_code cleared",
+        all(controller18.channels.states[a].data.power_code is None for a in range(MAX_CHANNELS)),
+    )
+    check(
+        "every channel's last_level reset to the default resume level",
+        all(controller18.channels.states[a].data.last_level == 1 for a in range(MAX_CHANNELS)),
+    )
+    check("no card left armed after Reset All", window18._armed_card is None)
+    check("channel 0's real module actually got turned off", not reset_module.output_on)
+
+    controller18.shutdown()
+    window18.close()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

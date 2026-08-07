@@ -3,6 +3,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
+from state.level_map import DEFAULT_RESUME_LEVEL
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
 
@@ -157,6 +158,28 @@ class ChannelManager(QObject):
 
         timer.timeout.connect(on_timeout)
         try_next_port()
+
+    def reset_all(self):
+        """Full reset, for when what's on screen feels stale or wrong:
+        blind-sends Output OFF to every one of the 16 addresses
+        (best-effort, same retry/optimistic-apply behavior as a card's
+        own OFF button - not guaranteed to actually land on a
+        collision-prone line, just the same honest attempt every OFF
+        click already makes) AND immediately clears this app's own
+        cached state for every channel back to fresh/unknown - no
+        baseline Mode/Frequency/Bandwidth, level back to default. This
+        only resets what the APP believes; it doesn't and can't force
+        real hardware to a known state beyond sending OFF."""
+        for address in range(MAX_CHANNELS):
+            self.states[address].update(
+                output_on=False,
+                mode=None,
+                frequency_mhz=None,
+                bandwidth_mhz=None,
+                power_code=None,
+                last_level=DEFAULT_RESUME_LEVEL,
+            )
+            self.controllers[address].turn_output_off()
 
     def save_all(self):
         for address, state in self.states.items():

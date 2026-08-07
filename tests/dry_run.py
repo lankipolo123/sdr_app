@@ -27,7 +27,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtCore import QEvent, QEventLoop, QTimer, Qt, QPointF
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtTest import QTest
 
 FAILURES = []
@@ -612,6 +613,26 @@ def main():
     pump(300)
     check("hardware mode actually changed to Linear Sweep", mode_module.mode == c.MODE_LINEAR_SWEEP)
     check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
+
+    # Regression: a combo box's dropdown list is its own top-level popup,
+    # not a child of the card in Qt's widget tree - isAncestorOf() used
+    # to see a click on an item in that list as "outside" the card and
+    # disarm it mid-selection, disabling the combo box right as the
+    # click was supposed to register (reported as "hard to click on it").
+    window_mode._cards[0].mode_combo.showPopup()
+    pump(50)
+    popup = QApplication.activePopupWidget()
+    check("mode dropdown's popup actually opened", popup is not None)
+    if popup is not None:
+        click_on_popup = QMouseEvent(
+            QEvent.MouseButtonPress, QPointF(5, 5), QPointF(5, 5), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+        )
+        window_mode.eventFilter(popup, click_on_popup)
+        check(
+            "clicking the open dropdown's own popup does NOT disarm the card mid-selection",
+            window_mode._cards[0]._armed,
+        )
+        popup.close()
 
     controller_mode.shutdown()
     window_mode.close()

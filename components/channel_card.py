@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QHBoxLayout, QLabel
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from .card import Card
@@ -6,6 +6,7 @@ from .power_button import PowerButton
 from .level_slider import LevelSlider
 from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
+from services.protocol import constants as c
 
 # A drag across the slider fires valueChanged once per intermediate
 # position it passes through (0 -> 1 -> 2 -> 3), not just the value it
@@ -19,16 +20,18 @@ SLIDER_SEND_DEBOUNCE_MS = 250
 
 
 class ChannelCard(Card):
-    """One hardware channel's controls: explicit ON/OFF buttons (each
-    sends exactly one command, same simplicity as the standalone Query
-    diagnostic - see PowerButton) + a 4-position Level slider (L0-L3),
-    with plain L0/L1/L2/L3 text labels under the slider marking each
-    position - not buttons, just labels, the active one highlighted.
+    """One hardware channel's controls: a Modulation dropdown (White
+    Noise/Linear Sweep/Comb Spectrum/Single, see
+    services/protocol/constants.MODE_NAMES), explicit ON/OFF buttons
+    (each sends exactly one command, same simplicity as the standalone
+    Query diagnostic - see PowerButton), and a 4-position Level slider
+    (L0-L3), with plain L0/L1/L2/L3 text labels under the slider marking
+    each position - not buttons, just labels, the active one highlighted.
 
-    No Mode/Frequency/Bandwidth shown anywhere - the customer never sees
-    that data, only Power. No Module Address shown either - the customer
-    only ever sees the display number (CH01, CH02, ...), never the real
-    protocol address.
+    No Frequency/Bandwidth shown anywhere - the customer never sees that
+    data, only Mode and Power. No Module Address shown either - the
+    customer only ever sees the display number (CH01, CH02, ...), never
+    the real protocol address.
 
     Every card has a live controller from launch and always sends
     blind - there's no discovery step and no online/offline state to
@@ -84,6 +87,16 @@ class ChannelCard(Card):
         status_row.addWidget(self.arm_hint)
         self.body_layout.addLayout(status_row)
 
+        # Order matches services/protocol/constants.MODE_NAMES exactly -
+        # combo box index N always means self._mode_codes[N], not the
+        # raw mode byte value directly (those happen to line up 0-3 too,
+        # but building this list explicitly means it stays correct even
+        # if MODE_NAMES's own codes/ordering ever changes).
+        self._mode_codes = list(c.MODE_NAMES.keys())
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(list(c.MODE_NAMES.values()))
+        self.body_layout.addWidget(self.mode_combo)
+
         self.slider = LevelSlider()
         self.body_layout.addWidget(self.slider)
 
@@ -103,10 +116,12 @@ class ChannelCard(Card):
 
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         # Locked by default - see _arm()/mousePressEvent below.
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
+        self.mode_combo.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
@@ -137,6 +152,7 @@ class ChannelCard(Card):
         self._armed = True
         self.slider.setEnabled(True)
         self.toggle.setEnabled(True)
+        self.mode_combo.setEnabled(True)
         self.arm_hint.setVisible(False)
         self.setStyleSheet(
             f"#Card {{ background: #FFFFFF; border: 2px solid {ACCENT_BLUE}; border-radius: 10px; }}"
@@ -151,6 +167,7 @@ class ChannelCard(Card):
         self._armed = False
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
+        self.mode_combo.setEnabled(False)
         self.arm_hint.setVisible(True)
         self.setStyleSheet(
             f"#Card {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
@@ -196,6 +213,12 @@ class ChannelCard(Card):
             self._send_level(self._pending_level)
             self._pending_level = None
 
+    def _on_mode_changed(self, index: int):
+        # A dropdown selection is a single discrete click, not a
+        # continuous drag - no debounce needed the way the slider
+        # needed one (see SLIDER_SEND_DEBOUNCE_MS).
+        self.controller.set_mode(self._mode_codes[index])
+
     def _send_level(self, level: int):
         code = LEVEL_TO_HEX[level]
         if code is None:
@@ -240,6 +263,12 @@ class ChannelCard(Card):
             self.slider.blockSignals(True)
             self.slider.setValue(level)
             self.slider.blockSignals(False)
+
+        mode_index = self._mode_codes.index(d.mode if d.mode is not None else c.BLIND_DEFAULT_MODE)
+        if self.mode_combo.currentIndex() != mode_index:
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(mode_index)
+            self.mode_combo.blockSignals(False)
 
         if level > 0:
             d.last_level = level

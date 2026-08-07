@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
+from state.level_map import LEVEL_TO_HEX
 from .use_connection import ConnectionController
 
 RESPONSE_TIMEOUT_MS = 300
@@ -133,6 +134,38 @@ class ChannelController(QObject):
         frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
         label = f"Power -> 0x{power_code:02X}" + (" (blind, guessed mode/freq/bw)" if blind else "")
         self._enqueue(frame, label, {"power_code": power_code})
+
+    def set_mode(self, mode: int):
+        """Mirror image of set_power(): resend Signal Control with this
+        channel's own stored Frequency/Bandwidth/Power unchanged, plus the
+        new Mode. Same blind-guess fallback and same accepted risk - and
+        same reasoning as set_power() for not touching output_on: Signal
+        Control alone never re-enables RF output, so changing mode while
+        output is off is harmless, it just won't turn anything on.
+
+        Power falls back to the level the slider is currently set to
+        resume from (LEVEL_TO_HEX[last_level]) rather than a fixed guess -
+        last_level is never 0/off (see state/level_map.py), so this is
+        always a real level the customer has actually chosen, closer to
+        their intent than an arbitrary default would be."""
+        d = self.state.data
+        blind = d.frequency_mhz is None or d.bandwidth_mhz is None or d.power_code is None
+        freq = d.frequency_mhz if d.frequency_mhz is not None else c.BLIND_DEFAULT_FREQ_MHZ
+        bandwidth = d.bandwidth_mhz if d.bandwidth_mhz is not None else c.BLIND_DEFAULT_BANDWIDTH_MHZ
+        power_code = d.power_code if d.power_code is not None else LEVEL_TO_HEX[d.last_level]
+
+        if blind:
+            msg = (
+                f"{self.display_name}: no status baseline yet - sending mode={c.MODE_NAMES[mode]} "
+                f"with GUESSED frequency/bandwidth/power defaults (blind, unconfirmed)."
+            )
+            if self.logger:
+                self.logger.warning(msg)
+            self.command_timeout.emit(msg)
+
+        frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
+        label = f"Mode -> {c.MODE_NAMES[mode]}" + (" (blind, guessed freq/bw/power)" if blind else "")
+        self._enqueue(frame, label, {"mode": mode})
 
     def resume_output(self, power_code: int):
         """Turning back on after being off needs an explicit Output Switch

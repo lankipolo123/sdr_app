@@ -18,6 +18,7 @@ often still reaches the module).
 Run: python tests/dry_run.py
 Exits non-zero (and prints a summary of FAILs) if anything's wrong.
 """
+import configparser
 import os
 import sys
 import tempfile
@@ -75,6 +76,7 @@ def main():
     from components.channel_card import SLIDER_SEND_DEBOUNCE_MS
     from services.protocol import constants as c
     from services.protocol.packet_parser import ParsedFrame
+    from state.level_map import LEVEL_LABELS
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
@@ -87,12 +89,17 @@ def main():
     # loop would just hang forever with nothing to click it.
     ConfirmDialog.ask = staticmethod(lambda *a, **k: True)
 
-    work_dir = tempfile.mkdtemp(prefix="sdr_dry_run_")
-    config_path = os.path.join(work_dir, "config.json")
-
-    def make_app_controller():
+    def make_app_controller(work_dir: str | None = None):
+        # Each call gets its OWN fresh, isolated temp dir by default - two
+        # unrelated test sections must never share a config.json/
+        # channels.ini, or one section's leftover channel state (now
+        # including mode/output, not just last_level) would silently
+        # bleed into the next section's "fresh" controller. Only the
+        # explicit restart test below passes the SAME work_dir on purpose,
+        # to prove state actually survives a real restart.
+        work_dir = work_dir or tempfile.mkdtemp(prefix="sdr_dry_run_")
         controller = AppController.__new__(AppController)
-        controller.config = ConfigService(path=config_path)
+        controller.config = ConfigService(path=os.path.join(work_dir, "config.json"))
         controller.logger = setup_logger(os.path.join(work_dir, "logs"))
         controller.channels = ChannelManager(controller.config, controller.logger)
         return controller
@@ -103,7 +110,8 @@ def main():
     registry.add("FAKE0", module)
     install_fake_hardware(registry)
 
-    controller = make_app_controller()
+    restart_work_dir = tempfile.mkdtemp(prefix="sdr_dry_run_restart_")
+    controller = make_app_controller(restart_work_dir)
     window = MainWindow(controller)
     window.show()
 
@@ -192,29 +200,32 @@ def main():
     window.close()
     pump(50)
 
-    with open(config_path) as f:
-        import json
-        saved = json.load(f)
-    check("config file has channel 0's state", "0" in saved.get("channels", {}))
+    saved = configparser.ConfigParser()
+    saved.read(os.path.join(restart_work_dir, "channels.ini"))
+    check("channels.ini has CH01's state", saved.has_section("CH01"))
     check(
-        "persisted last_level matches in-memory value",
-        saved.get("channels", {}).get("0", {}).get("last_level") == last_level_before_shutdown,
+        "persisted power level matches in-memory value",
+        saved.get("CH01", "power", fallback=None) == LEVEL_LABELS[last_level_before_shutdown],
     )
 
     print("\n=== Run 2: restart against the same (still 'plugged in') hardware ===")
-    controller2 = make_app_controller()
+    controller2 = make_app_controller(restart_work_dir)
     window2 = MainWindow(controller2)
     window2.show()
     check(
         "restored last_level from config, not the hard-coded default",
         controller2.channels.states[0].data.last_level == last_level_before_shutdown,
     )
-    window2._cards[0].arm()
-    window2._cards[0].toggle.click()  # off -> on: single Output ON command, same as always
-    pump(300)
-    check("second run's ON click still reaches the same physical hardware", module.output_on)
     check(
-        "power_code carries over from the module's last real Signal Control - ON alone doesn't touch it",
+        "restored output_on too - card already shows on before any interaction this run",
+        window2._cards[0].toggle.isChecked(),
+    )
+    window2._cards[0].arm()
+    window2._cards[0].toggle.click()  # was restored to on, so this click turns it off this time
+    pump(300)
+    check("second run's OFF click still reaches the same physical hardware", not module.output_on)
+    check(
+        "power_code carries over from the module's last real Signal Control - OFF alone doesn't touch it",
         module.power_code == 0x00,
     )
     controller2.shutdown()
@@ -573,6 +584,54 @@ def main():
 
     controller13.shutdown()
     window13.close()
+    pump(50)
+
+    print("\n=== Modulation dropdown sends Signal Control and persists across restart ===")
+    mode_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
+    registry_mode = FakePortRegistry()
+    registry_mode.add("FAKE_MODE", mode_module)
+    install_fake_hardware(registry_mode)
+
+    mode_work_dir = tempfile.mkdtemp(prefix="sdr_dry_run_mode_")
+    controller_mode = make_app_controller(mode_work_dir)
+    window_mode = MainWindow(controller_mode)
+    window_mode.show()
+    check("mode dropdown starts on White Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
+
+    window_mode._cards[0].arm()
+    window_mode._cards[0].mode_combo.setCurrentIndex(1)  # Linear Sweep
+    pump(300)
+    check("hardware mode actually changed to Linear Sweep", mode_module.mode == c.MODE_LINEAR_SWEEP)
+    check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
+
+    controller_mode.shutdown()
+    window_mode.close()
+    pump(50)
+
+    mode_saved = configparser.ConfigParser()
+    mode_saved.read(os.path.join(mode_work_dir, "channels.ini"))
+    check(
+        "mode persisted to channels.ini as a human-readable name",
+        mode_saved.get("CH01", "mode", fallback=None) == "Linear Sweep",
+    )
+
+    print("\n=== Modulation mode restored on relaunch, still no auto-send ===")
+    controller_mode2 = make_app_controller(mode_work_dir)
+    mode_messages2 = []
+    controller_mode2.channels.command_timeout.connect(lambda msg: mode_messages2.append(msg))
+    window_mode2 = MainWindow(controller_mode2)
+    window_mode2.show()
+    pump(100)
+    check(
+        "dropdown shows the restored mode immediately, before any interaction",
+        window_mode2._cards[0].mode_combo.currentIndex() == 1,
+    )
+    check(
+        "nothing sent automatically just from restoring - matches the app's no-auto-anything-on-launch design",
+        not mode_messages2,
+    )
+    controller_mode2.shutdown()
+    window_mode2.close()
     pump(50)
 
     print("\n=== Uncaught exceptions during the run ===")

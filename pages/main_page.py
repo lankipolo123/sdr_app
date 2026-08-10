@@ -11,11 +11,12 @@ from components import (
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_channels import MAX_CHANNELS
+from services.protocol.packet_parser import describe_command
 from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
 
 TOP_CARD_SIZE = (320, 120)
-LOG_CARD_HEIGHT = 120  # matches TOP_CARD_SIZE's height, sits at the same row
+LOG_CARD_HEIGHT = 90  # Controls/Logs are top-aligned in their row (not stretched to match), so this doesn't need to match TOP_CARD_SIZE's height
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
@@ -286,8 +287,11 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx.
-        self._append_log(f"TX CH{address:02d}: {data.hex(' ').upper()}")
+        # number on screen) - see ChannelManager.raw_tx. describe_command
+        # decodes the actual bytes (mode/freq/bw/power spelled out, power
+        # as Low/Med/High/Off) - raw hex stays alongside it, not replaced,
+        # for the same low-level debugging the plain hex view was for.
+        self._append_log(f"TX CH{address:02d}: {describe_command(data)} | {data.hex(' ').upper()}")
 
     def _on_raw_rx(self, address: int, data: bytes):
         self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")

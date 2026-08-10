@@ -2,7 +2,10 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QToolBu
 from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QColor, QIcon, QGuiApplication, QRegion
 
-from styles.theme_colors import TEXT_DARK, TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR, SURFACE
+from styles.theme_colors import (
+    TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR, STATUS_ERROR_LIGHT,
+    NAVY, ACCENT_BLUE, TEXT_LIGHT, SURFACE,
+)
 
 # Corner radius of the window's rounded outline.
 WINDOW_RADIUS = 8
@@ -31,9 +34,9 @@ class _CaptionButton(QToolButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.kind == "close_app":
-            color = STATUS_ERROR if self.underMouse() else TEXT_MUTED
+            color = STATUS_ERROR_LIGHT if self.underMouse() else STATUS_ERROR
         else:
-            color = TEXT_DARK if self.underMouse() else TEXT_MUTED
+            color = TEXT_LIGHT if self.underMouse() else ACCENT_BLUE
         pen = QPen(QColor(color))
         pen.setWidthF(1.3)
         painter.setPen(pen)
@@ -99,10 +102,14 @@ class TitleBar(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         # Full border on all four sides. Top corners rounded to match the
         # window's own rounded top edge; bottom stays a straight line
-        # where it meets the content below.
+        # where it meets the content below. NAVY fill (the app's own
+        # primary/brand color, same one every other NAVY-filled control -
+        # Clear Log, the mode dropdown, Confirm - already uses) instead of
+        # plain white, self-colored border so the fill reads as one solid
+        # bar rather than a swatch with a visible seam.
         self.setStyleSheet(
-            f"#TitleBar {{ background: {SURFACE}; "
-            f"border: 2px solid {BORDER_SUBTLE}; "
+            f"#TitleBar {{ background: {NAVY}; "
+            f"border: 2px solid {NAVY}; "
             f"border-top-left-radius: 10px; border-top-right-radius: 10px; }}"
         )
 
@@ -127,7 +134,11 @@ class TitleBar(QWidget):
             layout.addWidget(icon_label)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"color: {TEXT_DARK}; font-size: 12px; font-weight: 600;")
+        # Secondary/accent color, same as the minimize/full-screen buttons
+        # beside it - the app's established NAVY-fill/ACCENT_BLUE-content
+        # pairing, everywhere else it's used (Clear Log, mode dropdown,
+        # Confirm).
+        title_label.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
         layout.addWidget(title_label)
 
         layout.addStretch()

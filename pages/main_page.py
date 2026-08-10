@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
     def __init__(self, app_controller):
         super().__init__()
         self.app = app_controller
-        self.setWindowTitle("SDR App")
+        self.setWindowTitle("TX Controller")
         self.resize(1200, 780)
         # The grid is always CHANNELS_PER_ROW (4) columns wide (see
         # _reflow_grid) - this floor keeps each of those 4 columns at
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self.title_bar = TitleBar(self, "SDR App", icon=self.windowIcon())
+        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
         self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
         root.addWidget(self.title_bar)
 
@@ -152,10 +152,6 @@ class MainWindow(QMainWindow):
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
 
         outer.addLayout(top_row)
-
-        channels_label = QLabel("Channels")
-        channels_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
-        outer.addWidget(channels_label)
 
         # No border/fill of its own - purely a scroll mechanism around the
         # grid, not a bordered section like Controls/Logs. Each card

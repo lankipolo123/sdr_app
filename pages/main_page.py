@@ -250,12 +250,14 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Log cleared.")
 
     def _on_open_logs_dialog(self):
-        if self.logs_dialog is None:
-            lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
-            self.logs_dialog = LogsDialog(self, lines)
+        # Always rebuilt fresh from what the compact log currently holds -
+        # a reused instance only ever got backfilled at its first
+        # creation (see LogsDialog's docstring), so this is what actually
+        # guarantees it never reopens stale or empty.
+        lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
+        self.logs_dialog = LogsDialog(self, lines)
         self.logs_dialog.show()
         self.logs_dialog.raise_()
-        self.logs_dialog.activateWindow()
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH

@@ -68,7 +68,7 @@ class LevelSlider(QSlider):
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
         self.setFixedWidth(26)
-        self.setFixedHeight(85)
+        self.setFixedHeight(70)
         # QAbstractSlider.setValue() is a plain slot, not a virtual C++
         # method - when the user actually drags the handle, Qt's own
         # internal mouse handling changes the value without ever calling

@@ -140,6 +140,13 @@ class MainWindow(QMainWindow):
         self.log_list.setStyleSheet(
             f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
         )
+        # This compact view is only meant to show whatever's most current
+        # - no scrollbar to drag through history here, that's what the
+        # maximize button's LogsDialog is for. Older lines above the
+        # visible area just fall off, same as if LOG_MAX_ENTRIES trimmed
+        # them.
+        self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
         top_row.addWidget(logs_card, 1, alignment=Qt.AlignTop)
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog

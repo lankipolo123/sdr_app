@@ -88,9 +88,16 @@ toggle, each sending exactly one command (see `components/power_button.py`).
    more. Confirm 16 is still the right ceiling.
 3. **Visual style.** Uses a custom-styled frameless window (own title
    bar, rounded corners) and the `Card` look throughout.
-4. **Packaging** (PyInstaller + Inno Setup + GitHub Actions) not set up
-   in this new repo yet - straightforward to add once functionality is
-   signed off, PyArmor intentionally left out for now per request.
+4. **Packaging.** PyInstaller `.exe` build is set up (`build_exe.py`,
+   see "Building a standalone .exe" below) - verified end-to-end
+   (asset bundling + frozen path resolution) via a Linux build in
+   this environment, but the actual Windows `.exe` still needs a real
+   build-and-run on Windows to confirm. Inno Setup installer script
+   (`installer.iss`, see "Building the installer" below) is written
+   but genuinely untested - Inno Setup has no Linux/Mac port at all,
+   so unlike the `.exe` this couldn't be verified by an actual
+   compile in this environment. GitHub Actions (CI automation) not
+   set up yet. PyArmor intentionally left out for now per request.
 
 ## File structure (React-style mapping)
 
@@ -121,3 +128,65 @@ see `hooks/use_channel.py`) - there's no discovery step to report "no
 devices found" up front anymore. `logs/sdr_controller.log` still
 records every send/timeout/rejection even though the UI no longer
 shows a warning banner for them.
+
+## Building a standalone .exe
+
+PyInstaller builds for whatever OS it runs on - there's no
+cross-compiling a Windows `.exe` from Linux/Mac, so this has to run on
+a real Windows machine:
+
+```
+pip install -r requirements-build.txt
+python build_exe.py
+```
+
+Output lands in `dist/TX Controller.exe` - one file, no console
+window, app icon and the `assets/` folder (icons) bundled inside it.
+`dist/`, `build/`, and `*.spec` are all gitignored - `build_exe.py`
+(not a checked-in `.spec` file) is what stays reproducible in version
+control.
+
+A splash screen (`components/splash_screen.py`) shows while
+`AppController`/`MainWindow` are being built - both happen
+synchronously before the Qt event loop starts, so it's a static
+loading screen, not an animated one (real animation would need
+threaded construction, which is a bigger change than this called
+for).
+
+Any code that reads a bundled asset (icons) needs
+`utils/app_paths.py`'s `resource_path()`, not a plain
+`os.path.dirname(__file__)` join - PyInstaller's onefile mode
+extracts bundled data to a temp dir (`sys._MEIPASS`) at runtime, and
+that helper is what resolves correctly in both that frozen case and
+running straight from source. Writable runtime files (config/logs)
+go through the separate `user_data_dir()` instead, since a onefile
+build re-extracts to a fresh temp dir every launch - anything written
+there is gone the moment the process exits.
+
+## Building the installer
+
+The `.exe` above is a bare executable - double-click and it runs, but
+there's no install wizard, no Start Menu/Desktop shortcuts, and
+nothing registered in Windows' "Add or Remove Programs" for a real
+uninstall. `installer.iss` wraps it into an actual installer, using
+[Inno Setup](https://jrsoftware.org/isinfo.php) - Windows-only, no
+Linux/Mac port, so unlike `build_exe.py` this couldn't be verified by
+an actual build in this environment; it's written to known-correct
+Inno Setup syntax, but you'll be the first one to actually compile
+it.
+
+```
+python build_exe.py
+iscc installer.iss
+```
+
+(or open `installer.iss` in the Inno Setup Compiler GUI and click
+Compile - same result). `build_exe.py` has to run first; the
+installer script just packages whatever's already sitting in
+`dist\TX Controller.exe`, it doesn't build it itself. Output lands in
+`installer_output\TX Controller Setup.exe`.
+
+`AppId` in `installer.iss` is a fixed GUID generated once for this
+project - it must never change between releases, since that's what
+Inno Setup uses to recognize "this is an upgrade of the same install"
+rather than a separate app living alongside the old one.

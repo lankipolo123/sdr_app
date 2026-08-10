@@ -12,5 +12,6 @@ env/
 dist/
 build/
 *.spec
+installer_output/
 
 .DS_Store

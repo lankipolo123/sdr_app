@@ -4,6 +4,7 @@ from .level_slider import LevelSlider
 from .channel_card import ChannelCard
 from .confirm_dialog import ConfirmDialog
 from .logs_dialog import LogsDialog
+from .splash_screen import build_splash
 from .window_chrome import TitleBar, ResizableContainer
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "ChannelCard",
     "ConfirmDialog",
     "LogsDialog",
+    "build_splash",
     "TitleBar",
     "ResizableContainer",
 ]

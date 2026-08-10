@@ -256,7 +256,21 @@ class ChannelController(QObject):
         conn.frame_received.connect(self._on_frame_received)
         conn.raw_tx.connect(self.raw_tx.emit)
         conn.raw_rx.connect(self.raw_rx.emit)
+        conn.raw_rx.connect(self._on_raw_rx_bytes)
         self._send(frame, label, state_update)
+
+    def _on_raw_rx_bytes(self, chunk: bytes):
+        # Fires for ANY bytes actually read off the port, even ones that
+        # never form a complete/valid frame (see SerialThread.run - this
+        # is emitted before the frame parser even runs). Only a fully
+        # parsed, matching frame gets logged to the file today (see
+        # handle_frame) - on a collision-prone line that leaves a real
+        # gap: "zero RX log lines" could mean either genuinely nothing
+        # arrived, or something arrived and never resolved into a valid
+        # frame, and those mean very different things when diagnosing a
+        # dead receive path. Logging every raw chunk closes that gap.
+        if self.logger:
+            self.logger.info(f"RAW RX ch{self.wire_address}: {chunk.hex(' ').upper()}")
 
     def _find_and_open_connection(self) -> ConnectionController | None:
         ports = ConnectionController.list_ports()
@@ -304,6 +318,7 @@ class ChannelController(QObject):
                 (self._temp_conn.frame_received, self._on_frame_received),
                 (self._temp_conn.raw_tx, self.raw_tx.emit),
                 (self._temp_conn.raw_rx, self.raw_rx.emit),
+                (self._temp_conn.raw_rx, self._on_raw_rx_bytes),
             ):
                 try:
                     signal.disconnect(slot)

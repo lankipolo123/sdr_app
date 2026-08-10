@@ -92,9 +92,12 @@ toggle, each sending exactly one command (see `components/power_button.py`).
    see "Building a standalone .exe" below) - verified end-to-end
    (asset bundling + frozen path resolution) via a Linux build in
    this environment, but the actual Windows `.exe` still needs a real
-   build-and-run on Windows to confirm. Inno Setup (installer) and
-   GitHub Actions (CI automation) not set up yet. PyArmor
-   intentionally left out for now per request.
+   build-and-run on Windows to confirm. Inno Setup installer script
+   (`installer.iss`, see "Building the installer" below) is written
+   but genuinely untested - Inno Setup has no Linux/Mac port at all,
+   so unlike the `.exe` this couldn't be verified by an actual
+   compile in this environment. GitHub Actions (CI automation) not
+   set up yet. PyArmor intentionally left out for now per request.
 
 ## File structure (React-style mapping)
 
@@ -159,3 +162,31 @@ running straight from source. Writable runtime files (config/logs)
 go through the separate `user_data_dir()` instead, since a onefile
 build re-extracts to a fresh temp dir every launch - anything written
 there is gone the moment the process exits.
+
+## Building the installer
+
+The `.exe` above is a bare executable - double-click and it runs, but
+there's no install wizard, no Start Menu/Desktop shortcuts, and
+nothing registered in Windows' "Add or Remove Programs" for a real
+uninstall. `installer.iss` wraps it into an actual installer, using
+[Inno Setup](https://jrsoftware.org/isinfo.php) - Windows-only, no
+Linux/Mac port, so unlike `build_exe.py` this couldn't be verified by
+an actual build in this environment; it's written to known-correct
+Inno Setup syntax, but you'll be the first one to actually compile
+it.
+
+```
+python build_exe.py
+iscc installer.iss
+```
+
+(or open `installer.iss` in the Inno Setup Compiler GUI and click
+Compile - same result). `build_exe.py` has to run first; the
+installer script just packages whatever's already sitting in
+`dist\TX Controller.exe`, it doesn't build it itself. Output lands in
+`installer_output\TX Controller Setup.exe`.
+
+`AppId` in `installer.iss` is a fixed GUID generated once for this
+project - it must never change between releases, since that's what
+Inno Setup uses to recognize "this is an upgrade of the same install"
+rather than a separate app living alongside the old one.

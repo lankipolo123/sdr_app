@@ -39,7 +39,7 @@ def describe_command(frame: bytes) -> str:
         bw_str = f"{bandwidth}MHz" if bandwidth is not None else f"0x{bw_code:02X}"
         level = HEX_TO_LEVEL.get(power_code)
         power_str = LEVEL_LABELS[level] if level is not None else f"0x{power_code:02X}"
-        return f"Signal Control: mode={mode_name} freq={freq}MHz bw={bw_str} power={power_str}"
+        return f"mode={mode_name} freq={freq}MHz bw={bw_str} power={power_str}"
 
     if type_byte == c.TYPE_STATUS_QUERY:
         return "Status Query"

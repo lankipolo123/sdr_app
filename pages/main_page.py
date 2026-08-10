@@ -15,7 +15,7 @@ from services.protocol.packet_parser import describe_command
 from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
 
-TOP_CARD_SIZE = (320, 120)
+TOP_CARD_SIZE = (320, 80)  # Controls' actual content only needs ~69px - was 120, leaving 51px of dead space below the buttons
 LOG_CARD_WIDTH = 480
 LOG_CARD_HEIGHT = 90  # Controls/Logs are top-aligned in their row (not stretched to match), so this doesn't need to match TOP_CARD_SIZE's height
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded

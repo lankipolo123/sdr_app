@@ -18,10 +18,10 @@ MODE_COMB_SPECTRUM = 0x02
 MODE_SINGLE = 0x03
 
 MODE_NAMES = {
-    MODE_WHITE_NOISE: "Pseudo Random Noise",
+    MODE_WHITE_NOISE: "White Noise",
     MODE_LINEAR_SWEEP: "Linear Sweep",
-    MODE_COMB_SPECTRUM: "Multi-tone",
-    MODE_SINGLE: "Spectral Line",
+    MODE_COMB_SPECTRUM: "Comb Spectrum",
+    MODE_SINGLE: "Single",
 }
 
 MODES_UNCONFIRMED = frozenset({MODE_SINGLE})

@@ -606,7 +606,7 @@ def main():
     controller_mode = make_app_controller(mode_work_dir)
     window_mode = MainWindow(controller_mode)
     window_mode.show()
-    check("mode dropdown starts on Pseudo Random Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
+    check("mode dropdown starts on White Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
 
     window_mode._cards[0].arm()
     window_mode._cards[0].mode_combo.setCurrentIndex(1)  # Linear Sweep

@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE, NAVY, TEXT_DARK
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from services.protocol import constants as c
 
@@ -20,8 +20,8 @@ SLIDER_SEND_DEBOUNCE_MS = 250
 
 
 class ChannelCard(Card):
-    """One hardware channel's controls: a Modulation dropdown (Pseudo
-    Random Noise/Linear Sweep/Multi-tone/Spectral Line, see
+    """One hardware channel's controls: a Modulation dropdown (White
+    Noise/Linear Sweep/Comb Spectrum/Single, see
     services/protocol/constants.MODE_NAMES), explicit ON/OFF buttons
     (each sends exactly one command, same simplicity as the standalone
     Query diagnostic - see PowerButton), and a 4-position Level slider
@@ -95,24 +95,6 @@ class ChannelCard(Card):
         self._mode_codes = list(c.MODE_NAMES.keys())
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(list(c.MODE_NAMES.values()))
-        # Same navy/accent-blue pair and hover swap as the Clear Log
-        # button (see pages/main_page.py) - rounded corners instead of
-        # the plain white combo box the app-wide QSS gives every other
-        # dropdown. Only styled while enabled (armed) - locked/disabled
-        # falls back to a neutral, muted look so it's visually obvious
-        # the card hasn't been tapped yet, same story the ON/OFF buttons
-        # and slider already tell.
-        self.mode_combo.setStyleSheet(
-            f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 10px; padding: 4px 10px; font-weight: 600; font-size: 11px; }}"
-            f"QComboBox:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
-            f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
-            f"border: 1px solid {BORDER_SUBTLE}; }}"
-            f"QComboBox::drop-down {{ border: none; background: transparent; }}"
-            f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
-            f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
-        )
         self.body_layout.addWidget(self.mode_combo)
 
         self.slider = LevelSlider()

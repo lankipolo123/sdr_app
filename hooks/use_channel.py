@@ -12,10 +12,11 @@ from .use_connection import ConnectionController
 RESPONSE_TIMEOUT_MS = 300
 # Collision on a shared line is probabilistic, not a hard 100% wall -
 # confirmed on real hardware: some attempts get a clean response even
-# with two modules wired in, others don't. Retrying several times
-# before giving up meaningfully improves the odds of getting through,
-# instead of reporting failure after a single unlucky attempt.
-RETRY_MAX_ATTEMPTS = 4
+# with two modules wired in, others don't. One retry before giving up
+# still meaningfully improves the odds of getting through vs. a single
+# unlucky attempt, without re-sending the identical command 4 times in
+# a row every time a response is simply slow to arrive.
+RETRY_MAX_ATTEMPTS = 2
 
 
 class ChannelController(QObject):

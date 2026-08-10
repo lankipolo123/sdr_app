@@ -152,10 +152,13 @@ class ChannelCard(Card):
         self.mode_confirm_btn.setFixedHeight(26)
         self.mode_confirm_btn.setCursor(Qt.PointingHandCursor)
         self.mode_confirm_btn.setToolTip("Confirm modulation")
+        # No hover/pressed color swap (unlike mode_combo/Clear Log) - this
+        # one sends a real command on click, so it stays visually inert
+        # until that click instead of inviting a hover as if it were
+        # just another toggle.
         self.mode_confirm_btn.setStyleSheet(
             f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
             f"border-radius: 8px; padding: 3px 8px; font-weight: 600; font-size: 10px; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
         self.mode_confirm_btn.clicked.connect(self._on_mode_confirm)

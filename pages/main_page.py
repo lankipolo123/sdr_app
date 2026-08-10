@@ -258,6 +258,7 @@ class MainWindow(QMainWindow):
         self.logs_dialog = LogsDialog(self, lines)
         self.logs_dialog.show()
         self.logs_dialog.raise_()
+        self.logs_dialog.activateWindow()
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH

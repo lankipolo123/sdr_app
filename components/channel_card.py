@@ -23,9 +23,9 @@ class ChannelCard(Card):
     """One hardware channel's controls, split left/right: the left column
     holds a Modulation dropdown (Pseudo Random Noise/Linear Sweep/
     Multi-tone/Spectral Line, see services/protocol/constants.MODE_NAMES)
-    with its own Confirm button beside it - picking an option only
-    changes the dropdown, nothing sends until Confirm is clicked (see
-    mode_confirm_btn/_on_mode_confirm) - and explicit ON/OFF buttons
+    with its own Set button beside it - picking an option only
+    changes the dropdown, nothing sends until Set is clicked (see
+    mode_set_btn/_on_mode_set) - and explicit ON/OFF buttons
     (each sends exactly one command, same simplicity as the standalone
     Query diagnostic - see PowerButton); the
     right column is a vertical 4-position Level fader (L0-L3, bottom to
@@ -125,17 +125,18 @@ class ChannelCard(Card):
         # actually ends up.
         self.mode_combo.setToolTip(self.mode_combo.currentText())
         self.mode_combo.currentTextChanged.connect(self.mode_combo.setToolTip)
-        # Same navy/accent-blue pair and hover swap as the Clear Log
-        # button (see pages/main_page.py) - rounded corners instead of
-        # the plain white combo box the app-wide QSS gives every other
-        # dropdown. Only styled while enabled (armed) - locked/disabled
-        # falls back to a neutral, muted look so it's visually obvious
-        # the card hasn't been tapped yet, same story the ON/OFF buttons
-        # and slider already tell.
+        # Navy/accent-blue pair matching the rest of this card's dark
+        # controls - rounded corners instead of the plain white combo box
+        # the app-wide QSS gives every other dropdown. No hover/pressed
+        # color swap (same reasoning as mode_set_btn below) - stays a
+        # flat, static color regardless of interaction. Only styled while
+        # enabled (armed) - locked/disabled falls back to a neutral,
+        # muted look so it's visually obvious the card hasn't been
+        # tapped yet, same story the ON/OFF buttons and slider already
+        # tell.
         self.mode_combo.setStyleSheet(
             f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
             f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
-            f"QComboBox:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
             f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
             f"border: 1px solid {BORDER_SUBTLE}; }}"
             f"QComboBox::drop-down {{ border: none; background: transparent; }}"
@@ -143,30 +144,30 @@ class ChannelCard(Card):
             f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
             f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
         )
-        # A picked mode doesn't send by itself anymore - Confirm does, so
+        # A picked mode doesn't send by itself anymore - Set does, so
         # scrolling through options (or a stray wheel/arrow-key nudge
         # while it has focus) can't fire a real command by accident.
         # Narrower than a full-width combo to leave room for the button
         # beside it - the tooltip already covers names that elide here.
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mode_confirm_btn = QPushButton("Confirm")
-        self.mode_confirm_btn.setFixedHeight(24)
-        self.mode_confirm_btn.setCursor(Qt.PointingHandCursor)
-        self.mode_confirm_btn.setToolTip("Confirm modulation")
-        # No hover/pressed color swap (unlike mode_combo/Clear Log) - this
-        # one sends a real command on click, so it stays visually inert
+        self.mode_set_btn = QPushButton("Set")
+        self.mode_set_btn.setFixedHeight(24)
+        self.mode_set_btn.setCursor(Qt.PointingHandCursor)
+        self.mode_set_btn.setToolTip("Set modulation")
+        # No hover/pressed color swap (unlike Clear Log) - this one
+        # sends a real command on click, so it stays visually inert
         # until that click instead of inviting a hover as if it were
         # just another toggle.
-        self.mode_confirm_btn.setStyleSheet(
+        self.mode_set_btn.setStyleSheet(
             f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
             f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
-        self.mode_confirm_btn.clicked.connect(self._on_mode_confirm)
+        self.mode_set_btn.clicked.connect(self._on_mode_set)
         mode_row = QHBoxLayout()
         mode_row.setSpacing(4)
         mode_row.addWidget(self.mode_combo, 1)
-        mode_row.addWidget(self.mode_confirm_btn)
+        mode_row.addWidget(self.mode_set_btn)
         left_col.addLayout(mode_row)
 
         self.toggle = PowerButton()
@@ -222,7 +223,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
-        self.mode_confirm_btn.setEnabled(False)
+        self.mode_set_btn.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
@@ -254,7 +255,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(True)
         self.toggle.setEnabled(True)
         self.mode_combo.setEnabled(True)
-        self.mode_confirm_btn.setEnabled(True)
+        self.mode_set_btn.setEnabled(True)
         self.arm_hint.setVisible(False)
         self._style_border(armed=True)
         self.armed.emit()
@@ -268,7 +269,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
-        self.mode_confirm_btn.setEnabled(False)
+        self.mode_set_btn.setEnabled(False)
         self.arm_hint.setVisible(True)
         self._style_border(armed=False)
 
@@ -324,11 +325,11 @@ class ChannelCard(Card):
             self._send_level(self._pending_level)
             self._pending_level = None
 
-    def _on_mode_confirm(self):
+    def _on_mode_set(self):
         # Picking a mode in the dropdown only ever changes the dropdown -
-        # nothing sends until Confirm is actually clicked (see
-        # mode_confirm_btn), same "explicit action required" idea as the
-        # tap-to-arm lock itself.
+        # nothing sends until Set is actually clicked (see mode_set_btn),
+        # same "explicit action required" idea as the tap-to-arm lock
+        # itself.
         self.controller.set_mode(self._mode_codes[self.mode_combo.currentIndex()])
 
     def _send_level(self, level: int):

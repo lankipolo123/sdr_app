@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton
 from PySide6.QtCore import Qt, Signal
 
-from styles.theme_colors import STATUS_OK, STATUS_ERROR, BORDER_SUBTLE, TEXT_MUTED
+from styles.theme_colors import STATUS_OK, BORDER_SUBTLE, TEXT_MUTED
 
 
 class PowerButton(QWidget):
@@ -65,12 +65,14 @@ class PowerButton(QWidget):
         (self.off_btn if self._checked else self.on_btn).click()
 
     def _restyle(self):
+        # Off is the calm, resting default every channel starts in -
+        # solid-filling OFF in alarm-red used to mean a totally untouched,
+        # freshly-opened app showed a wall of red across every card. Only
+        # ON (the state that actually means RF is transmitting) gets
+        # color emphasis now; OFF always reads as neutral, whether it's
+        # the untouched default or an explicit "I just turned this off".
         active_on = (
             f"QPushButton {{ background: {STATUS_OK}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
-        )
-        active_off = (
-            f"QPushButton {{ background: {STATUS_ERROR}; color: #FFFFFF; "
             f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         inactive = (
@@ -78,4 +80,4 @@ class PowerButton(QWidget):
             f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         self.on_btn.setStyleSheet(active_on if self._checked else inactive)
-        self.off_btn.setStyleSheet(active_off if not self._checked else inactive)
+        self.off_btn.setStyleSheet(inactive)

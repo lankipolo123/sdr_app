@@ -157,16 +157,15 @@ class MainWindow(QMainWindow):
         channels_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
         outer.addWidget(channels_label)
 
-        # Matches Card's own border weight/radius+color exactly (2px
-        # solid BORDER_SUBTLE, 10px radius) so this reads as the same
-        # kind of section as Connection/Controls/Emergency, not a
-        # plain unstyled scroll area. Scoped to #ChannelsScroll so it
-        # doesn't cascade onto the cards placed inside it.
+        # No border/fill of its own - purely a scroll mechanism around the
+        # grid, not a bordered section like Controls/Logs. Each card
+        # already carries its own border (see ChannelCard.arm/disarm), so
+        # a second border wrapping all of them just added a redundant
+        # outline with nothing meaningful of its own to signal. Scoped to
+        # #ChannelsScroll so it doesn't cascade onto the cards inside it.
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
-        scroll.setStyleSheet(
-            f"#ChannelsScroll {{ border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; background: #FFFFFF; }}"
-        )
+        scroll.setStyleSheet("#ChannelsScroll { border: none; background: #FFFFFF; }")
         # The viewport is a separate child widget with its own opaque
         # square background - it isn't clipped to the frame's rounded
         # corners, so it was covering them with square white corners

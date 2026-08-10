@@ -1,3 +1,5 @@
+import qtawesome as qta
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QScrollArea, QPushButton, QInputDialog, QApplication, QListWidget
@@ -5,7 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QEvent
 
 from components import (
-    ChannelCard, ConfirmDialog,
+    ChannelCard, ConfirmDialog, LogsDialog,
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_channels import MAX_CHANNELS
@@ -120,12 +122,27 @@ class MainWindow(QMainWindow):
         # emitted, so they never updated at all.
         logs_card = make_card("Logs", icon="fa5s.list")
         logs_card.setFixedHeight(LOG_CARD_HEIGHT)
+        # Opens the same log in a bigger, resizable, scrollable dialog
+        # (see LogsDialog) - the card itself only ever has room for a
+        # handful of visible lines.
+        self.maximize_logs_btn = QPushButton()
+        self.maximize_logs_btn.setIcon(qta.icon("fa5s.expand-alt", color=ACCENT_BLUE))
+        self.maximize_logs_btn.setFixedSize(20, 20)
+        self.maximize_logs_btn.setCursor(Qt.PointingHandCursor)
+        self.maximize_logs_btn.setToolTip("Open full scrollable log")
+        self.maximize_logs_btn.setStyleSheet(
+            "QPushButton { border: none; background: transparent; }"
+            f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
+        )
+        self.maximize_logs_btn.clicked.connect(self._on_open_logs_dialog)
+        logs_card.header_layout.addWidget(self.maximize_logs_btn)
         self.log_list = QListWidget()
         self.log_list.setStyleSheet(
             f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
         )
         logs_card.body_layout.addWidget(self.log_list)
         top_row.addWidget(logs_card, 1, alignment=Qt.AlignTop)
+        self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
 
         outer.addLayout(top_row)
 
@@ -221,7 +238,17 @@ class MainWindow(QMainWindow):
     def _on_clear_log(self):
         clear_log(self.app.logger)
         self.log_list.clear()
+        if self.logs_dialog is not None:
+            self.logs_dialog.list.clear()
         self.status_label.setText("Log cleared.")
+
+    def _on_open_logs_dialog(self):
+        if self.logs_dialog is None:
+            lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
+            self.logs_dialog = LogsDialog(self, lines)
+        self.logs_dialog.show()
+        self.logs_dialog.raise_()
+        self.logs_dialog.activateWindow()
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
@@ -236,6 +263,10 @@ class MainWindow(QMainWindow):
         while self.log_list.count() > LOG_MAX_ENTRIES:
             self.log_list.takeItem(0)
         self.log_list.scrollToBottom()
+        # Keep the maximized view (if it's open) live too, instead of
+        # only reflecting whatever existed at the moment it was opened.
+        if self.logs_dialog is not None and self.logs_dialog.isVisible():
+            self.logs_dialog.append_line(line, LOG_MAX_ENTRIES)
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

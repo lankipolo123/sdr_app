@@ -1,5 +1,3 @@
-import qtawesome as qta
-
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
@@ -150,15 +148,15 @@ class ChannelCard(Card):
         # Narrower than a full-width combo to leave room for the button
         # beside it - the tooltip already covers names that elide here.
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mode_confirm_btn = QPushButton()
-        self.mode_confirm_btn.setIcon(qta.icon("fa5s.check", color=ACCENT_BLUE))
-        self.mode_confirm_btn.setFixedSize(26, 26)
+        self.mode_confirm_btn = QPushButton("Confirm")
+        self.mode_confirm_btn.setFixedHeight(26)
         self.mode_confirm_btn.setCursor(Qt.PointingHandCursor)
         self.mode_confirm_btn.setToolTip("Confirm modulation")
         self.mode_confirm_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; border-radius: 8px; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; }}"
-            f"QPushButton:disabled {{ background: transparent; border: 1px solid {BORDER_SUBTLE}; }}"
+            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"border-radius: 8px; padding: 3px 8px; font-weight: 600; font-size: 10px; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+            f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
         self.mode_confirm_btn.clicked.connect(self._on_mode_confirm)
         mode_row = QHBoxLayout()

@@ -30,10 +30,10 @@ _GROOVE_BACKGROUNDS = {
 
 _HANDLE_STYLE = f"""
     QSlider::handle:vertical {{
-        width: 22px;
-        height: 22px;
-        margin: 0 -6px;
-        border-radius: 11px;
+        width: 18px;
+        height: 18px;
+        margin: 0 -5px;
+        border-radius: 9px;
         background: #FFFFFF;
         border: 2px solid {ACCENT_BLUE};
     }}
@@ -67,18 +67,28 @@ class LevelSlider(QSlider):
         self.setPageStep(1)
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
-        self.setFixedWidth(32)
-        self.setFixedHeight(130)
+        self.setFixedWidth(26)
+        self.setFixedHeight(100)
+        # QAbstractSlider.setValue() is a plain slot, not a virtual C++
+        # method - when the user actually drags the handle, Qt's own
+        # internal mouse handling changes the value without ever calling
+        # back through this class's setValue() override below, so relying
+        # on that override alone leaves the groove stuck on whatever level
+        # it was last set to *programmatically* while the handle itself
+        # visibly moves. valueChanged, in contrast, is a real signal that
+        # Qt emits from its internal code too, so connecting to it is what
+        # actually catches a live drag.
+        self.valueChanged.connect(self._update_groove)
         self._update_groove(self.value())
 
     def setValue(self, value: int):
-        # Reacting to valueChanged wouldn't be enough - ChannelCard wraps
-        # its own reactive-sync setValue() calls in blockSignals(True) to
-        # avoid re-triggering a redundant hardware command, and that also
-        # suppresses this widget's OWN internal valueChanged connections,
-        # not just external listeners. Overriding setValue() directly
-        # means the groove's color always matches the actual position,
-        # regardless of whether this particular change was signal-blocked.
+        # Still needed alongside the valueChanged connection above: when
+        # ChannelCard reactively syncs this slider from real hardware
+        # state, it wraps the setValue() call in blockSignals(True) to
+        # avoid re-triggering a redundant hardware command - which also
+        # suppresses valueChanged, so the connection above never fires for
+        # that path. Overriding setValue() directly and calling
+        # _update_groove() unconditionally covers that blocked-signal case.
         super().setValue(value)
         self._update_groove(value)
 
@@ -86,8 +96,8 @@ class LevelSlider(QSlider):
         groove_bg = _GROOVE_BACKGROUNDS[value]
         self.setStyleSheet(f"""
             QSlider::groove:vertical {{
-                width: 10px;
-                border-radius: 5px;
+                width: 8px;
+                border-radius: 4px;
                 {groove_bg}
             }}
             {_HANDLE_STYLE}

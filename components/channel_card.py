@@ -74,6 +74,12 @@ class ChannelCard(Card):
         # available width evenly; this just allows the card to grow
         # into whatever share it's given instead of capping it.
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # Tighter than Card's own default (14/10 outer, 7 body spacing) -
+        # this card packs a dropdown, two buttons, and a fader into one
+        # tile repeated 4-per-row, so it needs to run leaner than a
+        # single-purpose card like the Controls panel does.
+        self.layout().setContentsMargins(10, 8, 10, 8)
+        self.body_layout.setSpacing(5)
         self.controller = controller
         self.state = state
         self._armed = False
@@ -95,11 +101,11 @@ class ChannelCard(Card):
         self.body_layout.addLayout(status_row)
 
         main_row = QHBoxLayout()
-        main_row.setSpacing(12)
+        main_row.setSpacing(8)
 
         # Left column: Modulation dropdown on top, ON/OFF underneath.
         left_col = QVBoxLayout()
-        left_col.setSpacing(7)
+        left_col.setSpacing(5)
 
         # Order matches services/protocol/constants.MODE_NAMES exactly -
         # combo box index N always means self._mode_codes[N], not the
@@ -124,7 +130,7 @@ class ChannelCard(Card):
         # and slider already tell.
         self.mode_combo.setStyleSheet(
             f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 10px; padding: 4px 10px; font-weight: 600; font-size: 11px; }}"
+            f"border-radius: 8px; padding: 3px 8px; font-weight: 600; font-size: 10px; }}"
             f"QComboBox:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
             f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
             f"border: 1px solid {BORDER_SUBTLE}; }}"
@@ -147,7 +153,7 @@ class ChannelCard(Card):
         # position, so _update_status's `enumerate(self.level_labels)`
         # keeps meaning "index i is level i" regardless of layout order.
         slider_row = QHBoxLayout()
-        slider_row.setSpacing(6)
+        slider_row.setSpacing(4)
         self.slider = LevelSlider()
         slider_row.addWidget(self.slider)
 

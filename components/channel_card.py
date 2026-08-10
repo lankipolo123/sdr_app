@@ -91,6 +91,15 @@ class ChannelCard(Card):
         self._send_debounce.setSingleShot(True)
         self._send_debounce.timeout.connect(self._send_debounced_level)
 
+        # Sits on the CHxx title line itself (Card.header_layout already
+        # ends in a stretch, so this right-aligns next to the title)
+        # instead of the status row below - freed the status row from
+        # reserving space for it, which was the big empty gap between the
+        # status text and this hint on every locked card.
+        self.arm_hint = QLabel("Tap twice to unlock")
+        self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
+        self.header_layout.addWidget(self.arm_hint)
+
         status_row = QHBoxLayout()
         self.status_dot = QLabel()
         self.status_dot.setFixedSize(8, 8)
@@ -98,9 +107,6 @@ class ChannelCard(Card):
         status_row.addWidget(self.status_dot)
         status_row.addWidget(self.status_text)
         status_row.addStretch()
-        self.arm_hint = QLabel("Tap twice to unlock")
-        self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
-        status_row.addWidget(self.arm_hint)
         self.body_layout.addLayout(status_row)
 
         main_row = QHBoxLayout()

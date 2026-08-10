@@ -30,10 +30,10 @@ _GROOVE_BACKGROUNDS = {
 
 _HANDLE_STYLE = f"""
     QSlider::handle:vertical {{
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         margin: 0 -5px;
-        border-radius: 9px;
+        border-radius: 10px;
         background: #FFFFFF;
         border: 2px solid {ACCENT_BLUE};
     }}
@@ -67,8 +67,8 @@ class LevelSlider(QSlider):
         self.setPageStep(1)
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
-        self.setFixedWidth(26)
-        self.setFixedHeight(70)
+        self.setFixedWidth(30)
+        self.setFixedHeight(90)
         # QAbstractSlider.setValue() is a plain slot, not a virtual C++
         # method - when the user actually drags the handle, Qt's own
         # internal mouse handling changes the value without ever calling
@@ -96,8 +96,8 @@ class LevelSlider(QSlider):
         groove_bg = _GROOVE_BACKGROUNDS[value]
         self.setStyleSheet(f"""
             QSlider::groove:vertical {{
-                width: 8px;
-                border-radius: 4px;
+                width: 10px;
+                border-radius: 5px;
                 {groove_bg}
             }}
             {_HANDLE_STYLE}

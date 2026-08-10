@@ -611,7 +611,13 @@ def main():
     window_mode._cards[0].arm()
     window_mode._cards[0].mode_combo.setCurrentIndex(1)  # Linear Sweep
     pump(300)
-    check("hardware mode actually changed to Linear Sweep", mode_module.mode == c.MODE_LINEAR_SWEEP)
+    check(
+        "picking a mode alone does NOT send - Confirm is required",
+        mode_module.mode != c.MODE_LINEAR_SWEEP,
+    )
+    window_mode._cards[0].mode_confirm_btn.click()
+    pump(300)
+    check("Confirm actually changed the hardware mode to Linear Sweep", mode_module.mode == c.MODE_LINEAR_SWEEP)
     check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
 
     # Regression: a combo box's dropdown list is its own top-level popup,

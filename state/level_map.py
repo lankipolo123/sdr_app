@@ -22,5 +22,5 @@ DEFAULT_RESUME_LEVEL = 1
 # What each level actually means, for anywhere L0-L3 is shown to the
 # customer - short form for tight spaces (slider labels, bulk buttons),
 # full form for tooltips.
-LEVEL_LABELS = {0: "Off", 1: "Min", 2: "Med", 3: "Max"}
-LEVEL_LABELS_FULL = {0: "Off", 1: "Minimum", 2: "Medium", 3: "Maximum"}
+LEVEL_LABELS = {0: "Off", 1: "Low", 2: "Med", 3: "High"}
+LEVEL_LABELS_FULL = {0: "Off", 1: "Low", 2: "Medium", 3: "High"}

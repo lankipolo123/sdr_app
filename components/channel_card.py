@@ -1,4 +1,6 @@
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy
+import qtawesome as qta
+
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from .card import Card
@@ -23,8 +25,11 @@ class ChannelCard(Card):
     """One hardware channel's controls, split left/right: the left column
     holds a Modulation dropdown (Pseudo Random Noise/Linear Sweep/
     Multi-tone/Spectral Line, see services/protocol/constants.MODE_NAMES)
-    and explicit ON/OFF buttons (each sends exactly one command, same
-    simplicity as the standalone Query diagnostic - see PowerButton); the
+    with its own Confirm button beside it - picking an option only
+    changes the dropdown, nothing sends until Confirm is clicked (see
+    mode_confirm_btn/_on_mode_confirm) - and explicit ON/OFF buttons
+    (each sends exactly one command, same simplicity as the standalone
+    Query diagnostic - see PowerButton); the
     right column is a vertical 4-position Level fader (L0-L3, bottom to
     top) with plain L0/L1/L2/L3 text labels beside it marking each
     position - not buttons, just labels, the active one highlighted.
@@ -139,7 +144,28 @@ class ChannelCard(Card):
             f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
             f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
         )
-        left_col.addWidget(self.mode_combo)
+        # A picked mode doesn't send by itself anymore - Confirm does, so
+        # scrolling through options (or a stray wheel/arrow-key nudge
+        # while it has focus) can't fire a real command by accident.
+        # Narrower than a full-width combo to leave room for the button
+        # beside it - the tooltip already covers names that elide here.
+        self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mode_confirm_btn = QPushButton()
+        self.mode_confirm_btn.setIcon(qta.icon("fa5s.check", color=ACCENT_BLUE))
+        self.mode_confirm_btn.setFixedSize(26, 26)
+        self.mode_confirm_btn.setCursor(Qt.PointingHandCursor)
+        self.mode_confirm_btn.setToolTip("Confirm modulation")
+        self.mode_confirm_btn.setStyleSheet(
+            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; border-radius: 8px; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; }}"
+            f"QPushButton:disabled {{ background: transparent; border: 1px solid {BORDER_SUBTLE}; }}"
+        )
+        self.mode_confirm_btn.clicked.connect(self._on_mode_confirm)
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(4)
+        mode_row.addWidget(self.mode_combo, 1)
+        mode_row.addWidget(self.mode_confirm_btn)
+        left_col.addLayout(mode_row)
 
         self.toggle = PowerButton()
         left_col.addWidget(self.toggle)
@@ -174,7 +200,6 @@ class ChannelCard(Card):
 
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         # Locked by default - see _arm()/mousePressEvent below. Sets the
         # thin unarmed border explicitly rather than leaving Card's own
@@ -185,6 +210,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
+        self.mode_confirm_btn.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()  # initial sync from real state
@@ -216,6 +242,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(True)
         self.toggle.setEnabled(True)
         self.mode_combo.setEnabled(True)
+        self.mode_confirm_btn.setEnabled(True)
         self.arm_hint.setVisible(False)
         self._style_border(armed=True)
         self.armed.emit()
@@ -229,6 +256,7 @@ class ChannelCard(Card):
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
+        self.mode_confirm_btn.setEnabled(False)
         self.arm_hint.setVisible(True)
         self._style_border(armed=False)
 
@@ -284,11 +312,12 @@ class ChannelCard(Card):
             self._send_level(self._pending_level)
             self._pending_level = None
 
-    def _on_mode_changed(self, index: int):
-        # A dropdown selection is a single discrete click, not a
-        # continuous drag - no debounce needed the way the slider
-        # needed one (see SLIDER_SEND_DEBOUNCE_MS).
-        self.controller.set_mode(self._mode_codes[index])
+    def _on_mode_confirm(self):
+        # Picking a mode in the dropdown only ever changes the dropdown -
+        # nothing sends until Confirm is actually clicked (see
+        # mode_confirm_btn), same "explicit action required" idea as the
+        # tap-to-arm lock itself.
+        self.controller.set_mode(self._mode_codes[self.mode_combo.currentIndex()])
 
     def _send_level(self, level: int):
         code = LEVEL_TO_HEX[level]

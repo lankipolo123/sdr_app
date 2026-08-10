@@ -31,13 +31,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.app = app_controller
         self.setWindowTitle("TX Controller")
-        self.resize(1200, 780)
+        self.resize(1040, 780)
         # The grid is always CHANNELS_PER_ROW (4) columns wide (see
         # _reflow_grid) - this floor keeps each of those 4 columns at
         # least ChannelCard.MIN_WIDTH wide even at minimum size, so cards
         # never get squeezed narrower than that instead of adding more
-        # columns the way the old width-based reflow used to.
-        self.setMinimumSize(1150, 700)
+        # columns the way the old width-based reflow used to. Cards fill
+        # 100% of the window's width regardless (Expanding + column
+        # stretch), so a narrower default window is what actually makes
+        # them render narrower - MIN_WIDTH alone is just the floor.
+        self.setMinimumSize(1000, 700)
         # No native OS title bar - a custom one (styled to match the rest
         # of the app) replaces it entirely; see components/window_chrome.py
         # for the drag-to-move logic that replicates.
@@ -287,11 +290,11 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx. describe_command
-        # decodes the actual bytes (mode/freq/bw/power spelled out, power
-        # as Low/Med/High/Off) - raw hex stays alongside it, not replaced,
-        # for the same low-level debugging the plain hex view was for.
-        self._append_log(f"TX CH{address:02d}: {describe_command(data)} | {data.hex(' ').upper()}")
+        # number on screen) - see ChannelManager.raw_tx. Decoded only,
+        # no raw hex - this panel is meant to read at a glance, not for
+        # byte-level debugging. The file log (see hooks/use_channel.py's
+        # _send) still keeps hex alongside the decode for that.
+        self._append_log(f"TX CH{address:02d}: {describe_command(data)}")
 
     def _on_raw_rx(self, address: int, data: bytes):
         self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")

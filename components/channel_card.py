@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from .card import Card
@@ -20,13 +20,14 @@ SLIDER_SEND_DEBOUNCE_MS = 250
 
 
 class ChannelCard(Card):
-    """One hardware channel's controls: a Modulation dropdown (Pseudo
-    Random Noise/Linear Sweep/Multi-tone/Spectral Line, see
-    services/protocol/constants.MODE_NAMES), explicit ON/OFF buttons
-    (each sends exactly one command, same simplicity as the standalone
-    Query diagnostic - see PowerButton), and a 4-position Level slider
-    (L0-L3), with plain L0/L1/L2/L3 text labels under the slider marking
-    each position - not buttons, just labels, the active one highlighted.
+    """One hardware channel's controls, split left/right: the left column
+    holds a Modulation dropdown (Pseudo Random Noise/Linear Sweep/
+    Multi-tone/Spectral Line, see services/protocol/constants.MODE_NAMES)
+    and explicit ON/OFF buttons (each sends exactly one command, same
+    simplicity as the standalone Query diagnostic - see PowerButton); the
+    right column is a vertical 4-position Level fader (L0-L3, bottom to
+    top) with plain L0/L1/L2/L3 text labels beside it marking each
+    position - not buttons, just labels, the active one highlighted.
 
     No Frequency/Bandwidth shown anywhere - the customer never sees that
     data, only Mode and Power. No Module Address shown either - the
@@ -60,13 +61,19 @@ class ChannelCard(Card):
     interaction sends a command.
     """
 
-    WIDTH = 220  # exposed so the grid that lays these out can size columns to match
+    MIN_WIDTH = 250  # the grid always uses 4 columns now (see MainWindow._reflow_grid) - this is a floor, not a fixed size
 
     armed = Signal()  # this card just became the armed one - MainWindow locks any other back down
 
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
-        self.setFixedWidth(self.WIDTH)
+        self.setMinimumWidth(self.MIN_WIDTH)
+        # Stretches to fill its 1-of-4 share of the row instead of
+        # staying a fixed pixel width - see MainWindow._reflow_grid's
+        # column stretch factors, which is what actually divides the
+        # available width evenly; this just allows the card to grow
+        # into whatever share it's given instead of capping it.
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.controller = controller
         self.state = state
         self._armed = False
@@ -87,6 +94,13 @@ class ChannelCard(Card):
         status_row.addWidget(self.arm_hint)
         self.body_layout.addLayout(status_row)
 
+        main_row = QHBoxLayout()
+        main_row.setSpacing(12)
+
+        # Left column: Modulation dropdown on top, ON/OFF underneath.
+        left_col = QVBoxLayout()
+        left_col.setSpacing(7)
+
         # Order matches services/protocol/constants.MODE_NAMES exactly -
         # combo box index N always means self._mode_codes[N], not the
         # raw mode byte value directly (those happen to line up 0-3 too,
@@ -95,6 +109,12 @@ class ChannelCard(Card):
         self._mode_codes = list(c.MODE_NAMES.keys())
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(list(c.MODE_NAMES.values()))
+        # The longest name ("Pseudo Random Noise") still elides with an
+        # ellipsis at this card's floor width - the tooltip always shows
+        # the full current selection regardless of how narrow the card
+        # actually ends up.
+        self.mode_combo.setToolTip(self.mode_combo.currentText())
+        self.mode_combo.currentTextChanged.connect(self.mode_combo.setToolTip)
         # Same navy/accent-blue pair and hover swap as the Clear Log
         # button (see pages/main_page.py) - rounded corners instead of
         # the plain white combo box the app-wide QSS gives every other
@@ -113,24 +133,38 @@ class ChannelCard(Card):
             f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
             f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
         )
-        self.body_layout.addWidget(self.mode_combo)
-
-        self.slider = LevelSlider()
-        self.body_layout.addWidget(self.slider)
-
-        labels_row = QHBoxLayout()
-        labels_row.setContentsMargins(0, 0, 0, 0)
-        self.level_labels = []
-        for level in range(4):
-            lbl = QLabel(LEVEL_LABELS[level])
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
-            labels_row.addWidget(lbl)
-            self.level_labels.append(lbl)
-        self.body_layout.addLayout(labels_row)
+        left_col.addWidget(self.mode_combo)
 
         self.toggle = PowerButton()
-        self.body_layout.addWidget(self.toggle)
+        left_col.addWidget(self.toggle)
+        left_col.addStretch()
+        main_row.addLayout(left_col, 1)
+
+        # Right column: the vertical fader, with L0-L3 labels beside it -
+        # top to bottom Max/Med/Min/Off, matching the slider's own
+        # bottom-is-minimum/top-is-maximum orientation. self.level_labels
+        # stays indexed BY LEVEL (0-3), not by visual top-to-bottom
+        # position, so _update_status's `enumerate(self.level_labels)`
+        # keeps meaning "index i is level i" regardless of layout order.
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(6)
+        self.slider = LevelSlider()
+        slider_row.addWidget(self.slider)
+
+        labels_col = QVBoxLayout()
+        labels_col.setContentsMargins(0, 0, 0, 0)
+        labels_col.setSpacing(0)
+        self.level_labels = [None] * 4
+        for level in reversed(range(4)):
+            lbl = QLabel(LEVEL_LABELS[level])
+            lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            lbl.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
+            labels_col.addWidget(lbl, 1)
+            self.level_labels[level] = lbl
+        slider_row.addLayout(labels_col)
+        main_row.addLayout(slider_row)
+
+        self.body_layout.addLayout(main_row)
 
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)

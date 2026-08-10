@@ -15,6 +15,7 @@ from utils.logging_service import clear_log
 TOP_CARD_SIZE = (320, 120)
 LOG_CARD_HEIGHT = 120  # matches TOP_CARD_SIZE's height, sits at the same row
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
+CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
 
 class MainWindow(QMainWindow):
@@ -27,12 +28,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.app = app_controller
         self.setWindowTitle("SDR App")
-        self.resize(1200, 720)
-        # Room for at least 4 channel card columns (ChannelCard.WIDTH=220
-        # + spacing) plus the Controls/Logs row side by side without
-        # everything cramming into 1-2 columns - _reflow_grid() still
-        # adds more columns as the window grows past this.
-        self.setMinimumSize(1100, 650)
+        self.resize(1200, 780)
+        # The grid is always CHANNELS_PER_ROW (4) columns wide (see
+        # _reflow_grid) - this floor keeps each of those 4 columns at
+        # least ChannelCard.MIN_WIDTH wide even at minimum size, so cards
+        # never get squeezed narrower than that instead of adding more
+        # columns the way the old width-based reflow used to.
+        self.setMinimumSize(1150, 700)
         # No native OS title bar - a custom one (styled to match the rest
         # of the app) replaces it entirely; see components/window_chrome.py
         # for the drag-to-move logic that replicates.
@@ -89,6 +91,23 @@ class MainWindow(QMainWindow):
         self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
         self.query_btn.clicked.connect(self._on_query)
         status_row.addWidget(self.query_btn)
+
+        # Background/text match the app icon's own colors exactly (NAVY
+        # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
+        # against the actual icon pixels).
+        self.clear_log_btn = QPushButton("Clear Log")
+        self.clear_log_btn.setToolTip(
+            "Erase the app's log file (logs/sdr_controller.log) and the "
+            "TX/RX list above"
+        )
+        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_log_btn.setStyleSheet(
+            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
+            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+        )
+        self.clear_log_btn.clicked.connect(self._on_clear_log)
+        status_row.addWidget(self.clear_log_btn)
         controls_card.body_layout.addLayout(status_row)
 
         top_row.addWidget(controls_card, alignment=Qt.AlignTop)
@@ -139,39 +158,6 @@ class MainWindow(QMainWindow):
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
         outer.addWidget(scroll, 1)
-
-        # Added to `root`, not `outer` - `outer` has a 16px margin on all
-        # sides (for the cards above), which was insetting this bar's
-        # border-top short of the actual window edges instead of letting
-        # it span edge to edge like the title bar's own separator does.
-        # Its own row supplies matching left/right padding instead, so
-        # the button still lines up visually with the cards above it.
-        bottom_bar = QWidget()
-        bottom_bar.setAttribute(Qt.WA_StyledBackground, True)
-        bottom_bar.setStyleSheet(f"border-top: 2px solid {BORDER_SUBTLE};")
-        bottom_row = QHBoxLayout(bottom_bar)
-        bottom_row.setContentsMargins(16, 8, 16, 8)
-        bottom_row.setSpacing(16)
-        bottom_row.addStretch()
-
-        # Background/text match the app icon's own colors exactly (NAVY
-        # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
-        # against the actual icon pixels).
-        self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.setToolTip(
-            "Erase the app's log file (logs/sdr_controller.log) and the "
-            "TX/RX list above"
-        )
-        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
-            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
-        )
-        self.clear_log_btn.clicked.connect(self._on_clear_log)
-        bottom_row.addWidget(self.clear_log_btn)
-
-        root.addWidget(bottom_bar)
 
         self.setCentralWidget(central)
 
@@ -267,27 +253,22 @@ class MainWindow(QMainWindow):
             self._armed_card.disarm()
         self._armed_card = card
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._reflow_grid()
-
     def _reflow_grid(self):
-        # Cards are a fixed width (ChannelCard.WIDTH), so the grid was
-        # stuck at a hardcoded column count regardless of how wide the
-        # window actually was - full screen just left empty space on the
-        # right instead of using it. Recomputing how many columns fit the
-        # Channels box's actual current width, and re-placing every card
-        # accordingly, makes it respond to the real window size instead.
+        # Always 4 columns, regardless of window width - cards themselves
+        # stretch to fill their share (see ChannelCard's Expanding size
+        # policy + the column stretch factors below), so "responsive"
+        # means the CARDS grow/shrink with the window, not the column
+        # count. This only ever needs to run once per card as it's built
+        # (column positions never change afterward), unlike the old
+        # width-based column count that had to be recomputed on every
+        # resize - no resizeEvent/showEvent hook needed for this anymore.
         if not self._cards:
             return
-        available = self.channels_scroll.viewport().width()
-        margins = self.grid.contentsMargins()
-        available -= margins.left() + margins.right()
-        spacing = self.grid.spacing()
-        columns = max(1, (available + spacing) // (ChannelCard.WIDTH + spacing))
         for index, address in enumerate(sorted(self._cards)):
-            row, col = divmod(index, columns)
+            row, col = divmod(index, CHANNELS_PER_ROW)
             self.grid.addWidget(self._cards[address], row, col)
+        for col in range(CHANNELS_PER_ROW):
+            self.grid.setColumnStretch(col, 1)
 
     def closeEvent(self, event):
         QApplication.instance().removeEventFilter(self)

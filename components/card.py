@@ -4,10 +4,11 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
 from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE
+from utils.app_paths import resource_path
 from .icon_utils import tint_pixmap, standard_icon_pixmap
 
 _ICON_SIZE = 15
-_ASSET_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "icons", "pages")
+_ASSET_DIR = resource_path("assets", "icons", "pages")
 
 
 def _resolve_icon(icon, tint_color: str):

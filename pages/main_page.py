@@ -165,7 +165,36 @@ class MainWindow(QMainWindow):
         # #ChannelsScroll so it doesn't cascade onto the cards inside it.
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
-        scroll.setStyleSheet("#ChannelsScroll { border: none; background: #FFFFFF; }")
+        # The scrollbar itself was still the plain native OS one (grey
+        # track, square arrow buttons) - the one leftover bit of chrome
+        # that didn't match anything else in the app. A slim, arrow-less,
+        # rounded thumb reads as part of this app instead.
+        scroll.setStyleSheet(f"""
+            #ChannelsScroll {{ border: none; background: #FFFFFF; }}
+            #ChannelsScroll QScrollBar:vertical {{
+                background: transparent;
+                width: 10px;
+                margin: 0px;
+            }}
+            #ChannelsScroll QScrollBar::handle:vertical {{
+                background: {BORDER_SUBTLE};
+                border-radius: 5px;
+                min-height: 24px;
+            }}
+            #ChannelsScroll QScrollBar::handle:vertical:hover {{
+                background: {ACCENT_BLUE};
+            }}
+            #ChannelsScroll QScrollBar::add-line:vertical,
+            #ChannelsScroll QScrollBar::sub-line:vertical {{
+                height: 0px;
+                background: transparent;
+                border: none;
+            }}
+            #ChannelsScroll QScrollBar::add-page:vertical,
+            #ChannelsScroll QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
+        """)
         # The viewport is a separate child widget with its own opaque
         # square background - it isn't clipped to the frame's rounded
         # corners, so it was covering them with square white corners

@@ -1,7 +1,47 @@
 from PySide6.QtWidgets import QSlider
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import ACCENT_BLUE, STATUS_OK, WARNING_BORDER, STATUS_ERROR
+from styles.theme_colors import ACCENT_BLUE, STATUS_OK, WARNING_BORDER, STATUS_ERROR, NEUTRAL_TRACK
+
+# Per discrete level (0=off/bottom .. 3=max/top), the groove's own
+# background - only the portion actually reached shows real color, the
+# rest above it stays neutral gray. Defined per level directly rather
+# than computed from a continuous fill fraction, since there are only
+# ever 4 positions - a QSS gradient with two stops at the same position
+# creates a hard edge instead of a blend, which is what makes the
+# "not revealed yet" boundary sharp instead of fading into gray.
+_GROOVE_BACKGROUNDS = {
+    0: f"background: {NEUTRAL_TRACK};",
+    1: (
+        f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        f"stop:0 {NEUTRAL_TRACK}, stop:0.666 {NEUTRAL_TRACK}, "
+        f"stop:0.667 {STATUS_OK}, stop:1 {STATUS_OK});"
+    ),
+    2: (
+        f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        f"stop:0 {NEUTRAL_TRACK}, stop:0.333 {NEUTRAL_TRACK}, "
+        f"stop:0.334 {WARNING_BORDER}, stop:1 {STATUS_OK});"
+    ),
+    3: (
+        f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        f"stop:0 {STATUS_ERROR}, stop:0.5 {WARNING_BORDER}, stop:1 {STATUS_OK});"
+    ),
+}
+
+_HANDLE_STYLE = f"""
+    QSlider::handle:vertical {{
+        width: 22px;
+        height: 22px;
+        margin: 0 -6px;
+        border-radius: 11px;
+        background: #FFFFFF;
+        border: 2px solid {ACCENT_BLUE};
+    }}
+    QSlider::handle:vertical:hover {{
+        border: 2px solid {ACCENT_BLUE};
+        background: {ACCENT_BLUE};
+    }}
+"""
 
 
 class LevelSlider(QSlider):
@@ -11,11 +51,14 @@ class LevelSlider(QSlider):
 
     Vertical, like a mixing-console fader - min (off) at the bottom, max
     at the top, matching QSlider's own default vertical convention. The
-    groove itself is a fixed green -> orange -> red gradient (low to
-    high intensity) rather than a plain track, so the handle's position
-    against that gradient reads as "how hot is this channel running"
-    at a glance - the same green/red vocabulary STATUS_OK/STATUS_ERROR
-    already use elsewhere for on/off state."""
+    groove's green -> orange -> red gradient (same green/red vocabulary
+    STATUS_OK/STATUS_ERROR already use elsewhere for on/off state) only
+    reveals up to the current level - at rest (L0) the whole track is
+    neutral gray, and orange/red only become visible once the handle has
+    actually been moved up into them, not sitting there permanently
+    regardless of position. Manages its own stylesheet on value changes
+    (see _update_groove) rather than relying on QSS add-page/sub-page
+    layering, which didn't reliably mask the groove in practice."""
 
     def __init__(self, parent=None):
         super().__init__(Qt.Vertical, parent)
@@ -25,24 +68,27 @@ class LevelSlider(QSlider):
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
         self.setFixedWidth(32)
-        self.setFixedHeight(150)
+        self.setFixedHeight(130)
+        self._update_groove(self.value())
+
+    def setValue(self, value: int):
+        # Reacting to valueChanged wouldn't be enough - ChannelCard wraps
+        # its own reactive-sync setValue() calls in blockSignals(True) to
+        # avoid re-triggering a redundant hardware command, and that also
+        # suppresses this widget's OWN internal valueChanged connections,
+        # not just external listeners. Overriding setValue() directly
+        # means the groove's color always matches the actual position,
+        # regardless of whether this particular change was signal-blocked.
+        super().setValue(value)
+        self._update_groove(value)
+
+    def _update_groove(self, value: int):
+        groove_bg = _GROOVE_BACKGROUNDS[value]
         self.setStyleSheet(f"""
             QSlider::groove:vertical {{
                 width: 10px;
                 border-radius: 5px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {STATUS_ERROR}, stop:0.5 {WARNING_BORDER}, stop:1 {STATUS_OK});
+                {groove_bg}
             }}
-            QSlider::handle:vertical {{
-                width: 22px;
-                height: 22px;
-                margin: 0 -6px;
-                border-radius: 11px;
-                background: #FFFFFF;
-                border: 2px solid {ACCENT_BLUE};
-            }}
-            QSlider::handle:vertical:hover {{
-                border: 2px solid {ACCENT_BLUE};
-                background: {ACCENT_BLUE};
-            }}
+            {_HANDLE_STYLE}
         """)

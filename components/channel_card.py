@@ -61,7 +61,7 @@ class ChannelCard(Card):
     interaction sends a command.
     """
 
-    MIN_WIDTH = 250  # the grid always uses 4 columns now (see MainWindow._reflow_grid) - this is a floor, not a fixed size
+    MIN_WIDTH = 230  # the grid always uses 4 columns now (see MainWindow._reflow_grid) - this is a floor, not a fixed size
 
     armed = Signal()  # this card just became the armed one - MainWindow locks any other back down
 

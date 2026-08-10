@@ -15,9 +15,9 @@ from services.protocol.packet_parser import describe_command
 from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
 
-TOP_CARD_SIZE = (320, 80)  # Controls' actual content only needs ~69px - was 120, leaving 51px of dead space below the buttons
+TOP_ROW_HEIGHT = 90  # shared by both Controls and Logs, sitting side by side in the same row - one constant so they can't drift apart again
+TOP_CARD_SIZE = (320, TOP_ROW_HEIGHT)
 LOG_CARD_WIDTH = 480
-LOG_CARD_HEIGHT = 90  # Controls/Logs are top-aligned in their row (not stretched to match), so this doesn't need to match TOP_CARD_SIZE's height
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         # only has Controls' fixed 320px competing with it), which just
         # meant a mostly-empty card stretched way past what a couple of
         # short log lines need.
-        logs_card.setFixedSize(LOG_CARD_WIDTH, LOG_CARD_HEIGHT)
+        logs_card.setFixedSize(LOG_CARD_WIDTH, TOP_ROW_HEIGHT)
         # Opens the same log in a bigger, resizable, scrollable dialog
         # (see LogsDialog) - the card itself only ever has room for a
         # handful of visible lines.

@@ -100,14 +100,9 @@ class ChannelCard(Card):
         self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
         self.header_layout.addWidget(self.arm_hint)
 
-        status_row = QHBoxLayout()
         self.status_dot = QLabel()
         self.status_dot.setFixedSize(8, 8)
         self.status_text = QLabel("STANDBY")
-        status_row.addWidget(self.status_dot)
-        status_row.addWidget(self.status_text)
-        status_row.addStretch()
-        self.body_layout.addLayout(status_row)
 
         main_row = QHBoxLayout()
         main_row.setSpacing(6)
@@ -201,7 +196,20 @@ class ChannelCard(Card):
             labels_col.addWidget(lbl, 1)
             self.level_labels[level] = lbl
         slider_row.addLayout(labels_col)
-        main_row.addLayout(slider_row)
+
+        # Status sits below the slider now, not as its own full-width row
+        # above main_row - constrained to the slider+labels column's
+        # width (right_col), not the whole card, freeing a full row of
+        # vertical space the card doesn't actually need for it.
+        right_col = QVBoxLayout()
+        right_col.setSpacing(3)
+        right_col.addLayout(slider_row)
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.status_dot)
+        status_row.addWidget(self.status_text)
+        status_row.addStretch()
+        right_col.addLayout(status_row)
+        main_row.addLayout(right_col)
 
         self.body_layout.addLayout(main_row)
 

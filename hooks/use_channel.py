@@ -10,13 +10,13 @@ from state.level_map import LEVEL_TO_HEX
 from .use_connection import ConnectionController
 
 RESPONSE_TIMEOUT_MS = 300
-# Collision on a shared line is probabilistic, not a hard 100% wall -
-# confirmed on real hardware: some attempts get a clean response even
-# with two modules wired in, others don't. One retry before giving up
-# still meaningfully improves the odds of getting through vs. a single
-# unlucky attempt, without re-sending the identical command 4 times in
-# a row every time a response is simply slow to arrive.
-RETRY_MAX_ATTEMPTS = 2
+# Real hardware test logs (both modules wired in) showed the retry
+# buying nothing: 28 attempts across 14 commands, every single retry
+# failed identically to the attempt before it - not the probabilistic
+# "some get through, some don't" pattern retrying is meant to help
+# with. A single attempt gets the same real-world result with half
+# the wire traffic and half the log noise per command.
+RETRY_MAX_ATTEMPTS = 1
 
 
 class ChannelController(QObject):

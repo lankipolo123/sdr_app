@@ -171,6 +171,16 @@ class ChannelCard(Card):
 
         self.toggle = PowerButton()
         left_col.addWidget(self.toggle)
+
+        # Status fills the slack left_col's own addStretch() used to just
+        # eat - this column (mode + ON/OFF) is naturally shorter than the
+        # slider column beside it, so status lands here for free instead
+        # of adding to the height of whichever column is already tallest.
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.status_dot)
+        status_row.addWidget(self.status_text)
+        status_row.addStretch()
+        left_col.addLayout(status_row)
         left_col.addStretch()
         main_row.addLayout(left_col, 1)
 
@@ -196,20 +206,7 @@ class ChannelCard(Card):
             labels_col.addWidget(lbl, 1)
             self.level_labels[level] = lbl
         slider_row.addLayout(labels_col)
-
-        # Status sits below the slider now, not as its own full-width row
-        # above main_row - constrained to the slider+labels column's
-        # width (right_col), not the whole card, freeing a full row of
-        # vertical space the card doesn't actually need for it.
-        right_col = QVBoxLayout()
-        right_col.setSpacing(3)
-        right_col.addLayout(slider_row)
-        status_row = QHBoxLayout()
-        status_row.addWidget(self.status_dot)
-        status_row.addWidget(self.status_text)
-        status_row.addStretch()
-        right_col.addLayout(status_row)
-        main_row.addLayout(right_col)
+        main_row.addLayout(slider_row)
 
         self.body_layout.addLayout(main_row)
 

@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import qtawesome as qta
 
 from PySide6.QtWidgets import (
@@ -295,12 +293,6 @@ class MainWindow(QMainWindow):
         self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")
 
     def _append_log(self, line: str):
-        # Millisecond precision, matching the file logger's own
-        # %(asctime)s granularity - lets a real overlap between two
-        # channels' TX/RX actually be spotted at a glance in the UI
-        # itself, not just by cross-referencing logs/sdr_controller.log.
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        line = f"[{timestamp}] {line}"
         self.log_list.addItem(line)
         while self.log_list.count() > LOG_MAX_ENTRIES:
             self.log_list.takeItem(0)

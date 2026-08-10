@@ -81,8 +81,8 @@ class ChannelCard(Card):
         # this card packs a dropdown, two buttons, and a fader into one
         # tile repeated 4-per-row, so it needs to run leaner than a
         # single-purpose card like the Controls panel does.
-        self.layout().setContentsMargins(10, 8, 10, 8)
-        self.body_layout.setSpacing(5)
+        self.layout().setContentsMargins(8, 6, 8, 6)
+        self.body_layout.setSpacing(4)
         self.controller = controller
         self.state = state
         self._armed = False
@@ -110,11 +110,11 @@ class ChannelCard(Card):
         self.body_layout.addLayout(status_row)
 
         main_row = QHBoxLayout()
-        main_row.setSpacing(8)
+        main_row.setSpacing(6)
 
         # Left column: Modulation dropdown on top, ON/OFF underneath.
         left_col = QVBoxLayout()
-        left_col.setSpacing(5)
+        left_col.setSpacing(4)
 
         # Order matches services/protocol/constants.MODE_NAMES exactly -
         # combo box index N always means self._mode_codes[N], not the
@@ -139,7 +139,7 @@ class ChannelCard(Card):
         # and slider already tell.
         self.mode_combo.setStyleSheet(
             f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 8px; padding: 3px 8px; font-weight: 600; font-size: 10px; }}"
+            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QComboBox:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
             f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
             f"border: 1px solid {BORDER_SUBTLE}; }}"
@@ -155,7 +155,7 @@ class ChannelCard(Card):
         # beside it - the tooltip already covers names that elide here.
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_confirm_btn = QPushButton("Confirm")
-        self.mode_confirm_btn.setFixedHeight(26)
+        self.mode_confirm_btn.setFixedHeight(24)
         self.mode_confirm_btn.setCursor(Qt.PointingHandCursor)
         self.mode_confirm_btn.setToolTip("Confirm modulation")
         # No hover/pressed color swap (unlike mode_combo/Clear Log) - this
@@ -164,7 +164,7 @@ class ChannelCard(Card):
         # just another toggle.
         self.mode_confirm_btn.setStyleSheet(
             f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 8px; padding: 3px 8px; font-weight: 600; font-size: 10px; }}"
+            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
         self.mode_confirm_btn.clicked.connect(self._on_mode_confirm)

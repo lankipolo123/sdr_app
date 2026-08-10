@@ -201,8 +201,8 @@ class MainWindow(QMainWindow):
         self.channels_scroll = scroll
         grid_container = QWidget()
         self.grid = QGridLayout(grid_container)
-        self.grid.setContentsMargins(12, 12, 12, 12)
-        self.grid.setSpacing(12)
+        self.grid.setContentsMargins(8, 8, 8, 8)
+        self.grid.setSpacing(8)
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
         outer.addWidget(scroll, 1)

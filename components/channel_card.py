@@ -176,7 +176,12 @@ class ChannelCard(Card):
         self.slider.valueChanged.connect(self._on_slider)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
-        # Locked by default - see _arm()/mousePressEvent below.
+        # Locked by default - see _arm()/mousePressEvent below. Sets the
+        # thin unarmed border explicitly rather than leaving Card's own
+        # (thicker) default in place - disarm() is never actually called
+        # until a real arm/disarm cycle happens, so without this a fresh
+        # card would render with the heavier armed-style width at launch.
+        self._style_border(armed=False)
         self.slider.setEnabled(False)
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
@@ -212,9 +217,7 @@ class ChannelCard(Card):
         self.toggle.setEnabled(True)
         self.mode_combo.setEnabled(True)
         self.arm_hint.setVisible(False)
-        self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 2px solid {ACCENT_BLUE}; border-radius: 10px; }}"
-        )
+        self._style_border(armed=True)
         self.armed.emit()
 
     def disarm(self):
@@ -227,8 +230,18 @@ class ChannelCard(Card):
         self.toggle.setEnabled(False)
         self.mode_combo.setEnabled(False)
         self.arm_hint.setVisible(True)
+        self._style_border(armed=False)
+
+    def _style_border(self, armed: bool):
+        # Thin at rest (1px) so 16 of these side by side don't read as a
+        # wall of boxes - armed jumps to a thicker, accent-colored ring
+        # (2px) specifically because it's the one signal that has to stay
+        # unmistakable: which single card is currently unlocked and can
+        # actually send a command to the shared, collision-prone bus.
+        color = ACCENT_BLUE if armed else BORDER_SUBTLE
+        width = 2 if armed else 1
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+            f"#Card {{ background: #FFFFFF; border: {width}px solid {color}; border-radius: 10px; }}"
         )
 
     # --- user-driven changes -------------------------------------------------

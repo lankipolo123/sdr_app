@@ -140,6 +140,13 @@ class MainWindow(QMainWindow):
         self.log_list.setStyleSheet(
             f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
         )
+        # This compact view is only meant to show whatever's most current
+        # - no scrollbar to drag through history here, that's what the
+        # maximize button's LogsDialog is for. Older lines above the
+        # visible area just fall off, same as if LOG_MAX_ENTRIES trimmed
+        # them.
+        self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
         top_row.addWidget(logs_card, 1, alignment=Qt.AlignTop)
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
@@ -150,16 +157,15 @@ class MainWindow(QMainWindow):
         channels_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
         outer.addWidget(channels_label)
 
-        # Matches Card's own border weight/radius+color exactly (2px
-        # solid BORDER_SUBTLE, 10px radius) so this reads as the same
-        # kind of section as Connection/Controls/Emergency, not a
-        # plain unstyled scroll area. Scoped to #ChannelsScroll so it
-        # doesn't cascade onto the cards placed inside it.
+        # No border/fill of its own - purely a scroll mechanism around the
+        # grid, not a bordered section like Controls/Logs. Each card
+        # already carries its own border (see ChannelCard.arm/disarm), so
+        # a second border wrapping all of them just added a redundant
+        # outline with nothing meaningful of its own to signal. Scoped to
+        # #ChannelsScroll so it doesn't cascade onto the cards inside it.
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
-        scroll.setStyleSheet(
-            f"#ChannelsScroll {{ border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; background: #FFFFFF; }}"
-        )
+        scroll.setStyleSheet("#ChannelsScroll { border: none; background: #FFFFFF; }")
         # The viewport is a separate child widget with its own opaque
         # square background - it isn't clipped to the frame's rounded
         # corners, so it was covering them with square white corners
@@ -243,9 +249,12 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Log cleared.")
 
     def _on_open_logs_dialog(self):
-        if self.logs_dialog is None:
-            lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
-            self.logs_dialog = LogsDialog(self, lines)
+        # Always rebuilt fresh from what the compact log currently holds -
+        # a reused instance only ever got backfilled at its first
+        # creation (see LogsDialog's docstring), so this is what actually
+        # guarantees it never reopens stale or empty.
+        lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
+        self.logs_dialog = LogsDialog(self, lines)
         self.logs_dialog.show()
         self.logs_dialog.raise_()
         self.logs_dialog.activateWindow()

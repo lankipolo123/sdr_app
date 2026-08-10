@@ -3,6 +3,54 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 
 from . import constants as c
+from state.level_map import HEX_TO_LEVEL, LEVEL_LABELS
+
+
+def describe_command(frame: bytes) -> str:
+    """Human-readable summary of an OUTGOING command frame - Signal
+    Control's payload here means mode+freq+bandwidth+power to SET, not
+    a 1-byte success/fail response code the way the same type byte
+    means in a reply (see ParsedFrame.describe) - commands and
+    responses need separate decoders even though they share type
+    bytes. Decodes the actual bytes about to go out (re-derives fields
+    the same way packet_builder.py encodes them) rather than trusting
+    the caller's own free-text label, so it can't silently drift out
+    of sync with what the frame actually contains.
+
+    Power shows as the same Low/Med/High/Off vocabulary the slider
+    itself uses (see state/level_map.py) rather than the raw hex code
+    - a log meant to be human-readable shouldn't make the reader
+    mentally reverse a hex-to-level lookup that's already defined
+    once, right there."""
+    if len(frame) < 5:
+        return "malformed frame"
+    type_byte = frame[2]
+    buf_len = frame[4]
+    buf = frame[5:5 + buf_len]
+
+    if type_byte == c.TYPE_OUTPUT_SWITCH and len(buf) == 1:
+        return f"Output Switch: {'ON' if buf[0] == c.OUTPUT_ON else 'OFF'}"
+
+    if type_byte == c.TYPE_SIGNAL_CONTROL and len(buf) == 5:
+        mode, bw_code, power_code = buf[0], buf[3], buf[4]
+        freq = struct.unpack(">H", buf[1:3])[0]
+        mode_name = c.MODE_NAMES.get(mode, f"0x{mode:02X}")
+        bandwidth = c.BANDWIDTH_CODES_REV.get(bw_code)
+        bw_str = f"{bandwidth}MHz" if bandwidth is not None else f"0x{bw_code:02X}"
+        level = HEX_TO_LEVEL.get(power_code)
+        power_str = LEVEL_LABELS[level] if level is not None else f"0x{power_code:02X}"
+        return f"Signal Control: mode={mode_name} freq={freq}MHz bw={bw_str} power={power_str}"
+
+    if type_byte == c.TYPE_STATUS_QUERY:
+        return "Status Query"
+
+    if type_byte == c.TYPE_ADDR_QUERY:
+        return "Address Query"
+
+    if type_byte == c.TYPE_ADDR_SET and len(buf) == 1:
+        return f"Address Set: {buf[0]}"
+
+    return f"Unrecognized command type 0x{type_byte:02X}"
 
 
 @dataclass

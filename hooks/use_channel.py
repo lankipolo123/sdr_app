@@ -4,7 +4,7 @@ from collections import deque
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from services.protocol import commands, constants as c
-from services.protocol.packet_parser import ParsedFrame
+from services.protocol.packet_parser import ParsedFrame, describe_command
 from state.channel_state import ChannelState
 from state.level_map import LEVEL_TO_HEX
 from .use_connection import ConnectionController
@@ -290,7 +290,16 @@ class ChannelController(QObject):
         # visibly snap the slider back before the real ack arrives.
         if self.logger:
             attempt_note = f" (attempt {self._pending_attempt + 1}/{RETRY_MAX_ATTEMPTS})" if self._pending_attempt else ""
-            self.logger.info(f"TX ch{self.wire_address} ({label}){attempt_note}: {frame.hex(' ').upper()}")
+            # describe_command decodes the actual frame bytes (mode/freq/
+            # bw/power spelled out, power as Low/Med/High/Off) - label is
+            # kept too since it says what the USER'S action was (e.g. "Power
+            # -> Low"), which the full decoded frame alone doesn't capture
+            # (Signal Control always resends all 4 fields together, so the
+            # decode can't tell which one the user actually meant to change).
+            self.logger.info(
+                f"TX ch{self.wire_address} ({label}){attempt_note}: "
+                f"{describe_command(frame)} | {frame.hex(' ').upper()}"
+            )
 
         sent = self._temp_conn.send(frame)
         if not sent:

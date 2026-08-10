@@ -31,7 +31,7 @@ class PowerButton(QWidget):
         self.on_btn = QPushButton("ON")
         self.off_btn = QPushButton("OFF")
         for btn in (self.on_btn, self.off_btn):
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(24)
             btn.setCursor(Qt.PointingHandCursor)
             layout.addWidget(btn)
 

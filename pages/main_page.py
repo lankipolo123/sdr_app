@@ -21,8 +21,14 @@ LOG_CARD_WIDTH = 480
 
 # Typed anywhere in the app (not a shortcut held down, a sequence typed
 # one key after another) to toggle dev mode - deliberately not bound to
-# any visible button or menu entry, see MainWindow.eventFilter.
-DEV_MODE_SEQUENCE = [Qt.Key_D, Qt.Key_E, Qt.Key_V]
+# any visible button or menu entry, see MainWindow.eventFilter. Matched
+# against each keypress's actual produced character (event.text()), not
+# the raw Qt.Key code - that's what makes "~" reliable across keyboard
+# layouts, since which physical key/modifier combination produces a
+# tilde varies by layout, but the character it produces doesn't. Leads
+# with a symbol specifically so an ordinary word (someone typing "dev"
+# in a normal sentence somewhere) can never accidentally match it.
+DEV_MODE_SEQUENCE = ["~", "d", "e", "v"]
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
@@ -277,17 +283,17 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
-        if event.type() == QEvent.KeyPress:
-            self._track_dev_mode_key(event.key())
+        if event.type() == QEvent.KeyPress and event.text():
+            self._track_dev_mode_key(event.text())
 
         return super().eventFilter(obj, event)
 
-    def _track_dev_mode_key(self, key: int):
+    def _track_dev_mode_key(self, text: str):
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something
         # else first before trying again, it should just fall out the
         # end as the buffer keeps sliding.
-        self._dev_key_buffer.append(key)
+        self._dev_key_buffer.append(text.lower())
         self._dev_key_buffer = self._dev_key_buffer[-len(DEV_MODE_SEQUENCE):]
         if self._dev_key_buffer == DEV_MODE_SEQUENCE:
             self._dev_key_buffer = []

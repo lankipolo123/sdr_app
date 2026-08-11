@@ -18,6 +18,11 @@ from utils.logging_service import clear_log
 TOP_ROW_HEIGHT = 90  # shared by both Controls and Logs, sitting side by side in the same row - one constant so they can't drift apart again
 TOP_CARD_SIZE = (320, TOP_ROW_HEIGHT)
 LOG_CARD_WIDTH = 480
+
+# Typed anywhere in the app (not a shortcut held down, a sequence typed
+# one key after another) to toggle dev mode - deliberately not bound to
+# any visible button or menu entry, see MainWindow.eventFilter.
+DEV_MODE_SEQUENCE = [Qt.Key_D, Qt.Key_E, Qt.Key_V]
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
@@ -232,11 +237,17 @@ class MainWindow(QMainWindow):
         for address in range(MAX_CHANNELS):
             self._build_card(address)
 
+        self.dev_mode = False
+        self._dev_key_buffer = []
+
         # App-wide filter (not just a handler on this window) so a click
         # ANYWHERE that isn't on the currently-armed card - empty space,
         # another button, a dialog - locks it back down too, not just a
         # click on a different card. A card left armed with nothing else
         # going on is still a card whose controls could send by accident.
+        # Also where the dev-mode key sequence is caught, for the same
+        # reason - it has to see every keypress app-wide, not just ones
+        # landing on a specific focused widget.
         QApplication.instance().installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -265,7 +276,23 @@ class MainWindow(QMainWindow):
             if not (obj is self._armed_card or self._armed_card.isAncestorOf(obj)):
                 self._armed_card.disarm()
                 self._armed_card = None
+
+        if event.type() == QEvent.KeyPress:
+            self._track_dev_mode_key(event.key())
+
         return super().eventFilter(obj, event)
+
+    def _track_dev_mode_key(self, key: int):
+        # A rolling buffer, not a "must start fresh" match - mistyping
+        # the sequence shouldn't require deliberately doing something
+        # else first before trying again, it should just fall out the
+        # end as the buffer keeps sliding.
+        self._dev_key_buffer.append(key)
+        self._dev_key_buffer = self._dev_key_buffer[-len(DEV_MODE_SEQUENCE):]
+        if self._dev_key_buffer == DEV_MODE_SEQUENCE:
+            self._dev_key_buffer = []
+            self.dev_mode = not self.dev_mode
+            self.title_bar.set_dev_mode(self.dev_mode)
 
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
@@ -297,11 +324,16 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx. Decoded only,
-        # no raw hex - this panel is meant to read at a glance, not for
-        # byte-level debugging. The file log (see hooks/use_channel.py's
-        # _send) still keeps hex alongside the decode for that.
-        self._append_log(f"TX CH{address:02d}: {describe_command(data)}")
+        # number on screen) - see ChannelManager.raw_tx. Decoded only by
+        # default - this panel is meant to read at a glance, not for
+        # byte-level debugging. Dev mode (see DEV_MODE_SEQUENCE) reveals
+        # the raw encoded bytes alongside the decode too, so the actual
+        # human action -> wire bytes translation is visible on demand
+        # without cluttering the log for everyone else.
+        line = f"TX CH{address:02d}: {describe_command(data)}"
+        if self.dev_mode:
+            line += f" | {data.hex(' ').upper()}"
+        self._append_log(line)
 
     def _on_raw_rx(self, address: int, data: bytes):
         self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")

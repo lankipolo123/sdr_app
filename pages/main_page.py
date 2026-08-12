@@ -30,7 +30,7 @@ DEV_LOG_CARD_WIDTH = 300  # narrower than the main log - hex/encrypted-preview l
 # tilde varies by layout, but the character it produces doesn't. Leads
 # with a symbol specifically so an ordinary word (someone typing "dev"
 # in a normal sentence somewhere) can never accidentally match it.
-DEV_MODE_SEQUENCE = ["~", "d", "e", "v"]
+DEV_MODE_SEQUENCE = ["`", "d", "e", "v"]
 LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 

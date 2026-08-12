@@ -355,7 +355,10 @@ class MainWindow(QMainWindow):
         elif event.text():
             char = event.text().lower()
         else:
+            print(f"[dev-mode-debug] no usable char - key={event.key()} text={event.text()!r} autorepeat={event.isAutoRepeat()}")
             return
+
+        print(f"[dev-mode-debug] char={char!r} key={event.key()} autorepeat={event.isAutoRepeat()} buffer_before={self._dev_key_buffer}")
 
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something
@@ -366,6 +369,7 @@ class MainWindow(QMainWindow):
         if self._dev_key_buffer == DEV_MODE_SEQUENCE:
             self._dev_key_buffer = []
             self.dev_mode = not self.dev_mode
+            print(f"[dev-mode-debug] MATCHED - toggling dev_mode to {self.dev_mode}")
             self.title_bar.set_dev_mode(self.dev_mode)
             self.dev_logs_card.setVisible(self.dev_mode)
 

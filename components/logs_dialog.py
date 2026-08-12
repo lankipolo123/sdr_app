@@ -21,9 +21,9 @@ class LogsDialog(QDialog):
     never made it in and reopening showed stale (sometimes empty)
     content."""
 
-    def __init__(self, parent, lines: list[str]):
+    def __init__(self, parent, lines: list[str], title: str = "Logs"):
         super().__init__(parent)
-        self.setWindowTitle("Logs")
+        self.setWindowTitle(title)
         self.resize(700, 500)
 
         layout = QVBoxLayout(self)

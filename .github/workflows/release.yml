@@ -1,0 +1,62 @@
+name: Build and release Windows .exe
+
+# Fires only on a pushed version tag (e.g. v1.0.0) - ordinary commits to
+# main never trigger a build, so pushing work-in-progress doesn't spam
+# releases. Tag a commit with `git tag v1.0.0 && git push origin v1.0.0`
+# when you actually want a release cut.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Needed to let the workflow create a GitHub Release and upload files to
+# it - the default GITHUB_TOKEN is read-only otherwise.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Must be a real Windows runner - PyInstaller builds for whatever OS
+    # it runs on, there's no cross-compiling a Windows .exe from Linux.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-build.txt
+
+      - name: Build .exe
+        run: python build_exe.py
+
+      - name: Compute SHA256 checksum
+        # Published alongside the .exe so anyone can verify the
+        # download wasn't corrupted or tampered with after this
+        # workflow built it - the .exe itself is unsigned (no code-
+        # signing certificate), so this checksum plus "you can read
+        # the build script yourself" is the honesty story in place of
+        # a paid cert removing the SmartScreen warning outright.
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "TX Controller.exe" > "TX Controller.exe.sha256"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/TX Controller.exe
+            dist/TX Controller.exe.sha256
+          generate_release_notes: true
+          body: |
+            **Windows SmartScreen note:** this build isn't code-signed
+            (no paid certificate), so Windows will show an "Unknown
+            Publisher" warning the first time you run it. That's
+            expected, not a sign anything is wrong - click "More info"
+            then "Run anyway". Verify the download against
+            `TX Controller.exe.sha256` if you want to confirm it
+            wasn't corrupted or altered, or build it yourself from
+            source with `build_exe.py`.

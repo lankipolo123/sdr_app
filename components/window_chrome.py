@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QColor, QIcon, QGuiApplication, QRegion
 
 from styles.theme_colors import (
-    TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR, STATUS_ERROR_LIGHT,
+    TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR_LIGHT,
     NAVY, ACCENT_BLUE, TEXT_LIGHT, SURFACE,
 )
 
@@ -34,7 +34,7 @@ class _CaptionButton(QToolButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.kind == "close_app":
-            color = STATUS_ERROR_LIGHT if self.underMouse() else STATUS_ERROR
+            color = TEXT_LIGHT if self.underMouse() else STATUS_ERROR_LIGHT
         else:
             color = TEXT_LIGHT if self.underMouse() else ACCENT_BLUE
         pen = QPen(QColor(color))

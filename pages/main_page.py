@@ -346,7 +346,10 @@ class MainWindow(QMainWindow):
         elif event.text():
             char = event.text().lower()
         else:
+            print(f"[dev-mode-debug] KeyPress with no usable char - key={event.key()} text={event.text()!r}")
             return
+
+        print(f"[dev-mode-debug] char={char!r} key={event.key()} text={event.text()!r} buffer={self._dev_key_buffer + [char]}")
 
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something

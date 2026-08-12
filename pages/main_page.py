@@ -329,17 +329,30 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
-        if event.type() == QEvent.KeyPress and event.text():
-            self._track_dev_mode_key(event.text())
+        if event.type() == QEvent.KeyPress:
+            self._track_dev_mode_key(event)
 
         return super().eventFilter(obj, event)
 
-    def _track_dev_mode_key(self, text: str):
+    def _track_dev_mode_key(self, event):
+        # Backtick is matched by its raw key code, not event.text() - on
+        # layouts where it's a dead key (e.g. Windows "US-International"),
+        # pressing it alone doesn't produce a character until combined
+        # with the next keystroke, so text() would come back empty/late
+        # and silently drop it here. The key code fires immediately
+        # regardless of that composition state.
+        if event.key() == Qt.Key_QuoteLeft:
+            char = "`"
+        elif event.text():
+            char = event.text().lower()
+        else:
+            return
+
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something
         # else first before trying again, it should just fall out the
         # end as the buffer keeps sliding.
-        self._dev_key_buffer.append(text.lower())
+        self._dev_key_buffer.append(char)
         self._dev_key_buffer = self._dev_key_buffer[-len(DEV_MODE_SEQUENCE):]
         if self._dev_key_buffer == DEV_MODE_SEQUENCE:
             self._dev_key_buffer = []

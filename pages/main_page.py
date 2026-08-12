@@ -330,6 +330,9 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
+        if event.type() == QEvent.KeyPress:
+            print(f"[dev-mode-debug] KeyPress at obj={type(obj).__name__} obj_is_self={obj is self} text={event.text()!r}")
+
         if event.type() == QEvent.KeyPress and event is not self._last_dev_key_event:
             # A single physical keystroke that no focused widget consumes
             # gets redelivered to every ancestor up the widget tree as it

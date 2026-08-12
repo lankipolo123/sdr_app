@@ -183,6 +183,20 @@ class MainWindow(QMainWindow):
         self.dev_logs_card = make_card("Dev Logs", icon="fa5s.code")
         self.dev_logs_card.setFixedSize(DEV_LOG_CARD_WIDTH, TOP_ROW_HEIGHT)
         self.dev_logs_card.setVisible(False)
+        # Same maximize pattern as Logs - this card is narrower, so an
+        # 88-char encrypted preview truncates even harder here than a
+        # normal TX line ever did.
+        self.maximize_dev_logs_btn = QPushButton()
+        self.maximize_dev_logs_btn.setIcon(qta.icon("fa5s.expand-alt", color=ACCENT_BLUE))
+        self.maximize_dev_logs_btn.setFixedSize(20, 20)
+        self.maximize_dev_logs_btn.setCursor(Qt.PointingHandCursor)
+        self.maximize_dev_logs_btn.setToolTip("Open full scrollable dev log")
+        self.maximize_dev_logs_btn.setStyleSheet(
+            "QPushButton { border: none; background: transparent; }"
+            f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
+        )
+        self.maximize_dev_logs_btn.clicked.connect(self._on_open_dev_logs_dialog)
+        self.dev_logs_card.header_layout.addWidget(self.maximize_dev_logs_btn)
         self.dev_log_list = QListWidget()
         self.dev_log_list.setStyleSheet(
             f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
@@ -190,6 +204,7 @@ class MainWindow(QMainWindow):
         self.dev_log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
+        self.dev_logs_dialog = None  # only built the first time it's opened - see _on_open_dev_logs_dialog
         # Extra spacing on top of top_row's own 12px, specifically here -
         # visually sets this card apart as the "extra, dev-only" one
         # instead of reading as just another regular card in the row.
@@ -348,6 +363,8 @@ class MainWindow(QMainWindow):
         self.dev_log_list.clear()
         if self.logs_dialog is not None:
             self.logs_dialog.list.clear()
+        if self.dev_logs_dialog is not None:
+            self.dev_logs_dialog.list.clear()
         self.status_label.setText("Log cleared.")
 
     def _on_open_logs_dialog(self):
@@ -360,6 +377,13 @@ class MainWindow(QMainWindow):
         self.logs_dialog.show()
         self.logs_dialog.raise_()
         self.logs_dialog.activateWindow()
+
+    def _on_open_dev_logs_dialog(self):
+        lines = [self.dev_log_list.item(i).text() for i in range(self.dev_log_list.count())]
+        self.dev_logs_dialog = LogsDialog(self, lines, title="Dev Logs")
+        self.dev_logs_dialog.show()
+        self.dev_logs_dialog.raise_()
+        self.dev_logs_dialog.activateWindow()
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
@@ -403,6 +427,8 @@ class MainWindow(QMainWindow):
         while self.dev_log_list.count() > LOG_MAX_ENTRIES:
             self.dev_log_list.takeItem(0)
         self.dev_log_list.scrollToBottom()
+        if self.dev_logs_dialog is not None and self.dev_logs_dialog.isVisible():
+            self.dev_logs_dialog.append_line(line, LOG_MAX_ENTRIES)
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

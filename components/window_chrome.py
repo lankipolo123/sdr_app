@@ -100,17 +100,24 @@ class TitleBar(QWidget):
         # is accepted but silently never drawn (same gotcha ResizableContainer
         # already works around the same way).
         self.setAttribute(Qt.WA_StyledBackground, True)
-        # Full border on all four sides. Top corners rounded to match the
-        # window's own rounded top edge; bottom stays a straight line
-        # where it meets the content below. NAVY fill (the app's own
-        # primary/brand color, same one every other NAVY-filled control -
-        # Clear Log, the mode dropdown, Confirm - already uses) instead of
-        # plain white, self-colored border so the fill reads as one solid
-        # bar rather than a swatch with a visible seam.
+        # Full border on all four sides, in the same ACCENT_BLUE as
+        # ResizableContainer's own outer border - this sits flush (0
+        # margin) against the container's top edge, fully covering
+        # whatever border color the container itself drew there, so
+        # matching colors is what makes the two read as one continuous
+        # outline running around the whole window instead of the top
+        # edge looking like a different, uncolored border. Top corners
+        # use the same WINDOW_RADIUS as the container for the same
+        # reason - a mismatched radius here is what made the corner
+        # look misaligned rather than nested inside the container's own
+        # curve. Bottom stays a straight line where it meets the
+        # content below. NAVY fill (the app's own primary/brand color,
+        # same one every other NAVY-filled control - Clear Log, the
+        # mode dropdown, Confirm - already uses).
         self.setStyleSheet(
             f"#TitleBar {{ background: {NAVY}; "
-            f"border: 2px solid {NAVY}; "
-            f"border-top-left-radius: 10px; border-top-right-radius: 10px; }}"
+            f"border: 2px solid {ACCENT_BLUE}; "
+            f"border-top-left-radius: {WINDOW_RADIUS}px; border-top-right-radius: {WINDOW_RADIUS}px; }}"
         )
 
         # A separate strip for the bottom border, not a border on the row

@@ -18,7 +18,8 @@ from utils.logging_service import clear_log
 
 TOP_ROW_HEIGHT = 90  # shared by both Controls and Logs, sitting side by side in the same row - one constant so they can't drift apart again
 TOP_CARD_SIZE = (320, TOP_ROW_HEIGHT)
-LOG_CARD_WIDTH = 480
+LOG_CARD_WIDTH = 380
+DEV_LOG_CARD_WIDTH = 300  # narrower than the main log - hex/encrypted-preview lines don't need to fit a whole sentence, just be readable
 
 # Typed anywhere in the app (not a shortcut held down, a sequence typed
 # one key after another) to toggle dev mode - deliberately not bound to
@@ -171,8 +172,27 @@ class MainWindow(QMainWindow):
         self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
         top_row.addWidget(logs_card, alignment=Qt.AlignTop)
-        top_row.addStretch()
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
+
+        # Hidden unless dev mode is on (see _track_dev_mode_key) - the
+        # hex/encrypted-preview detail used to get appended onto the
+        # main Logs card's lines, which just made them run long enough
+        # to truncate in a card this width. A separate card means the
+        # main log stays exactly as clean as it is for everyone else,
+        # and this one only ever exists to hold the extra detail.
+        self.dev_logs_card = make_card("Dev Logs", icon="fa5s.code")
+        self.dev_logs_card.setFixedSize(DEV_LOG_CARD_WIDTH, TOP_ROW_HEIGHT)
+        self.dev_logs_card.setVisible(False)
+        self.dev_log_list = QListWidget()
+        self.dev_log_list.setStyleSheet(
+            f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
+        )
+        self.dev_log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
+        top_row.addWidget(self.dev_logs_card, alignment=Qt.AlignTop)
+
+        top_row.addStretch()
 
         outer.addLayout(top_row)
 
@@ -306,6 +326,7 @@ class MainWindow(QMainWindow):
             self._dev_key_buffer = []
             self.dev_mode = not self.dev_mode
             self.title_bar.set_dev_mode(self.dev_mode)
+            self.dev_logs_card.setVisible(self.dev_mode)
 
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
@@ -320,6 +341,7 @@ class MainWindow(QMainWindow):
     def _on_clear_log(self):
         clear_log(self.app.logger)
         self.log_list.clear()
+        self.dev_log_list.clear()
         if self.logs_dialog is not None:
             self.logs_dialog.list.clear()
         self.status_label.setText("Log cleared.")
@@ -337,23 +359,27 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx. Decoded only by
-        # default - this panel is meant to read at a glance, not for
-        # byte-level debugging. Dev mode (see DEV_MODE_SEQUENCE) reveals
-        # the raw wire bytes AND a live encode_message() preview
-        # alongside the decode - the actual human action -> hardware
-        # bytes -> what an encrypted API message for it would look like,
-        # all visible on demand without cluttering the log for everyone
-        # else. The encrypted preview is a demo of the mechanism, not a
-        # real message going anywhere yet - see services/encoding.py.
+        # number on screen) - see ChannelManager.raw_tx. Always decoded
+        # only here - this panel is meant to read at a glance, not for
+        # byte-level debugging, regardless of dev mode. The raw wire
+        # bytes and a live encode_message() preview go to the separate
+        # Dev Logs card instead (see _track_dev_mode_key) - the actual
+        # human action -> hardware bytes -> what an encrypted API
+        # message for it would look like, visible on demand without
+        # ever making this card's own lines run long. That encrypted
+        # preview is a demo of the mechanism, not a real message going
+        # anywhere yet - see services/encoding.py.
         decoded = describe_command(data)
-        line = f"TX CH{address:02d}: {decoded}"
+        self._append_log(f"TX CH{address:02d}: {decoded}")
         if self.dev_mode:
-            line += f" | {data.hex(' ').upper()}"
             payload = {"channel": address, "command": decoded}
             encoded_value = encode_message(payload, self._dev_encryption_key)
-            line += f" | ENC: {encoded_value}"
-        self._append_log(line)
+            # Two separate list items, not one line with an embedded
+            # newline - QListWidget doesn't grow a row's height for
+            # multi-line text without extra delegate/word-wrap setup,
+            # so an embedded \n would just get squashed into one row.
+            self._append_dev_log(f"CH{address:02d}: {data.hex(' ').upper()}")
+            self._append_dev_log(f"ENC: {encoded_value}")
 
     def _on_raw_rx(self, address: int, data: bytes):
         self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")
@@ -367,6 +393,12 @@ class MainWindow(QMainWindow):
         # only reflecting whatever existed at the moment it was opened.
         if self.logs_dialog is not None and self.logs_dialog.isVisible():
             self.logs_dialog.append_line(line, LOG_MAX_ENTRIES)
+
+    def _append_dev_log(self, line: str):
+        self.dev_log_list.addItem(line)
+        while self.dev_log_list.count() > LOG_MAX_ENTRIES:
+            self.dev_log_list.takeItem(0)
+        self.dev_log_list.scrollToBottom()
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

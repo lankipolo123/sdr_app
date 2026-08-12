@@ -65,7 +65,6 @@ jobs:
           files: |
             dist/TX Controller.exe
             dist/TX Controller.exe.sha256
-          generate_release_notes: true
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown

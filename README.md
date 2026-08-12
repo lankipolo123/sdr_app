@@ -96,8 +96,12 @@ toggle, each sending exactly one command (see `components/power_button.py`).
    (`installer.iss`, see "Building the installer" below) is written
    but genuinely untested - Inno Setup has no Linux/Mac port at all,
    so unlike the `.exe` this couldn't be verified by an actual
-   compile in this environment. GitHub Actions (CI automation) not
-   set up yet. PyArmor intentionally left out for now per request.
+   compile in this environment. GitHub Actions now builds the `.exe`
+   on a real Windows runner and publishes it to GitHub Releases on
+   every version tag (see "Releasing a build" below) - not yet
+   extended to also build/attach the Inno Setup installer, since that
+   part is still unverified even locally. PyArmor intentionally left
+   out for now per request.
 
 ## File structure (React-style mapping)
 
@@ -190,3 +194,43 @@ installer script just packages whatever's already sitting in
 project - it must never change between releases, since that's what
 Inno Setup uses to recognize "this is an upgrade of the same install"
 rather than a separate app living alongside the old one.
+
+## Releasing a build
+
+`.github/workflows/release.yml` builds the `.exe` on a real
+`windows-latest` GitHub Actions runner (not a Linux build like the
+one verified in this environment) and publishes it to a GitHub
+Release automatically - nothing to upload by hand over a slow
+connection. It only fires on a pushed version tag, not on every
+commit to `main`:
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+That creates a release named after the tag with `TX Controller.exe`
+and a `TX Controller.exe.sha256` checksum file attached. Bump the
+tag (`v1.0.1`, `v1.1.0`, ...) for each subsequent release - re-pushing
+the same tag doesn't retrigger a clean run.
+
+**About the Windows SmartScreen warning:** this `.exe` is not
+code-signed, so Windows shows an "Unknown Publisher" warning the
+first time anyone runs it ("More info" -> "Run anyway" to proceed -
+this is expected, not a sign of a problem). The only way to remove
+that warning is a paid code-signing certificate (a standard one still
+needs enough installs to build up reputation with SmartScreen before
+the warning stops appearing; only an EV certificate suppresses it
+immediately, and those cost more and require business identity
+verification) - that's a cost/process decision for whoever owns this
+project, not something the build itself can route around. The
+checksum file lets anyone confirm their download matches exactly
+what this workflow built, and the source here is public, so anyone
+who doesn't want to trust the binary can build it themselves with
+`build_exe.py`.
+
+The Inno Setup installer (`installer.iss`) isn't part of this
+workflow yet, since Inno Setup can't be verified in this project's
+Linux-only dev environment at all - only add it to the release
+pipeline once someone has actually run `iscc installer.iss` on real
+Windows and confirmed it produces a working installer.

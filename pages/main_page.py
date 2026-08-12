@@ -285,7 +285,6 @@ class MainWindow(QMainWindow):
 
         self.dev_mode = False
         self._dev_key_buffer = []
-        self._last_dev_key_event = None
         # Demo-only, per-session key for the encode_message() preview
         # dev mode shows on TX lines - not tied to any real service or
         # persisted anywhere, since real key distribution between this
@@ -330,20 +329,17 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
-        if event.type() == QEvent.KeyPress:
-            print(f"[dev-mode-debug] KeyPress at obj={type(obj).__name__} obj_is_self={obj is self} text={event.text()!r}")
-
-        if event.type() == QEvent.KeyPress and event is not self._last_dev_key_event:
-            # A single physical keystroke that no focused widget consumes
-            # gets redelivered to every ancestor up the widget tree as it
-            # bubbles - since this is an app-wide filter, that means
-            # eventFilter itself is called once per ancestor for what is
-            # genuinely the exact same QKeyEvent object each time (Qt
-            # doesn't copy it for propagation). Comparing object identity
-            # against the last one handled catches only the first of
-            # those calls, regardless of how many follow for the same
-            # keystroke.
-            self._last_dev_key_event = event
+        if event.type() == QEvent.KeyPress and obj is self:
+            # An unhandled key press bubbles up through every ancestor
+            # widget (confirmed via logging: QWindow -> ... -> Card ->
+            # ResizableContainer -> MainWindow), and since this is an
+            # app-wide filter, eventFilter gets called once per hop for
+            # what is conceptually one physical keystroke. MainWindow
+            # (self) is always the final, single stop in that chain, so
+            # gating on obj is self counts each keystroke exactly once
+            # instead of once per ancestor. Event-object identity doesn't
+            # work for this dedup - QEvent isn't a QObject, so PySide
+            # doesn't guarantee the same Python wrapper across hops.
             self._track_dev_mode_key(event)
 
         return super().eventFilter(obj, event)
@@ -369,10 +365,7 @@ class MainWindow(QMainWindow):
         elif event.text():
             char = event.text().lower()
         else:
-            print(f"[dev-mode-debug] no usable char - key={event.key()} text={event.text()!r} autorepeat={event.isAutoRepeat()}")
             return
-
-        print(f"[dev-mode-debug] char={char!r} key={event.key()} autorepeat={event.isAutoRepeat()} buffer_before={self._dev_key_buffer}")
 
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something
@@ -383,7 +376,6 @@ class MainWindow(QMainWindow):
         if self._dev_key_buffer == DEV_MODE_SEQUENCE:
             self._dev_key_buffer = []
             self.dev_mode = not self.dev_mode
-            print(f"[dev-mode-debug] MATCHED - toggling dev_mode to {self.dev_mode}")
             self.title_bar.set_dev_mode(self.dev_mode)
             self.dev_logs_card.setVisible(self.dev_mode)
 

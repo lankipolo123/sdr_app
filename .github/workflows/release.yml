@@ -1,13 +1,21 @@
 name: Build and release Windows .exe
 
-# Fires only on a pushed version tag (e.g. v1.0.0) - ordinary commits to
-# main never trigger a build, so pushing work-in-progress doesn't spam
-# releases. Tag a commit with `git tag v1.0.0 && git push origin v1.0.0`
-# when you actually want a release cut.
+# Two ways to cut a release:
+#  1. Push a version tag (e.g. v1.0.0) - ordinary commits to main never
+#     trigger a build, so pushing work-in-progress doesn't spam releases.
+#  2. Actions tab -> "Build and release Windows .exe" -> "Run workflow" -
+#     no git tag needed, useful when you don't have a local git setup
+#     with push access (e.g. pushing tags from a hosted/CI session).
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.0.1)"
+        required: true
+        default: "v1.0.0"
 
 # Needed to let the workflow create a GitHub Release and upload files to
 # it - the default GITHUB_TOKEN is read-only otherwise.
@@ -47,10 +55,16 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # On a tag push, github.ref_name is the tag itself (e.g.
+          # v1.0.0). On a manual "Run workflow" dispatch there's no
+          # tag yet, so fall back to the version typed into the
+          # workflow_dispatch input - action-gh-release creates that
+          # tag for us either way.
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: |
             dist/TX Controller.exe
             dist/TX Controller.exe.sha256
-          generate_release_notes: true
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown

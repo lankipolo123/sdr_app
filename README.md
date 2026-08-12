@@ -128,15 +128,19 @@ Linux/Mac.
 ### Releasing automatically
 
 `.github/workflows/release.yml` builds `TX Controller.exe` on a real
-Windows GitHub Actions runner and publishes it to a GitHub Release
-whenever a version tag is pushed:
+Windows GitHub Actions runner and publishes it to a GitHub Release.
+Two ways to trigger it:
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Bump the tag (`v1.0.1`, `v1.1.0`, ...) for each subsequent release.
+- **Push a version tag:**
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+  Bump the tag (`v1.0.1`, `v1.1.0`, ...) for each subsequent release.
+- **No git access needed:** go to the **Actions** tab -> "Build and
+  release Windows .exe" -> **Run workflow**, type the version
+  (e.g. `v1.0.0`), and run it. Same build, same release, just
+  triggered by a button instead of a tag push.
 The Inno Setup installer isn't part of this workflow yet - see Known
 open items below.
 

@@ -335,6 +335,15 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _track_dev_mode_key(self, event):
+        # Ignore OS key-repeat - holding a key down for even a fraction
+        # of a second past the repeat threshold floods the buffer with
+        # copies of that one character, pushing the earlier distinct
+        # keys of the sequence out of the last-4 window before the
+        # diverse sequence ever lines up. Only a key's initial press
+        # counts.
+        if event.isAutoRepeat():
+            return
+
         # Backtick is matched by its raw key code, not event.text() - on
         # layouts where it's a dead key (e.g. Windows "US-International"),
         # pressing it alone doesn't produce a character until combined
@@ -346,10 +355,7 @@ class MainWindow(QMainWindow):
         elif event.text():
             char = event.text().lower()
         else:
-            print(f"[dev-mode-debug] KeyPress with no usable char - key={event.key()} text={event.text()!r}")
             return
-
-        print(f"[dev-mode-debug] char={char!r} key={event.key()} text={event.text()!r} buffer={self._dev_key_buffer + [char]}")
 
         # A rolling buffer, not a "must start fresh" match - mistyping
         # the sequence shouldn't require deliberately doing something

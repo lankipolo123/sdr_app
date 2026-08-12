@@ -11,6 +11,7 @@ from components import (
     TitleBar, ResizableContainer, make_card,
 )
 from hooks.use_channels import MAX_CHANNELS
+from services.encoding import generate_key, encode_message
 from services.protocol.packet_parser import describe_command
 from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
@@ -245,6 +246,12 @@ class MainWindow(QMainWindow):
 
         self.dev_mode = False
         self._dev_key_buffer = []
+        # Demo-only, per-session key for the encode_message() preview
+        # dev mode shows on TX lines - not tied to any real service or
+        # persisted anywhere, since real key distribution between this
+        # app and an external party is a separate problem for whenever
+        # that service actually gets built (see services/encoding.py).
+        self._dev_encryption_key = generate_key()
 
         # App-wide filter (not just a handler on this window) so a click
         # ANYWHERE that isn't on the currently-armed card - empty space,
@@ -333,12 +340,19 @@ class MainWindow(QMainWindow):
         # number on screen) - see ChannelManager.raw_tx. Decoded only by
         # default - this panel is meant to read at a glance, not for
         # byte-level debugging. Dev mode (see DEV_MODE_SEQUENCE) reveals
-        # the raw encoded bytes alongside the decode too, so the actual
-        # human action -> wire bytes translation is visible on demand
-        # without cluttering the log for everyone else.
-        line = f"TX CH{address:02d}: {describe_command(data)}"
+        # the raw wire bytes AND a live encode_message() preview
+        # alongside the decode - the actual human action -> hardware
+        # bytes -> what an encrypted API message for it would look like,
+        # all visible on demand without cluttering the log for everyone
+        # else. The encrypted preview is a demo of the mechanism, not a
+        # real message going anywhere yet - see services/encoding.py.
+        decoded = describe_command(data)
+        line = f"TX CH{address:02d}: {decoded}"
         if self.dev_mode:
             line += f" | {data.hex(' ').upper()}"
+            payload = {"channel": address, "command": decoded}
+            encoded_value = encode_message(payload, self._dev_encryption_key)
+            line += f" | ENC: {encoded_value}"
         self._append_log(line)
 
     def _on_raw_rx(self, address: int, data: bytes):

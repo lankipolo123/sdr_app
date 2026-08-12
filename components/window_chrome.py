@@ -234,7 +234,7 @@ class ResizableContainer(QWidget):
         self.setObjectName("ResizableContainer")
         self.setStyleSheet(
             f"#ResizableContainer {{ background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
-            f"border: 2px solid {BORDER_SUBTLE}; }}"
+            f"border: 2px solid {ACCENT_BLUE}; }}"
         )
 
     def resizeEvent(self, event):

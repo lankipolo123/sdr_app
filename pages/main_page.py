@@ -285,6 +285,7 @@ class MainWindow(QMainWindow):
 
         self.dev_mode = False
         self._dev_key_buffer = []
+        self._last_dev_key_event = None
         # Demo-only, per-session key for the encode_message() preview
         # dev mode shows on TX lines - not tied to any real service or
         # persisted anywhere, since real key distribution between this
@@ -329,7 +330,17 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
-        if event.type() == QEvent.KeyPress:
+        if event.type() == QEvent.KeyPress and event is not self._last_dev_key_event:
+            # A single physical keystroke that no focused widget consumes
+            # gets redelivered to every ancestor up the widget tree as it
+            # bubbles - since this is an app-wide filter, that means
+            # eventFilter itself is called once per ancestor for what is
+            # genuinely the exact same QKeyEvent object each time (Qt
+            # doesn't copy it for propagation). Comparing object identity
+            # against the last one handled catches only the first of
+            # those calls, regardless of how many follow for the same
+            # keystroke.
+            self._last_dev_key_event = event
             self._track_dev_mode_key(event)
 
         return super().eventFilter(obj, event)

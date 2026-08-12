@@ -190,6 +190,10 @@ class MainWindow(QMainWindow):
         self.dev_log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
+        # Extra spacing on top of top_row's own 12px, specifically here -
+        # visually sets this card apart as the "extra, dev-only" one
+        # instead of reading as just another regular card in the row.
+        top_row.addSpacing(16)
         top_row.addWidget(self.dev_logs_card, alignment=Qt.AlignTop)
 
         top_row.addStretch()

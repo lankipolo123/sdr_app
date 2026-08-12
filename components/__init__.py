@@ -6,6 +6,7 @@ from .confirm_dialog import ConfirmDialog
 from .logs_dialog import LogsDialog
 from .splash_screen import build_splash
 from .window_chrome import TitleBar, ResizableContainer
+from .flow_layout import FlowLayout
 
 __all__ = [
     "Card",
@@ -18,4 +19,5 @@ __all__ = [
     "build_splash",
     "TitleBar",
     "ResizableContainer",
+    "FlowLayout",
 ]

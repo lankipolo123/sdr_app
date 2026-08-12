@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QEvent
 
 from components import (
     ChannelCard, ConfirmDialog, LogsDialog,
-    TitleBar, ResizableContainer, make_card,
+    TitleBar, ResizableContainer, make_card, FlowLayout,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.encoding import generate_key, encode_message
@@ -86,8 +86,13 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
         root.addWidget(content, 1)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(12)
+        # FlowLayout, not QHBoxLayout - Controls/Logs/Dev Logs each keep
+        # their own fixed size, but a plain hbox has no wrap behavior of
+        # its own, so a narrow window either clips them or forces the
+        # window wider than it should need to be. This wraps whichever
+        # card(s) no longer fit down onto a new row instead, the same
+        # way the card grid below reflows on resize.
+        top_row = FlowLayout(h_spacing=16, v_spacing=12)
 
         controls_card = make_card("Controls", icon="fa5s.sliders-h")
         controls_card.setFixedSize(*TOP_CARD_SIZE)
@@ -130,7 +135,7 @@ class MainWindow(QMainWindow):
         status_row.addWidget(self.clear_log_btn)
         controls_card.body_layout.addLayout(status_row)
 
-        top_row.addWidget(controls_card, alignment=Qt.AlignTop)
+        top_row.addWidget(controls_card)
 
         # Live TX/RX byte log, right beside Controls - every real write
         # and every real read, across every card AND Query, land here
@@ -171,7 +176,7 @@ class MainWindow(QMainWindow):
         self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
-        top_row.addWidget(logs_card, alignment=Qt.AlignTop)
+        top_row.addWidget(logs_card)
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
 
         # Hidden unless dev mode is on (see _track_dev_mode_key) - the
@@ -205,13 +210,7 @@ class MainWindow(QMainWindow):
         self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
         self.dev_logs_dialog = None  # only built the first time it's opened - see _on_open_dev_logs_dialog
-        # Extra spacing on top of top_row's own 12px, specifically here -
-        # visually sets this card apart as the "extra, dev-only" one
-        # instead of reading as just another regular card in the row.
-        top_row.addSpacing(16)
-        top_row.addWidget(self.dev_logs_card, alignment=Qt.AlignTop)
-
-        top_row.addStretch()
+        top_row.addWidget(self.dev_logs_card)
 
         outer.addLayout(top_row)
 

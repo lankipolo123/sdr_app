@@ -2,7 +2,7 @@ import qtawesome as qta
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog, QApplication, QListWidget
+    QScrollArea, QPushButton, QInputDialog, QApplication, QListWidget, QSizePolicy
 )
 from PySide6.QtCore import Qt, QEvent
 
@@ -16,10 +16,16 @@ from services.protocol.packet_parser import describe_command
 from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
 from utils.logging_service import clear_log
 
-TOP_ROW_HEIGHT = 90  # shared by both Controls and Logs, sitting side by side in the same row - one constant so they can't drift apart again
-TOP_CARD_SIZE = (320, TOP_ROW_HEIGHT)
-LOG_CARD_WIDTH = 380
-DEV_LOG_CARD_WIDTH = 300  # narrower than the main log - hex/encrypted-preview lines don't need to fit a whole sentence, just be readable
+TOP_ROW_HEIGHT = 90  # shared by Controls/Logs/Dev Logs, sitting side by side in the same row - one constant so they can't drift apart again
+# Minimum widths, not fixed ones - all three cards share the row's
+# width via QSizePolicy.Expanding + stretch factors below, shrinking
+# together as the window narrows so all three stay on one row instead
+# of any of them wrapping or getting clipped. These floors are just
+# where each one stops being legible (Controls' button row, a couple
+# of visible log lines).
+CONTROLS_MIN_WIDTH = 260
+LOGS_MIN_WIDTH = 260
+DEV_LOGS_MIN_WIDTH = 200  # narrower floor than Logs - hex/encrypted-preview lines don't need to fit a whole sentence, just be readable
 
 # Typed anywhere in the app (not a shortcut held down, a sequence typed
 # one key after another) to toggle dev mode - deliberately not bound to
@@ -87,10 +93,12 @@ class MainWindow(QMainWindow):
         root.addWidget(content, 1)
 
         top_row = QHBoxLayout()
-        top_row.setSpacing(12)
+        top_row.setSpacing(16)
 
         controls_card = make_card("Controls", icon="fa5s.sliders-h")
-        controls_card.setFixedSize(*TOP_CARD_SIZE)
+        controls_card.setFixedHeight(TOP_ROW_HEIGHT)
+        controls_card.setMinimumWidth(CONTROLS_MIN_WIDTH)
+        controls_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         status_row = QHBoxLayout()
         # Every channel is live and blind-sendable the moment the app
@@ -130,7 +138,7 @@ class MainWindow(QMainWindow):
         status_row.addWidget(self.clear_log_btn)
         controls_card.body_layout.addLayout(status_row)
 
-        top_row.addWidget(controls_card, alignment=Qt.AlignTop)
+        top_row.addWidget(controls_card, 3, alignment=Qt.AlignTop)
 
         # Live TX/RX byte log, right beside Controls - every real write
         # and every real read, across every card AND Query, land here
@@ -139,12 +147,9 @@ class MainWindow(QMainWindow):
         # were wired to signals that ChannelManager never actually
         # emitted, so they never updated at all.
         logs_card = make_card("Logs", icon="fa5s.list")
-        # Fixed, not stretched to fill whatever's left in the row - it
-        # was expanding to eat nearly the entire window's width (the row
-        # only has Controls' fixed 320px competing with it), which just
-        # meant a mostly-empty card stretched way past what a couple of
-        # short log lines need.
-        logs_card.setFixedSize(LOG_CARD_WIDTH, TOP_ROW_HEIGHT)
+        logs_card.setFixedHeight(TOP_ROW_HEIGHT)
+        logs_card.setMinimumWidth(LOGS_MIN_WIDTH)
+        logs_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         # Opens the same log in a bigger, resizable, scrollable dialog
         # (see LogsDialog) - the card itself only ever has room for a
         # handful of visible lines.
@@ -171,7 +176,7 @@ class MainWindow(QMainWindow):
         self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
-        top_row.addWidget(logs_card, alignment=Qt.AlignTop)
+        top_row.addWidget(logs_card, 4, alignment=Qt.AlignTop)
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
 
         # Hidden unless dev mode is on (see _track_dev_mode_key) - the
@@ -181,7 +186,9 @@ class MainWindow(QMainWindow):
         # main log stays exactly as clean as it is for everyone else,
         # and this one only ever exists to hold the extra detail.
         self.dev_logs_card = make_card("Dev Logs", icon="fa5s.code")
-        self.dev_logs_card.setFixedSize(DEV_LOG_CARD_WIDTH, TOP_ROW_HEIGHT)
+        self.dev_logs_card.setFixedHeight(TOP_ROW_HEIGHT)
+        self.dev_logs_card.setMinimumWidth(DEV_LOGS_MIN_WIDTH)
+        self.dev_logs_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dev_logs_card.setVisible(False)
         # Same maximize pattern as Logs - this card is narrower, so an
         # 88-char encrypted preview truncates even harder here than a
@@ -205,13 +212,7 @@ class MainWindow(QMainWindow):
         self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
         self.dev_logs_dialog = None  # only built the first time it's opened - see _on_open_dev_logs_dialog
-        # Extra spacing on top of top_row's own 12px, specifically here -
-        # visually sets this card apart as the "extra, dev-only" one
-        # instead of reading as just another regular card in the row.
-        top_row.addSpacing(16)
-        top_row.addWidget(self.dev_logs_card, alignment=Qt.AlignTop)
-
-        top_row.addStretch()
+        top_row.addWidget(self.dev_logs_card, 3, alignment=Qt.AlignTop)
 
         outer.addLayout(top_row)
 

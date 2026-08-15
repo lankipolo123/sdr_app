@@ -160,6 +160,11 @@ class MainWindow(QMainWindow):
             "cards, which still send blind"
         )
         self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        # Click -> _on_query() below -> self.app.channels.brute_force_query()
+        # (hooks/use_channels.py). The ONE control in this app that is
+        # NOT a blind send: it waits for and verifies a real response
+        # instead of firing the command and moving on, unlike every
+        # channel card's toggle/slider (see components/channel_card.py).
         self.query_btn.clicked.connect(self._on_query)
         status_row.addWidget(self.query_btn)
 

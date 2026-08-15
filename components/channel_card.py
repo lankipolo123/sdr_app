@@ -180,6 +180,9 @@ class ChannelCard(Card):
             f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
+        # Click -> _on_mode_set() below -> controller.set_mode() (hooks/
+        # use_channel.py) -> queued and blind-sent, same path as the
+        # ON/OFF toggle further down.
         self.mode_set_btn.clicked.connect(self._on_mode_set)
         mode_row = QHBoxLayout()
         mode_row.setSpacing(4)
@@ -228,7 +231,18 @@ class ChannelCard(Card):
 
         self.body_layout.addLayout(main_row)
 
+        # Click -> _on_toggle() below -> controller.turn_output_on()/
+        # turn_output_off() (hooks/use_channel.py) -> _enqueue() ->
+        # _send_next() -> _open_and_send() -> _send() - opens a fresh
+        # port and writes the bytes with no prior handshake. THIS is
+        # what "blind send" means everywhere in this app: nothing here
+        # waits to confirm the module exists before sending.
         self.toggle.toggled.connect(self._on_toggle)
+        # Drag -> _on_slider() below -> (after SLIDER_SEND_DEBOUNCE_MS)
+        # _send_debounced_level() -> _send_level() -> controller.
+        # set_power()/resume_output()/turn_output_off() - same blind-
+        # send path as the toggle above, just reached via the debounce
+        # timer instead of directly.
         self.slider.valueChanged.connect(self._on_slider)
 
         # Locked by default - see _arm()/mousePressEvent below. Sets the

@@ -67,6 +67,8 @@ class ChannelController(QObject):
         self._queue: deque = deque()  # commands waiting for the in-flight one to finish
         self._busy = False
 
+    # ---- Identity ----
+
     @property
     def address(self) -> int:
         return self.state.data.address
@@ -88,6 +90,8 @@ class ChannelController(QObject):
         # - any message shown to the user has to use this, never the raw
         # protocol address, or it won't match the card it's about.
         return f"CH{self.state.display_number:02d}"
+
+    # ---- Public commands ----
 
     def turn_output_on(self):
         self._enqueue(commands.output_on(self.wire_address), "Output ON", {"output_on": True})
@@ -184,6 +188,8 @@ class ChannelController(QObject):
     def read_status(self):
         self._enqueue(commands.query_status(self.wire_address), "Status query")
 
+    # ---- Queueing ----
+
     def _enqueue(self, frame: bytes, label: str, state_update: dict | None = None):
         self._queue.append((frame, label, state_update))
         if self._pending_timer is None and self._temp_conn is None and not self._awaiting_port:
@@ -210,6 +216,8 @@ class ChannelController(QObject):
         self._set_busy(True)
         self._request_attempt()  # releases our own held slot (if any) and re-acquires for this attempt
 
+    # ---- Port acquisition ----
+
     def _request_attempt(self):
         # Asks for the port for exactly ONE attempt at the currently
         # pending command - not for the whole command's retry cycle.
@@ -233,6 +241,8 @@ class ChannelController(QObject):
     def _on_port_granted(self):
         self._awaiting_port = False
         self._open_and_send(self._pending_frame, self._pending_label, self._pending_state_update)
+
+    # ---- Send + receive ----
 
     def _open_and_send(self, frame: bytes, label: str, state_update: dict | None):
         # Brute-force find a port fresh for this command - try every
@@ -341,7 +351,18 @@ class ChannelController(QObject):
             return  # not addressed to us - stray traffic, ignore
         self.handle_frame(frame)
 
-    def _cancel_pending_timeout(self):
+    # ---- Timeout + retry ----
+
+    def _reset_pending(self) -> tuple[str | None, dict | None]:
+        """Clears all _pending_* bookkeeping for whatever command was in
+        flight, returning (label, state_update) as they were just
+        before clearing - callers that need to report/apply based on
+        the old value use the return, callers that don't (e.g. tearing
+        down) just ignore it. Safe to call whether the timer is still
+        running or already fired - QTimer.stop() on an already-fired
+        singleShot timer is a documented no-op."""
+        label = self._pending_label
+        state_update = self._pending_state_update
         if self._pending_timer is not None:
             self._pending_timer.stop()
             self._pending_timer = None
@@ -349,6 +370,10 @@ class ChannelController(QObject):
         self._pending_state_update = None
         self._pending_frame = None
         self._pending_attempt = 0
+        return label, state_update
+
+    def _cancel_pending_timeout(self):
+        self._reset_pending()
 
     def cancel_pending(self):
         """Call when this channel is being torn down (e.g. manual
@@ -386,13 +411,7 @@ class ChannelController(QObject):
             self._request_attempt()
             return
 
-        label = self._pending_label
-        state_update = self._pending_state_update
-        self._pending_timer = None
-        self._pending_label = None
-        self._pending_state_update = None
-        self._pending_frame = None
-        self._pending_attempt = 0
+        label, state_update = self._reset_pending()
         self._close_temp_conn()
 
         if state_update:

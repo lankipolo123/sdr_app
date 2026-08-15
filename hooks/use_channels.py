@@ -113,10 +113,9 @@ class ChannelManager(QObject):
         blind. Doesn't touch states/controllers or build a card; this
         isn't a real channel connection, just a one-off check.
 
-        Goes through the same shared port_scheduler every channel does -
-        without it, Query could collide with a card's in-flight command
-        the exact same way two channels used close together used to
-        collide with each other (see PortScheduler)."""
+        The actual attempt/retry/port-sweep sequence lives in
+        _QueryAttempt below, one instance per call, so this method just
+        validates ports exist and hands off."""
         ports = ConnectionController.list_ports()
         if not ports:
             self.command_timeout.emit("Query: no ports available.")
@@ -125,110 +124,7 @@ class ChannelManager(QObject):
         baud = self.config.get("baud_rate", 115200)
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
-        label = "ON" if on else "OFF"
-        frame = commands.output_on(address) if on else commands.output_off(address)
-
-        query_token = object()  # unique per-call identity for the scheduler - Query has no persistent object like a ChannelController does
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        state = {"port_index": -1, "conn": None, "attempts": 0, "raw_seen": False}
-
-        def close_conn():
-            conn = state["conn"]
-            if conn is None:
-                return
-            conn.frame_received.disconnect(on_frame)
-            conn.raw_tx.disconnect(on_raw_tx)
-            conn.raw_rx.disconnect(on_raw_rx)
-            conn.disconnect()
-            state["conn"] = None
-
-        def on_raw_tx(data: bytes):
-            self.raw_tx.emit(address, data)
-
-        def on_raw_rx(data: bytes):
-            state["raw_seen"] = True
-            port = ports[state["port_index"]]
-            if self.logger:
-                self.logger.info(f"Query: raw bytes on {port}: {data.hex(' ').upper()}")
-            self.raw_rx.emit(address, data)
-
-        def on_frame(response: ParsedFrame):
-            if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != address:
-                return
-            timer.stop()
-            close_conn()
-            self.port_scheduler.release(query_token)
-            success = len(response.buf) == 1 and response.buf[0] == c.RESP_SUCCESS
-            port = ports[state["port_index"]]
-            self.command_timeout.emit(
-                f"Query: {label} to address {address} on {port} - "
-                f"{'confirmed' if success else 'device rejected it'} "
-                f"(attempt {state['attempts']}/{QUERY_MAX_ATTEMPTS})."
-            )
-
-        def request_attempt():
-            # Asks for the port for exactly ONE attempt (open, send,
-            # wait) rather than for this whole address's entire
-            # sweep-and-retry cycle - otherwise an unanswering address
-            # would hold the shared port for up to QUERY_MAX_ATTEMPTS *
-            # len(ports) attempts in a row, freezing every channel card
-            # queued behind it for that whole stretch.
-            self.port_scheduler.acquire(query_token, on_port_granted)
-
-        def on_port_granted():
-            port = ports[state["port_index"]]
-            conn = ConnectionController()
-            if not conn.connect(port, baud, parity, data_bits):
-                if self.logger:
-                    self.logger.info(f"Query: failed to open {port}, trying next port.")
-                self.port_scheduler.release(query_token)
-                advance_port()
-                return
-            state["conn"] = conn
-            conn.raw_tx.connect(on_raw_tx)
-            conn.raw_rx.connect(on_raw_rx)
-            conn.frame_received.connect(on_frame)
-            send_attempt()
-
-        def send_attempt():
-            state["attempts"] += 1
-            state["raw_seen"] = False
-            port = ports[state["port_index"]]
-            if self.logger:
-                self.logger.info(
-                    f"Query: {label} to address {address} on {port} "
-                    f"(attempt {state['attempts']}/{QUERY_MAX_ATTEMPTS})"
-                )
-            state["conn"].send(frame)
-            timer.start(QUERY_TIMEOUT_MS)
-
-        def advance_port():
-            state["port_index"] += 1
-            state["attempts"] = 0
-            if state["port_index"] >= len(ports):
-                msg = f"Query: no response from address {address} after trying {len(ports)} port(s)."
-                if self.logger:
-                    self.logger.warning(msg)
-                self.command_timeout.emit(msg)
-                return
-            request_attempt()
-
-        def on_timeout():
-            port = ports[state["port_index"]]
-            if self.logger:
-                status = "bytes came back but never formed a valid response" if state["raw_seen"] else \
-                    "zero bytes received, nothing came back at all"
-                self.logger.info(f"Query: attempt {state['attempts']} timed out on {port} - {status}.")
-            close_conn()
-            self.port_scheduler.release(query_token)
-            if state["attempts"] < QUERY_MAX_ATTEMPTS:
-                request_attempt()
-                return
-            advance_port()
-
-        timer.timeout.connect(on_timeout)
-        advance_port()
+        _QueryAttempt(self, address, on, ports, baud, parity, data_bits).start()
 
     def save_all(self):
         save_channel_states(self.states, self._channels_path)
@@ -236,3 +132,136 @@ class ChannelManager(QObject):
     def shutdown(self):
         for controller in self.controllers.values():
             controller.cancel_pending()
+
+
+class _QueryAttempt(QObject):
+    """One brute-force Query run: sweep every available port, and on
+    each one retry up to QUERY_MAX_ATTEMPTS times before moving to the
+    next port, exactly like a ChannelController's own retry loop.
+
+    A plain object (not the queue-based reuse a ChannelController gets)
+    since Query is a one-off diagnostic, not a persistent per-channel
+    connection - each call to ChannelManager.brute_force_query() builds
+    a fresh instance and throws it away once it resolves. Goes through
+    the same shared port_scheduler every channel does, using itself as
+    the scheduler's identity token (see PortScheduler) - without that,
+    Query could collide with a card's in-flight command the exact same
+    way two channels used close together used to collide with each
+    other."""
+
+    def __init__(self, manager: "ChannelManager", address: int, on: bool,
+                 ports: list[str], baud: int, parity: str, data_bits: int):
+        super().__init__(parent=manager)
+        self.manager = manager
+        self.address = address
+        self.ports = ports
+        self.baud = baud
+        self.parity = parity
+        self.data_bits = data_bits
+        self.label = "ON" if on else "OFF"
+        self.frame = commands.output_on(address) if on else commands.output_off(address)
+
+        self.port_index = -1
+        self.conn: ConnectionController | None = None
+        self.attempts = 0
+        self.raw_seen = False
+
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._on_timeout)
+
+    def start(self):
+        self._advance_port()
+
+    def _close_conn(self):
+        if self.conn is None:
+            return
+        self.conn.frame_received.disconnect(self._on_frame)
+        self.conn.raw_tx.disconnect(self._on_raw_tx)
+        self.conn.raw_rx.disconnect(self._on_raw_rx)
+        self.conn.disconnect()
+        self.conn = None
+
+    def _on_raw_tx(self, data: bytes):
+        self.manager.raw_tx.emit(self.address, data)
+
+    def _on_raw_rx(self, data: bytes):
+        self.raw_seen = True
+        port = self.ports[self.port_index]
+        if self.manager.logger:
+            self.manager.logger.info(f"Query: raw bytes on {port}: {data.hex(' ').upper()}")
+        self.manager.raw_rx.emit(self.address, data)
+
+    def _on_frame(self, response: ParsedFrame):
+        if response.type != c.TYPE_OUTPUT_SWITCH or response.addr != self.address:
+            return
+        self.timer.stop()
+        self._close_conn()
+        self.manager.port_scheduler.release(self)
+        success = len(response.buf) == 1 and response.buf[0] == c.RESP_SUCCESS
+        port = self.ports[self.port_index]
+        self.manager.command_timeout.emit(
+            f"Query: {self.label} to address {self.address} on {port} - "
+            f"{'confirmed' if success else 'device rejected it'} "
+            f"(attempt {self.attempts}/{QUERY_MAX_ATTEMPTS})."
+        )
+
+    def _request_attempt(self):
+        # Asks for the port for exactly ONE attempt (open, send, wait)
+        # rather than for this whole address's entire sweep-and-retry
+        # cycle - otherwise an unanswering address would hold the shared
+        # port for up to QUERY_MAX_ATTEMPTS * len(ports) attempts in a
+        # row, freezing every channel card queued behind it for that
+        # whole stretch.
+        self.manager.port_scheduler.acquire(self, self._on_port_granted)
+
+    def _on_port_granted(self):
+        port = self.ports[self.port_index]
+        conn = ConnectionController()
+        if not conn.connect(port, self.baud, self.parity, self.data_bits):
+            if self.manager.logger:
+                self.manager.logger.info(f"Query: failed to open {port}, trying next port.")
+            self.manager.port_scheduler.release(self)
+            self._advance_port()
+            return
+        self.conn = conn
+        conn.raw_tx.connect(self._on_raw_tx)
+        conn.raw_rx.connect(self._on_raw_rx)
+        conn.frame_received.connect(self._on_frame)
+        self._send_attempt()
+
+    def _send_attempt(self):
+        self.attempts += 1
+        self.raw_seen = False
+        port = self.ports[self.port_index]
+        if self.manager.logger:
+            self.manager.logger.info(
+                f"Query: {self.label} to address {self.address} on {port} "
+                f"(attempt {self.attempts}/{QUERY_MAX_ATTEMPTS})"
+            )
+        self.conn.send(self.frame)
+        self.timer.start(QUERY_TIMEOUT_MS)
+
+    def _advance_port(self):
+        self.port_index += 1
+        self.attempts = 0
+        if self.port_index >= len(self.ports):
+            msg = f"Query: no response from address {self.address} after trying {len(self.ports)} port(s)."
+            if self.manager.logger:
+                self.manager.logger.warning(msg)
+            self.manager.command_timeout.emit(msg)
+            return
+        self._request_attempt()
+
+    def _on_timeout(self):
+        port = self.ports[self.port_index]
+        if self.manager.logger:
+            status = "bytes came back but never formed a valid response" if self.raw_seen else \
+                "zero bytes received, nothing came back at all"
+            self.manager.logger.info(f"Query: attempt {self.attempts} timed out on {port} - {status}.")
+        self._close_conn()
+        self.manager.port_scheduler.release(self)
+        if self.attempts < QUERY_MAX_ATTEMPTS:
+            self._request_attempt()
+            return
+        self._advance_port()

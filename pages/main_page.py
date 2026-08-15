@@ -51,6 +51,66 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.app = app_controller
         self.setWindowTitle("TX Controller")
+        self._apply_window_chrome()
+
+        central = ResizableContainer(self)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
+        self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
+        root.addWidget(self.title_bar)
+
+        content = QWidget()
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setSpacing(12)
+        root.addWidget(content, 1)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(16)
+        top_row.addWidget(self._build_controls_card(), 3, alignment=Qt.AlignTop)
+        top_row.addWidget(self._build_logs_card(), 4, alignment=Qt.AlignTop)
+        top_row.addWidget(self._build_dev_logs_card(), 3, alignment=Qt.AlignTop)
+        outer.addLayout(top_row)
+
+        outer.addWidget(self._build_channels_scroll(), 1)
+
+        self.setCentralWidget(central)
+
+        self._cards = {}
+        self._armed_card = None  # only one card unlocked at a time - see _on_card_armed
+        self.app.channels.raw_tx.connect(self._on_raw_tx)
+        self.app.channels.raw_rx.connect(self._on_raw_rx)
+
+        # All 16 slots are visible and live from launch - every card
+        # already has a real ChannelController (see ChannelManager) that
+        # brute-force finds its own port and blind-sends every command,
+        # no prior Scan/+Addr discovery step required.
+        for address in range(MAX_CHANNELS):
+            self._build_card(address)
+
+        self.dev_mode = False
+        self._dev_key_buffer = []
+        # Demo-only, per-session key for the encode_message() preview
+        # dev mode shows on TX lines - not tied to any real service or
+        # persisted anywhere, since real key distribution between this
+        # app and an external party is a separate problem for whenever
+        # that service actually gets built (see services/encoding.py).
+        self._dev_encryption_key = generate_key()
+
+        # App-wide filter (not just a handler on this window) so a click
+        # ANYWHERE that isn't on the currently-armed card - empty space,
+        # another button, a dialog - locks it back down too, not just a
+        # click on a different card. A card left armed with nothing else
+        # going on is still a card whose controls could send by accident.
+        # Also where the dev-mode key sequence is caught, for the same
+        # reason - it has to see every keypress app-wide, not just ones
+        # landing on a specific focused widget.
+        QApplication.instance().installEventFilter(self)
+
+    def _apply_window_chrome(self):
         self.resize(1040, 780)
         # The grid is always CHANNELS_PER_ROW (4) columns wide (see
         # _reflow_grid) - this floor keeps each of those 4 columns at
@@ -77,24 +137,7 @@ class MainWindow(QMainWindow):
         # square frame/shadow) behind the rounding.
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        central = ResizableContainer(self)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
-        self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
-        root.addWidget(self.title_bar)
-
-        content = QWidget()
-        outer = QVBoxLayout(content)
-        outer.setContentsMargins(16, 16, 16, 16)
-        outer.setSpacing(12)
-        root.addWidget(content, 1)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-
+    def _build_controls_card(self) -> QWidget:
         controls_card = make_card("Controls", icon="fa5s.sliders-h")
         controls_card.setFixedHeight(TOP_ROW_HEIGHT)
         controls_card.setMinimumWidth(CONTROLS_MIN_WIDTH)
@@ -137,9 +180,9 @@ class MainWindow(QMainWindow):
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         status_row.addWidget(self.clear_log_btn)
         controls_card.body_layout.addLayout(status_row)
+        return controls_card
 
-        top_row.addWidget(controls_card, 3, alignment=Qt.AlignTop)
-
+    def _build_logs_card(self) -> QWidget:
         # Live TX/RX byte log, right beside Controls - every real write
         # and every real read, across every card AND Query, land here
         # (see ChannelManager.raw_tx/raw_rx). Replaces the single
@@ -176,9 +219,10 @@ class MainWindow(QMainWindow):
         self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         logs_card.body_layout.addWidget(self.log_list)
-        top_row.addWidget(logs_card, 4, alignment=Qt.AlignTop)
         self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
+        return logs_card
 
+    def _build_dev_logs_card(self) -> QWidget:
         # Hidden unless dev mode is on (see _track_dev_mode_key) - the
         # hex/encrypted-preview detail used to get appended onto the
         # main Logs card's lines, which just made them run long enough
@@ -212,10 +256,9 @@ class MainWindow(QMainWindow):
         self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
         self.dev_logs_dialog = None  # only built the first time it's opened - see _on_open_dev_logs_dialog
-        top_row.addWidget(self.dev_logs_card, 3, alignment=Qt.AlignTop)
+        return self.dev_logs_card
 
-        outer.addLayout(top_row)
-
+    def _build_channels_scroll(self) -> QScrollArea:
         # No border/fill of its own - purely a scroll mechanism around the
         # grid, not a bordered section like Controls/Logs. Each card
         # already carries its own border (see ChannelCard.arm/disarm), so
@@ -268,40 +311,7 @@ class MainWindow(QMainWindow):
         self.grid.setSpacing(8)
         self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         scroll.setWidget(grid_container)
-        outer.addWidget(scroll, 1)
-
-        self.setCentralWidget(central)
-
-        self._cards = {}
-        self._armed_card = None  # only one card unlocked at a time - see _on_card_armed
-        self.app.channels.raw_tx.connect(self._on_raw_tx)
-        self.app.channels.raw_rx.connect(self._on_raw_rx)
-
-        # All 16 slots are visible and live from launch - every card
-        # already has a real ChannelController (see ChannelManager) that
-        # brute-force finds its own port and blind-sends every command,
-        # no prior Scan/+Addr discovery step required.
-        for address in range(MAX_CHANNELS):
-            self._build_card(address)
-
-        self.dev_mode = False
-        self._dev_key_buffer = []
-        # Demo-only, per-session key for the encode_message() preview
-        # dev mode shows on TX lines - not tied to any real service or
-        # persisted anywhere, since real key distribution between this
-        # app and an external party is a separate problem for whenever
-        # that service actually gets built (see services/encoding.py).
-        self._dev_encryption_key = generate_key()
-
-        # App-wide filter (not just a handler on this window) so a click
-        # ANYWHERE that isn't on the currently-armed card - empty space,
-        # another button, a dialog - locks it back down too, not just a
-        # click on a different card. A card left armed with nothing else
-        # going on is still a card whose controls could send by accident.
-        # Also where the dev-mode key sequence is caught, for the same
-        # reason - it has to see every keypress app-wide, not just ones
-        # landing on a specific focused widget.
-        QApplication.instance().installEventFilter(self)
+        return scroll
 
     def eventFilter(self, obj, event):
         # The app-wide filter sees every QObject's events, not just

@@ -1,19 +1,17 @@
-import qtawesome as qta
-
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QScrollArea, QPushButton, QInputDialog, QApplication, QListWidget, QSizePolicy
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QScrollArea, QInputDialog, QApplication, QSizePolicy
 )
 from PySide6.QtCore import Qt, QEvent
 
 from components import (
-    ChannelCard, ConfirmDialog, LogsDialog,
-    TitleBar, ResizableContainer, make_card,
+    ChannelCard, ConfirmDialog, ControlsBar, LogsPanel,
+    TitleBar, ResizableContainer,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.encoding import generate_key, encode_message
 from services.protocol.packet_parser import describe_command
-from styles.theme_colors import TEXT_MUTED, TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, NAVY
+from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
 
 TOP_ROW_HEIGHT = 90  # shared by Controls/Logs/Dev Logs, sitting side by side in the same row - one constant so they can't drift apart again
@@ -37,7 +35,6 @@ DEV_LOGS_MIN_WIDTH = 200  # narrower floor than Logs - hex/encrypted-preview lin
 # with a symbol specifically so an ordinary word (someone typing "dev"
 # in a normal sentence somewhere) can never accidentally match it.
 DEV_MODE_SEQUENCE = ["`", "d", "e", "v"]
-LOG_MAX_ENTRIES = 200  # oldest entries drop off - a running session shouldn't grow this unbounded
 CHANNELS_PER_ROW = 4  # fixed - cards themselves stretch to fill the row instead of the column count changing
 
 
@@ -45,7 +42,13 @@ class MainWindow(QMainWindow):
     """One screen: a Controls status bar up top, then a grid of
     per-channel cards, every one already live and blind-sendable from
     launch - no Scan/+Addr discovery step. No Dashboard/Device Control/
-    Communication pages, no sidebar, no Module Address field anywhere."""
+    Communication pages, no sidebar, no Module Address field anywhere.
+
+    This class is wiring, not implementation: Controls/Logs/Dev Logs
+    are self-contained components (see components/controls_bar.py,
+    components/logs_panel.py) that get instantiated and connected here,
+    same as ChannelCard already was - MainWindow doesn't build their
+    internals itself."""
 
     def __init__(self, app_controller):
         super().__init__()
@@ -68,13 +71,7 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
         root.addWidget(content, 1)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-        top_row.addWidget(self._build_controls_card(), 3, alignment=Qt.AlignTop)
-        top_row.addWidget(self._build_logs_card(), 4, alignment=Qt.AlignTop)
-        top_row.addWidget(self._build_dev_logs_card(), 3, alignment=Qt.AlignTop)
-        outer.addLayout(top_row)
-
+        outer.addLayout(self._build_top_row())
         outer.addWidget(self._build_channels_scroll(), 1)
 
         self.setCentralWidget(central)
@@ -137,131 +134,44 @@ class MainWindow(QMainWindow):
         # square frame/shadow) behind the rounding.
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-    def _build_controls_card(self) -> QWidget:
-        controls_card = make_card("Controls", icon="fa5s.sliders-h")
-        controls_card.setFixedHeight(TOP_ROW_HEIGHT)
-        controls_card.setMinimumWidth(CONTROLS_MIN_WIDTH)
-        controls_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    def _build_top_row(self) -> QHBoxLayout:
+        """Controls, Logs, and Dev Logs: three self-contained components,
+        instantiated and wired here, sharing one row height
+        (TOP_ROW_HEIGHT) so they can't drift apart. This is the whole
+        point of pulling them out into components/ - this method reads
+        as what's on screen and what it's connected to, not how a
+        QListWidget gets styled."""
+        top_row = QHBoxLayout()
+        top_row.setSpacing(16)
 
-        status_row = QHBoxLayout()
-        # Every channel is live and blind-sendable the moment the app
-        # launches - no Scan/+Addr step to wait on (see ChannelManager).
-        # This label is just a running status line for the last action
-        # taken (a blind-send in flight, a disconnect, etc).
-        self.status_label = QLabel("Ready.")
-        self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        status_row.addWidget(self.status_label)
-        status_row.addStretch()
-        self.query_btn = QPushButton("Query")
-        self.query_btn.setToolTip(
-            "Diagnostic: ask one specific address directly, brute-force "
-            "finding the port, and actually wait for and verify a real "
-            "confirmed response (or report failure) - separate from the "
-            "cards, which still send blind"
-        )
-        self.query_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
-        # Click -> _on_query() below -> self.app.channels.brute_force_query()
-        # (hooks/use_channels.py). The ONE control in this app that is
-        # NOT a blind send: it waits for and verifies a real response
-        # instead of firing the command and moving on, unlike every
-        # channel card's toggle/slider (see components/channel_card.py).
-        self.query_btn.clicked.connect(self._on_query)
-        status_row.addWidget(self.query_btn)
+        self.controls_bar = ControlsBar(min_width=CONTROLS_MIN_WIDTH)
+        self.controls_bar.setFixedHeight(TOP_ROW_HEIGHT)
+        self.controls_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.controls_bar.query_requested.connect(self._on_query)
+        self.controls_bar.clear_log_requested.connect(self._on_clear_log)
+        top_row.addWidget(self.controls_bar, 3, alignment=Qt.AlignTop)
 
-        # Background/text match the app icon's own colors exactly (NAVY
-        # #1F2937 background, ACCENT_BLUE #64AAFF text/glyph - checked
-        # against the actual icon pixels).
-        self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.setToolTip(
-            "Erase the app's log file (logs/sdr_controller.log) and the "
-            "TX/RX list above"
-        )
-        self.clear_log_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_log_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
-            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
-        )
-        self.clear_log_btn.clicked.connect(self._on_clear_log)
-        status_row.addWidget(self.clear_log_btn)
-        controls_card.body_layout.addLayout(status_row)
-        return controls_card
-
-    def _build_logs_card(self) -> QWidget:
         # Live TX/RX byte log, right beside Controls - every real write
         # and every real read, across every card AND Query, land here
-        # (see ChannelManager.raw_tx/raw_rx). Replaces the single
-        # last-value labels that used to sit in the bottom bar - those
-        # were wired to signals that ChannelManager never actually
-        # emitted, so they never updated at all.
-        logs_card = make_card("Logs", icon="fa5s.list")
-        logs_card.setFixedHeight(TOP_ROW_HEIGHT)
-        logs_card.setMinimumWidth(LOGS_MIN_WIDTH)
-        logs_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # Opens the same log in a bigger, resizable, scrollable dialog
-        # (see LogsDialog) - the card itself only ever has room for a
-        # handful of visible lines.
-        self.maximize_logs_btn = QPushButton()
-        self.maximize_logs_btn.setIcon(qta.icon("fa5s.expand-alt", color=ACCENT_BLUE))
-        self.maximize_logs_btn.setFixedSize(20, 20)
-        self.maximize_logs_btn.setCursor(Qt.PointingHandCursor)
-        self.maximize_logs_btn.setToolTip("Open full scrollable log")
-        self.maximize_logs_btn.setStyleSheet(
-            "QPushButton { border: none; background: transparent; }"
-            f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
-        )
-        self.maximize_logs_btn.clicked.connect(self._on_open_logs_dialog)
-        logs_card.header_layout.addWidget(self.maximize_logs_btn)
-        self.log_list = QListWidget()
-        self.log_list.setStyleSheet(
-            f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
-        )
-        # This compact view is only meant to show whatever's most current
-        # - no scrollbar to drag through history here, that's what the
-        # maximize button's LogsDialog is for. Older lines above the
-        # visible area just fall off, same as if LOG_MAX_ENTRIES trimmed
-        # them.
-        self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        logs_card.body_layout.addWidget(self.log_list)
-        self.logs_dialog = None  # only built the first time it's opened - see _on_open_logs_dialog
-        return logs_card
+        # (see ChannelManager.raw_tx/raw_rx, wired to _on_raw_tx/
+        # _on_raw_rx below).
+        self.logs_panel = LogsPanel("Logs", icon="fa5s.list", min_width=LOGS_MIN_WIDTH)
+        self.logs_panel.setFixedHeight(TOP_ROW_HEIGHT)
+        self.logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        top_row.addWidget(self.logs_panel, 4, alignment=Qt.AlignTop)
 
-    def _build_dev_logs_card(self) -> QWidget:
         # Hidden unless dev mode is on (see _track_dev_mode_key) - the
         # hex/encrypted-preview detail used to get appended onto the
-        # main Logs card's lines, which just made them run long enough
-        # to truncate in a card this width. A separate card means the
-        # main log stays exactly as clean as it is for everyone else,
-        # and this one only ever exists to hold the extra detail.
-        self.dev_logs_card = make_card("Dev Logs", icon="fa5s.code")
-        self.dev_logs_card.setFixedHeight(TOP_ROW_HEIGHT)
-        self.dev_logs_card.setMinimumWidth(DEV_LOGS_MIN_WIDTH)
-        self.dev_logs_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.dev_logs_card.setVisible(False)
-        # Same maximize pattern as Logs - this card is narrower, so an
-        # 88-char encrypted preview truncates even harder here than a
-        # normal TX line ever did.
-        self.maximize_dev_logs_btn = QPushButton()
-        self.maximize_dev_logs_btn.setIcon(qta.icon("fa5s.expand-alt", color=ACCENT_BLUE))
-        self.maximize_dev_logs_btn.setFixedSize(20, 20)
-        self.maximize_dev_logs_btn.setCursor(Qt.PointingHandCursor)
-        self.maximize_dev_logs_btn.setToolTip("Open full scrollable dev log")
-        self.maximize_dev_logs_btn.setStyleSheet(
-            "QPushButton { border: none; background: transparent; }"
-            f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
-        )
-        self.maximize_dev_logs_btn.clicked.connect(self._on_open_dev_logs_dialog)
-        self.dev_logs_card.header_layout.addWidget(self.maximize_dev_logs_btn)
-        self.dev_log_list = QListWidget()
-        self.dev_log_list.setStyleSheet(
-            f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
-        )
-        self.dev_log_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.dev_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.dev_logs_card.body_layout.addWidget(self.dev_log_list)
-        self.dev_logs_dialog = None  # only built the first time it's opened - see _on_open_dev_logs_dialog
-        return self.dev_logs_card
+        # main Logs panel's lines, which just made them run long enough
+        # to truncate in a card this width. A separate panel means the
+        # main log stays exactly as clean as it is for everyone else.
+        self.dev_logs_panel = LogsPanel("Dev Logs", icon="fa5s.code", min_width=DEV_LOGS_MIN_WIDTH)
+        self.dev_logs_panel.setFixedHeight(TOP_ROW_HEIGHT)
+        self.dev_logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.dev_logs_panel.setVisible(False)
+        top_row.addWidget(self.dev_logs_panel, 3, alignment=Qt.AlignTop)
+
+        return top_row
 
     def _build_channels_scroll(self) -> QScrollArea:
         # No border/fill of its own - purely a scroll mechanism around the
@@ -393,8 +303,14 @@ class MainWindow(QMainWindow):
             self._dev_key_buffer = []
             self.dev_mode = not self.dev_mode
             self.title_bar.set_dev_mode(self.dev_mode)
-            self.dev_logs_card.setVisible(self.dev_mode)
+            self.dev_logs_panel.setVisible(self.dev_mode)
 
+    # Click -> _on_query() -> self.app.channels.brute_force_query()
+    # (hooks/use_channels.py). The ONE control in this app that is NOT
+    # a blind send: it waits for and verifies a real response instead
+    # of firing the command and moving on, unlike every channel card's
+    # toggle/slider (see components/channel_card.py). Wired from
+    # ControlsBar.query_requested in _build_top_row above.
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
         if not ok:
@@ -402,36 +318,15 @@ class MainWindow(QMainWindow):
         choice, ok = QInputDialog.getItem(self, "Query", "Output:", ["ON", "OFF"], editable=False)
         if not ok:
             return
-        self.status_label.setText(f"Querying {choice} to address {address}…")
+        self.controls_bar.set_status(f"Querying {choice} to address {address}…")
         self.app.channels.brute_force_query(address, on=(choice == "ON"))
 
+    # Wired from ControlsBar.clear_log_requested in _build_top_row above.
     def _on_clear_log(self):
         clear_log(self.app.logger)
-        self.log_list.clear()
-        self.dev_log_list.clear()
-        if self.logs_dialog is not None:
-            self.logs_dialog.list.clear()
-        if self.dev_logs_dialog is not None:
-            self.dev_logs_dialog.list.clear()
-        self.status_label.setText("Log cleared.")
-
-    def _on_open_logs_dialog(self):
-        # Always rebuilt fresh from what the compact log currently holds -
-        # a reused instance only ever got backfilled at its first
-        # creation (see LogsDialog's docstring), so this is what actually
-        # guarantees it never reopens stale or empty.
-        lines = [self.log_list.item(i).text() for i in range(self.log_list.count())]
-        self.logs_dialog = LogsDialog(self, lines)
-        self.logs_dialog.show()
-        self.logs_dialog.raise_()
-        self.logs_dialog.activateWindow()
-
-    def _on_open_dev_logs_dialog(self):
-        lines = [self.dev_log_list.item(i).text() for i in range(self.dev_log_list.count())]
-        self.dev_logs_dialog = LogsDialog(self, lines, title="Dev Logs")
-        self.dev_logs_dialog.show()
-        self.dev_logs_dialog.raise_()
-        self.dev_logs_dialog.activateWindow()
+        self.logs_panel.clear()
+        self.dev_logs_panel.clear()
+        self.controls_bar.set_status("Log cleared.")
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
@@ -439,14 +334,14 @@ class MainWindow(QMainWindow):
         # only here - this panel is meant to read at a glance, not for
         # byte-level debugging, regardless of dev mode. The raw wire
         # bytes and a live encode_message() preview go to the separate
-        # Dev Logs card instead (see _track_dev_mode_key) - the actual
+        # Dev Logs panel instead (see _track_dev_mode_key) - the actual
         # human action -> hardware bytes -> what an encrypted API
         # message for it would look like, visible on demand without
-        # ever making this card's own lines run long. That encrypted
+        # ever making this panel's own lines run long. That encrypted
         # preview is a demo of the mechanism, not a real message going
         # anywhere yet - see services/encoding.py.
         decoded = describe_command(data)
-        self._append_log(f"TX CH{address:02d}: {decoded}")
+        self.logs_panel.append_line(f"TX CH{address:02d}: {decoded}")
         if self.dev_mode:
             payload = {"channel": address, "command": decoded}
             encoded_value = encode_message(payload, self._dev_encryption_key)
@@ -454,29 +349,11 @@ class MainWindow(QMainWindow):
             # newline - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,
             # so an embedded \n would just get squashed into one row.
-            self._append_dev_log(f"CH{address:02d}: {data.hex(' ').upper()}")
-            self._append_dev_log(f"ENC: {encoded_value}")
+            self.dev_logs_panel.append_line(f"CH{address:02d}: {data.hex(' ').upper()}")
+            self.dev_logs_panel.append_line(f"ENC: {encoded_value}")
 
     def _on_raw_rx(self, address: int, data: bytes):
-        self._append_log(f"RX CH{address:02d}: {data.hex(' ').upper()}")
-
-    def _append_log(self, line: str):
-        self.log_list.addItem(line)
-        while self.log_list.count() > LOG_MAX_ENTRIES:
-            self.log_list.takeItem(0)
-        self.log_list.scrollToBottom()
-        # Keep the maximized view (if it's open) live too, instead of
-        # only reflecting whatever existed at the moment it was opened.
-        if self.logs_dialog is not None and self.logs_dialog.isVisible():
-            self.logs_dialog.append_line(line, LOG_MAX_ENTRIES)
-
-    def _append_dev_log(self, line: str):
-        self.dev_log_list.addItem(line)
-        while self.dev_log_list.count() > LOG_MAX_ENTRIES:
-            self.dev_log_list.takeItem(0)
-        self.dev_log_list.scrollToBottom()
-        if self.dev_logs_dialog is not None and self.dev_logs_dialog.isVisible():
-            self.dev_logs_dialog.append_line(line, LOG_MAX_ENTRIES)
+        self.logs_panel.append_line(f"RX CH{address:02d}: {data.hex(' ').upper()}")
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)
@@ -501,8 +378,8 @@ class MainWindow(QMainWindow):
         # means the CARDS grow/shrink with the window, not the column
         # count. This only ever needs to run once per card as it's built
         # (column positions never change afterward), unlike the old
-        # width-based column count that had to be recomputed on every
-        # resize - no resizeEvent/showEvent hook needed for this anymore.
+        # width-based reflow that had to be recomputed on every resize -
+        # no resizeEvent/showEvent hook needed for this anymore.
         if not self._cards:
             return
         for index, address in enumerate(sorted(self._cards)):

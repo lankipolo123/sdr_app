@@ -324,20 +324,28 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx.
+        # number on screen) - see ChannelManager.raw_tx. It's also
+        # exactly the addr byte embedded in `data` at frame-build time
+        # (commands.output_on(self.wire_address) etc., see hooks/
+        # use_channel.py) - same value, not a coincidence.
         #
-        # Main Logs panel is deliberately opaque: it only ever shows
-        # what Transit.dll's real CommandTokens export produces for
-        # this command, as hex (see services/middleware.py's
-        # dll_command_tokens(), Windows-only, fails soft elsewhere) -
-        # never the human-readable decoded command or the raw TX wire
-        # bytes.
+        # CommandTokens' real lookup table (confirmed by disassembling
+        # Transit.dll - see services/test_command_tokens.py) only has
+        # entries for single bytes, one 2-hex-digit key per entry
+        # (00-10, 7E, FF, D0-D2) - it does ONE whole-input match, not a
+        # scan across a longer string. Passing it the whole multi-byte
+        # `data` frame (as this used to do) could never match anything
+        # and always fell back to "??" - not a bug, just the wrong
+        # input shape. `address` alone (0-16) IS one of those keys, so
+        # this passes just that byte - confirmed working, see
+        # services/test_command_tokens.py's byte-by-byte results.
         #
-        # Dev Logs panel (see _track_dev_mode_key) gets the full
-        # picture instead: the real decoded command, the raw TX hex,
-        # AND that same middleware value shown above - side by side.
+        # Both Logs and Dev Logs now show only this real, confirmed-
+        # working middleware value - no raw hex anywhere, since the
+        # whole point of Transit.dll is that raw hex is never what's
+        # displayed or sent to an external party.
         decoded = describe_command(data)
-        encoded_value, encoded_error = dll_command_tokens(data)
+        encoded_value, encoded_error = dll_command_tokens(bytes([address]))
         # Short, generic fallback in the main log if the DLL isn't
         # reachable - the real reason (missing file, wrong platform,
         # call failure) only shows in dev mode below, not here.
@@ -345,12 +353,11 @@ class MainWindow(QMainWindow):
         self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
             dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
-            # Three separate list items, not one line with embedded
+            # Two separate list items, not one line with embedded
             # newlines - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,
             # so embedded \n would just get squashed into one row.
             self.dev_logs_panel.append_line(f"CH{address:02d}: {decoded}")
-            self.dev_logs_panel.append_line(f"HEX: {data.hex(' ').upper()}")
             self.dev_logs_panel.append_line(f"ENC: {dev_display}")
 
     def _on_raw_rx(self, address: int, data: bytes):

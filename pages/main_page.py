@@ -9,7 +9,7 @@ from components import (
     TitleBar, ResizableContainer,
 )
 from hooks.use_channels import MAX_CHANNELS
-from services.encoding import generate_key, encode_message
+from services.middleware import dll_command_tokens
 from services.protocol.packet_parser import describe_command
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
@@ -90,12 +90,6 @@ class MainWindow(QMainWindow):
 
         self.dev_mode = False
         self._dev_key_buffer = []
-        # Demo-only, per-session key for the encode_message() preview
-        # dev mode shows on TX lines - not tied to any real service or
-        # persisted anywhere, since real key distribution between this
-        # app and an external party is a separate problem for whenever
-        # that service actually gets built (see services/encoding.py).
-        self._dev_encryption_key = generate_key()
 
         # App-wide filter (not just a handler on this window) so a click
         # ANYWHERE that isn't on the currently-armed card - empty space,
@@ -333,18 +327,17 @@ class MainWindow(QMainWindow):
         # number on screen) - see ChannelManager.raw_tx. Always decoded
         # only here - this panel is meant to read at a glance, not for
         # byte-level debugging, regardless of dev mode. The raw wire
-        # bytes and a live encode_message() preview go to the separate
+        # bytes and a live CommandTokens preview go to the separate
         # Dev Logs panel instead (see _track_dev_mode_key) - the actual
-        # human action -> hardware bytes -> what an encrypted API
-        # message for it would look like, visible on demand without
-        # ever making this panel's own lines run long. That encrypted
-        # preview is a demo of the mechanism, not a real message going
-        # anywhere yet - see services/encoding.py.
+        # human action -> hardware bytes -> whatever Transit.dll's real
+        # CommandTokens export does with them, visible on demand without
+        # ever making this panel's own lines run long. That preview
+        # calls the real DLL (Windows only, fails soft elsewhere) - see
+        # services/middleware.py's dll_command_tokens().
         decoded = describe_command(data)
         self.logs_panel.append_line(f"TX CH{address:02d}: {decoded}")
         if self.dev_mode:
-            payload = {"channel": address, "command": decoded}
-            encoded_value = encode_message(payload, self._dev_encryption_key)
+            encoded_value = dll_command_tokens(data)
             # Two separate list items, not one line with an embedded
             # newline - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,

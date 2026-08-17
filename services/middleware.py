@@ -222,3 +222,25 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
         return out.value.hex(' ').upper(), None
     except Exception as e:
         return None, str(e)
+
+
+def decode_dll_text(hex_value: str) -> str:
+    """Turns dll_command_tokens()'s hex string back into the actual
+    token text - "58 23 50" -> "X#P" - since every response CommandTokens
+    has actually been confirmed to return (every table entry checked in
+    services/test_command_tokens.py) IS plain printable text, not
+    binary/ciphertext. Hex is still what dll_command_tokens() itself
+    returns (see its docstring - kept in case a future response really
+    isn't text), this is just the display-layer step that turns it into
+    the literal word on screen.
+
+    Falls back to the original hex string, never raises or shows
+    replacement-character noise, if a response ever isn't clean
+    printable ASCII - that would mean something unexpected came back,
+    not that the raw hex is unsafe to show."""
+    try:
+        raw = bytes.fromhex(hex_value.replace(' ', ''))
+        text = raw.decode('ascii')
+    except (ValueError, UnicodeDecodeError):
+        return hex_value
+    return text if text.isprintable() else hex_value

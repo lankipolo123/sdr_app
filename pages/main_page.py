@@ -326,18 +326,17 @@ class MainWindow(QMainWindow):
         # address is already the wire address (1-16, matches the CH
         # number on screen) - see ChannelManager.raw_tx.
         #
-        # Main Logs panel is deliberately opaque: it only ever shows
-        # what Transit.dll's real CommandTokens export produces for
-        # this command (see services/middleware.py's
+        # Main Logs panel is deliberately opaque: it only ever confirms
+        # whether Transit.dll's real CommandTokens export was reached
+        # for this command (see services/middleware.py's
         # dll_command_tokens(), Windows-only, fails soft elsewhere) -
         # never the human-readable decoded command or the raw wire
-        # bytes. Anyone without dev mode on never sees actual protocol
-        # details, only the middleware-translated value.
+        # bytes, and not the actual response bytes either, since
+        # CommandTokens' real output format isn't confirmed yet.
         #
         # Dev Logs panel (see _track_dev_mode_key) gets the full
         # picture instead: the real decoded command, the raw hex, AND
-        # the same middleware value shown above - side by side, for
-        # comparing what's real against what the DLL turns it into.
+        # that same middleware confirmation shown above - side by side.
         decoded = describe_command(data)
         encoded_value, encoded_error = dll_command_tokens(data)
         # Short, generic fallback in the main log if the DLL isn't

@@ -9,7 +9,7 @@ from components import (
     TitleBar, ResizableContainer,
 )
 from hooks.use_channels import MAX_CHANNELS
-from services.middleware import dll_command_tokens
+from services.middleware import decode_dll_text, dll_command_tokens
 from services.protocol.packet_parser import describe_command
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
@@ -346,13 +346,16 @@ class MainWindow(QMainWindow):
         # displayed or sent to an external party.
         decoded = describe_command(data)
         encoded_value, encoded_error = dll_command_tokens(bytes([address]))
+        # The literal token text ("X#P"), not the hex it's built from -
+        # see decode_dll_text()'s docstring for why this is safe now.
+        encoded_text = decode_dll_text(encoded_value) if encoded_value is not None else None
         # Short, generic fallback in the main log if the DLL isn't
         # reachable - the real reason (missing file, wrong platform,
         # call failure) only shows in dev mode below, not here.
-        main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
+        main_display = encoded_text if encoded_text is not None else "[middleware unavailable]"
         self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
-            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
+            dev_display = encoded_text if encoded_text is not None else f"[middleware unavailable: {encoded_error}]"
             # Two separate list items, not one line with embedded
             # newlines - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,

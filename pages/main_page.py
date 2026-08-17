@@ -324,26 +324,36 @@ class MainWindow(QMainWindow):
 
     def _on_raw_tx(self, address: int, data: bytes):
         # address is already the wire address (1-16, matches the CH
-        # number on screen) - see ChannelManager.raw_tx. Always decoded
-        # only here - this panel is meant to read at a glance, not for
-        # byte-level debugging, regardless of dev mode. The raw wire
-        # bytes and a live CommandTokens preview go to the separate
-        # Dev Logs panel instead (see _track_dev_mode_key) - the actual
-        # human action -> hardware bytes -> whatever Transit.dll's real
-        # CommandTokens export does with them, visible on demand without
-        # ever making this panel's own lines run long. That preview
-        # calls the real DLL (Windows only, fails soft elsewhere) - see
-        # services/middleware.py's dll_command_tokens().
+        # number on screen) - see ChannelManager.raw_tx.
+        #
+        # Main Logs panel is deliberately opaque: it only ever shows
+        # what Transit.dll's real CommandTokens export produces for
+        # this command (see services/middleware.py's
+        # dll_command_tokens(), Windows-only, fails soft elsewhere) -
+        # never the human-readable decoded command or the raw wire
+        # bytes. Anyone without dev mode on never sees actual protocol
+        # details, only the middleware-translated value.
+        #
+        # Dev Logs panel (see _track_dev_mode_key) gets the full
+        # picture instead: the real decoded command, the raw hex, AND
+        # the same middleware value shown above - side by side, for
+        # comparing what's real against what the DLL turns it into.
         decoded = describe_command(data)
-        self.logs_panel.append_line(f"TX CH{address:02d}: {decoded}")
+        encoded_value, encoded_error = dll_command_tokens(data)
+        # Short, generic fallback in the main log if the DLL isn't
+        # reachable - the real reason (missing file, wrong platform,
+        # call failure) only shows in dev mode below, not here.
+        main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
+        self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
-            encoded_value = dll_command_tokens(data)
-            # Two separate list items, not one line with an embedded
-            # newline - QListWidget doesn't grow a row's height for
+            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
+            # Three separate list items, not one line with embedded
+            # newlines - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,
-            # so an embedded \n would just get squashed into one row.
-            self.dev_logs_panel.append_line(f"CH{address:02d}: {data.hex(' ').upper()}")
-            self.dev_logs_panel.append_line(f"ENC: {encoded_value}")
+            # so embedded \n would just get squashed into one row.
+            self.dev_logs_panel.append_line(f"CH{address:02d}: {decoded}")
+            self.dev_logs_panel.append_line(f"HEX: {data.hex(' ').upper()}")
+            self.dev_logs_panel.append_line(f"ENC: {dev_display}")
 
     def _on_raw_rx(self, address: int, data: bytes):
         self.logs_panel.append_line(f"RX CH{address:02d}: {data.hex(' ').upper()}")

@@ -162,12 +162,21 @@ def _get_dll():
     return _dll
 
 
-def dll_command_tokens(data: bytes) -> str:
+def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
     """Calls the real Transit.dll CommandTokens export on data (the
-    raw TX frame bytes) and returns whatever it writes back - this is
-    what dev mode's "ENC:" preview line shows now, in place of the old
-    Python-side AES-256-GCM demo (encode_message() above this section
-    is unchanged and still usable, just no longer called from here).
+    raw TX frame bytes). Returns (value, None) on success, or
+    (None, reason) on any failure - DLL not loadable, wrong platform,
+    or the call itself raising. This is what the main Logs panel's TX
+    line and dev mode's "ENC:" preview both show now, in place of the
+    old Python-side AES-256-GCM demo (encode_message() above this
+    section is unchanged and still usable, just no longer called from
+    here).
+
+    A tuple, not a single string with the error baked in as bracketed
+    text - callers need to tell success from failure explicitly (the
+    main Logs panel wants a short generic fallback on failure, dev
+    mode wants the real reason), and string-sniffing a magic prefix to
+    tell them apart is fragile compared to just returning both.
 
     CommandTokens' real expected input/output format is NOT confirmed
     yet - only smoke-tested with a throwaway placeholder string, never
@@ -177,16 +186,16 @@ def dll_command_tokens(data: bytes) -> str:
     digits are always a safe, printable, null-free choice regardless
     of what the DLL turns out to actually expect.
 
-    Never raises: dev mode is optional tooling, so a missing DLL, a
-    non-Windows platform, or an unexpected call failure all just show
-    up as a bracketed reason in the preview line instead of taking the
-    GUI down."""
+    Never raises: the main Logs panel and dev mode are both optional/
+    cosmetic, so a missing DLL, a non-Windows platform, or an
+    unexpected call failure must never be able to take the GUI down -
+    they just come back as the error half of the tuple instead."""
     dll = _get_dll()
     if dll is None:
-        return f"[Transit.dll unavailable: {_dll_load_error}]"
+        return None, _dll_load_error
     try:
         out = ctypes.create_string_buffer(256)
         dll.CommandTokens(data.hex().encode(), out, ctypes.sizeof(out))
-        return out.value.decode(errors="replace")
+        return out.value.decode(errors="replace"), None
     except Exception as e:
-        return f"[CommandTokens call failed: {e}]"
+        return None, str(e)

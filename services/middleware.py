@@ -186,6 +186,15 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
     digits are always a safe, printable, null-free choice regardless
     of what the DLL turns out to actually expect.
 
+    The response comes back as hex too, not decoded as UTF-8 text -
+    if CommandTokens is genuinely producing encrypted/binary output
+    (plausible, since "translate tokens" is meant to be the encryption
+    step), decoding it as text just produces unreadable replacement-
+    character garbage instead of anything legible. Hex is always
+    printable regardless of whether the real bytes are text, binary
+    ciphertext, or anything else - an honest display of exactly what
+    came back rather than a broken text decode.
+
     Never raises: the main Logs panel and dev mode are both optional/
     cosmetic, so a missing DLL, a non-Windows platform, or an
     unexpected call failure must never be able to take the GUI down -
@@ -196,6 +205,6 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
     try:
         out = ctypes.create_string_buffer(256)
         dll.CommandTokens(data.hex().encode(), out, ctypes.sizeof(out))
-        return out.value.decode(errors="replace"), None
+        return out.value.hex(' ').upper(), None
     except Exception as e:
         return None, str(e)

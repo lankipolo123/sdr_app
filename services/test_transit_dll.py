@@ -1,17 +1,22 @@
 """Manual test harness for Transit.dll - run this ON WINDOWS with a
-32-bit Python interpreter (the DLL is PE32/x86, confirmed via `file`
-and pefile - a 64-bit Python process cannot load a 32-bit DLL at all).
+Python interpreter matching the DLL's own bitness (confirm with `file`/
+pefile - a 64-bit Python process cannot load a 32-bit DLL or vice versa).
 
-Only AutoConnectSDR's signature below is confirmed, taken directly
-from the VB6 Declare statement:
+AutoConnectSDR/CheckConnection/DisconnectSDR's signatures - a string
+buffer + a length, returning a status code - are now CONFIRMED working
+against the real 64-bit DLL (loaded clean, no crash, sensible output:
+AutoConnectSDR returned -1/"DisConnected" with no real hardware
+attached, exactly the expected behavior). AutoConnectSDR's shape was
+originally taken from the VB6 Declare statement:
     Private Declare Function AutoConnectSDR Lib "dll\\Transit.dll" _
         (ByVal outBuffer As String, ByVal maxLength As Long) As Long
 
-The other four (CheckConnection, CommandTokens, DisconnectSDR,
-SendCommandToSDR) are GUESSES based on their names and the
-AutoConnectSDR pattern (out-buffer + length, returning a status code) -
-confirm the real signatures against whatever header/docs exist before
-trusting this for anything beyond "does it load."
+CommandTokens and SendCommandToSDR are still UNCONFIRMED GUESSES -
+CommandTokens especially, since its real input format (whatever token
+vocabulary ends up finalized) isn't settled yet. test_command_tokens()
+below just probes it with a placeholder string to see if it crashes or
+returns something legible - not a real test of correct behavior until
+the actual token format is confirmed.
 
 ctypes.WinDLL (not CDLL) because VB6's plain Declare statement only
 ever works against __stdcall exports - CDLL would get the stack
@@ -69,11 +74,36 @@ def test_disconnect():
     return result
 
 
+def test_command_tokens(token: bytes = b"TEST"):
+    # Placeholder input - the real token vocabulary isn't finalized yet
+    # (see services/middleware.py's Token/Action for the current Python-
+    # side design). This just checks CommandTokens doesn't crash and
+    # shows what comes back for an arbitrary string, not a real
+    # correctness test.
+    out = ctypes.create_string_buffer(256)
+    result = dll.CommandTokens(token, out, ctypes.sizeof(out))
+    print(f"CommandTokens({token!r}) -> return={result}, buffer={out.value!r}")
+    return result
+
+
+def test_send_command(command: bytes = b"TEST"):
+    # Also a placeholder - real usage almost certainly needs a
+    # successful AutoConnectSDR first, and a real command string in
+    # whatever format CommandTokens is meant to produce.
+    result = dll.SendCommandToSDR(command, len(command))
+    print(f"SendCommandToSDR({command!r}) -> return={result}")
+    return result
+
+
 if __name__ == "__main__":
     print(f"Loaded {DLL_PATH} OK\n")
     print("Step 1: connect")
     test_auto_connect()
     print("\nStep 2: check status")
     test_check_connection()
-    print("\nStep 3: disconnect")
+    print("\nStep 3: translate a placeholder token (exploratory - format unconfirmed)")
+    test_command_tokens()
+    print("\nStep 4: send a placeholder command (exploratory - format unconfirmed)")
+    test_send_command()
+    print("\nStep 5: disconnect")
     test_disconnect()

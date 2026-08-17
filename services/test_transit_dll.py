@@ -23,7 +23,7 @@ import sys
 if not sys.platform.startswith("win"):
     sys.exit("This only runs on Windows - Transit.dll is a native Windows DLL.")
 
-DLL_PATH = "Transit.dll"  # adjust to wherever the file actually sits
+DLL_PATH = "dll/Transit.dll"  # matches the "dll\Transit.dll" path hardcoded in the original VB6 Declare statement
 
 dll = ctypes.WinDLL(DLL_PATH)
 

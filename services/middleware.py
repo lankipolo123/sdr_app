@@ -163,14 +163,23 @@ def _get_dll():
 
 
 def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
-    """Calls the real Transit.dll CommandTokens export on data (the
-    raw TX frame bytes). Returns (value, None) on success, or
-    (None, reason) on any failure - DLL not loadable, wrong platform,
-    or the call itself raising. This is what the main Logs panel's TX
-    line and dev mode's "ENC:" preview both show now, in place of the
-    old Python-side AES-256-GCM demo (encode_message() above this
-    section is unchanged and still usable, just no longer called from
-    here).
+    """Calls the real Transit.dll CommandTokens export on data.
+    Returns (value, None) on success, or (None, reason) on any failure
+    - DLL not loadable, wrong platform, or the call itself raising.
+    This is what the main Logs panel's TX line and dev mode's "ENC:"
+    preview both show now, in place of the old Python-side AES-256-GCM
+    demo (encode_message() above this section is unchanged and still
+    usable, just no longer called from here).
+
+    data should be a single byte matching one of CommandTokens' real
+    lookup table keys (00-10, 7E, FF, D0-D2 - confirmed by
+    disassembling Transit.dll and verified byte-by-byte in services/
+    test_command_tokens.py). CommandTokens does one whole-input match
+    against 2-hex-digit keys, not a per-byte scan across a longer
+    string - a multi-byte frame passed as one hex string can never
+    match any key and always falls back to "??". pages/main_page.py's
+    _on_raw_tx passes just the channel address byte (0-16, one of the
+    confirmed keys), not the whole TX frame.
 
     A tuple, not a single string with the error baked in as bracketed
     text - callers need to tell success from failure explicitly (the

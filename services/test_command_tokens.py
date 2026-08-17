@@ -15,10 +15,18 @@ middleware.py's dll_command_tokens() docstring) - this is the cleanest
 possible test of whether CommandTokens actually translates a real
 command instead of falling back to "??" (unrecognized input).
 """
+import os
 import sys
 
 if not sys.platform.startswith("win"):
     sys.exit("This only runs on Windows - Transit.dll is a native Windows DLL.")
+
+# Running this file directly (python services\test_command_tokens.py)
+# only puts services\ itself on sys.path, not the project root - so
+# "services.middleware" can't be found from inside the services
+# package. Add the root explicitly, same fix tests/dry_run.py already
+# has, so this runs the same way regardless of how it's invoked.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.middleware import dll_command_tokens
 from services.protocol.commands import output_on

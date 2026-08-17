@@ -178,13 +178,18 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
     mode wants the real reason), and string-sniffing a magic prefix to
     tell them apart is fragile compared to just returning both.
 
-    CommandTokens' real expected input/output format is NOT confirmed
-    yet - only smoke-tested with a throwaway placeholder string, never
-    with real command bytes (see services/test_transit_dll.py). Hex-
-    encodes data before passing it across, since raw binary could
-    contain an embedded null byte and truncate a C string early - hex
-    digits are always a safe, printable, null-free choice regardless
-    of what the DLL turns out to actually expect.
+    CommandTokens' real expected input/output format is NOT fully
+    confirmed, but static analysis of the DLL's own binary (reading
+    the literal lookup table it builds at startup directly out of its
+    .rdata section) found it maps specific byte values to 3-character
+    codes using UPPERCASE two-hex-digit keys ("7E" -> "XME", "0A" ->
+    "X#J", etc.) - so data is hex-encoded AND uppercased before being
+    passed across. Lowercase hex (Python's default) would silently
+    mismatch every key containing a letter (A-F), including the HEAD/
+    STOP bytes present in literally every frame - a real, confirmed
+    bug this fixes, not a guess. Hex-encoding at all (rather than
+    sending raw binary) is still needed regardless, since raw binary
+    could contain an embedded null byte and truncate a C string early.
 
     Returns the actual response bytes as hex, not decoded as UTF-8
     text - if CommandTokens is genuinely producing encrypted/binary
@@ -204,7 +209,7 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
         return None, _dll_load_error
     try:
         out = ctypes.create_string_buffer(256)
-        dll.CommandTokens(data.hex().encode(), out, ctypes.sizeof(out))
+        dll.CommandTokens(data.hex().upper().encode(), out, ctypes.sizeof(out))
         return out.value.hex(' ').upper(), None
     except Exception as e:
         return None, str(e)

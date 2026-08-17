@@ -1,3 +1,5 @@
+import contextlib
+
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
@@ -17,6 +19,21 @@ from services.protocol import constants as c
 # send (not the visual sync, which stays instant) means only the value
 # the user actually stops on ever reaches the hardware.
 SLIDER_SEND_DEBOUNCE_MS = 250
+
+
+@contextlib.contextmanager
+def _signal_lock(widget):
+    """Blocks a widget's signals for the duration of the `with` block,
+    so setting its value from code (e.g. syncing the slider to match a
+    toggle someone just clicked) doesn't re-trigger that widget's own
+    change handler as if the user had interacted with it directly -
+    only a genuine user action should ever result in a real hardware
+    command."""
+    widget.blockSignals(True)
+    try:
+        yield
+    finally:
+        widget.blockSignals(False)
 
 
 class ChannelCard(Card):
@@ -163,6 +180,9 @@ class ChannelCard(Card):
             f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
+        # Click -> _on_mode_set() below -> controller.set_mode() (hooks/
+        # use_channel.py) -> queued and blind-sent, same path as the
+        # ON/OFF toggle further down.
         self.mode_set_btn.clicked.connect(self._on_mode_set)
         mode_row = QHBoxLayout()
         mode_row.setSpacing(4)
@@ -211,7 +231,18 @@ class ChannelCard(Card):
 
         self.body_layout.addLayout(main_row)
 
+        # Click -> _on_toggle() below -> controller.turn_output_on()/
+        # turn_output_off() (hooks/use_channel.py) -> _enqueue() ->
+        # _send_next() -> _open_and_send() -> _send() - opens a fresh
+        # port and writes the bytes with no prior handshake. THIS is
+        # what "blind send" means everywhere in this app: nothing here
+        # waits to confirm the module exists before sending.
         self.toggle.toggled.connect(self._on_toggle)
+        # Drag -> _on_slider() below -> (after SLIDER_SEND_DEBOUNCE_MS)
+        # _send_debounced_level() -> _send_level() -> controller.
+        # set_power()/resume_output()/turn_output_off() - same blind-
+        # send path as the toggle above, just reached via the debounce
+        # timer instead of directly.
         self.slider.valueChanged.connect(self._on_slider)
 
         # Locked by default - see _arm()/mousePressEvent below. Sets the
@@ -296,9 +327,8 @@ class ChannelCard(Card):
         else:
             self.controller.turn_output_off()
         target_level = self.state.data.last_level if checked else 0
-        self.slider.blockSignals(True)
-        self.slider.setValue(target_level)
-        self.slider.blockSignals(False)
+        with _signal_lock(self.slider):
+            self.slider.setValue(target_level)
         self._update_status(target_level)
 
     def _on_slider(self, value: int):
@@ -306,9 +336,8 @@ class ChannelCard(Card):
             self.state.data.last_level = value
         should_be_checked = value > 0
         if self.toggle.isChecked() != should_be_checked:
-            self.toggle.blockSignals(True)
-            self.toggle.setChecked(should_be_checked)
-            self.toggle.blockSignals(False)
+            with _signal_lock(self.toggle):
+                self.toggle.setChecked(should_be_checked)
         self._update_status(value)
         # Visual feedback above is instant, but the actual send is
         # debounced - a drag fires this once per intermediate position
@@ -368,20 +397,17 @@ class ChannelCard(Card):
         level = 0 if not d.output_on else HEX_TO_LEVEL.get(d.power_code, d.last_level)
 
         if self.toggle.isChecked() != d.output_on:
-            self.toggle.blockSignals(True)
-            self.toggle.setChecked(d.output_on)
-            self.toggle.blockSignals(False)
+            with _signal_lock(self.toggle):
+                self.toggle.setChecked(d.output_on)
 
         if self.slider.value() != level:
-            self.slider.blockSignals(True)
-            self.slider.setValue(level)
-            self.slider.blockSignals(False)
+            with _signal_lock(self.slider):
+                self.slider.setValue(level)
 
         mode_index = self._mode_codes.index(d.mode if d.mode is not None else c.BLIND_DEFAULT_MODE)
         if self.mode_combo.currentIndex() != mode_index:
-            self.mode_combo.blockSignals(True)
-            self.mode_combo.setCurrentIndex(mode_index)
-            self.mode_combo.blockSignals(False)
+            with _signal_lock(self.mode_combo):
+                self.mode_combo.setCurrentIndex(mode_index)
 
         if level > 0:
             d.last_level = level

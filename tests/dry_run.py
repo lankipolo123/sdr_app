@@ -157,7 +157,7 @@ def main():
     check("re-arming CH01 locks CH02 back down", not other_card.toggle.isEnabled())
 
     print("\n=== Clicking outside every card locks the armed one back down too ===")
-    QTest.mouseClick(window.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
+    QTest.mouseClick(window.controls_bar.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
     check("clicking outside CH01 locks it back down", not card.toggle.isEnabled())
     check("no card is armed anymore", window._armed_card is None)
     card.arm()  # re-arm CH01 for the rest of this run
@@ -172,9 +172,9 @@ def main():
     check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not messages)
     check(
         "the TX/RX log actually populated - raw_tx/raw_rx used to be dead signals, never emitted",
-        window.log_list.count() >= 2,  # at least one TX line and one RX line for this command
+        window.logs_panel.list.count() >= 2,  # at least one TX line and one RX line for this command
     )
-    check("the log's most recent line is CH01's confirmed ack, not stale/wrong-channel data", "CH01" in window.log_list.item(window.log_list.count() - 1).text())
+    check("the log's most recent line is CH01's confirmed ack, not stale/wrong-channel data", "CH01" in window.logs_panel.list.item(window.logs_panel.list.count() - 1).text())
 
     print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
@@ -539,7 +539,7 @@ def main():
     check("query actually turned the module on", query_module.output_on)
     check(
         "Query's own traffic shows in the log too, not just cards'",
-        window17.log_list.count() >= 2,
+        window17.logs_panel.list.count() >= 2,
     )
     check(
         "card 9's toggle stayed put - a standalone query doesn't touch it",

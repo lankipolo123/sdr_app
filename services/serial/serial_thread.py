@@ -8,6 +8,12 @@ STOP_TIMEOUT_MS = 2000  # hard cap - give up waiting rather than hang forever
 
 
 class SerialThread(QThread):
+    """Background read loop for one open serial port - roughly the Qt
+    equivalent of a Web Worker: run() executes on its own OS thread so
+    a blocking port read never freezes the GUI, and it only ever talks
+    back to the rest of the app through the Signals below (frame_received/
+    raw_rx/error), never by calling into GUI code directly."""
+
     frame_received = Signal(object)
     raw_rx = Signal(bytes)
     error = Signal(str)

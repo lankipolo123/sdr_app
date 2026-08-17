@@ -98,12 +98,28 @@ def test_send_command(command: bytes = b"TEST"):
 if __name__ == "__main__":
     print(f"Loaded {DLL_PATH} OK\n")
     print("Step 1: connect")
-    test_auto_connect()
+    connect_result = test_auto_connect()
     print("\nStep 2: check status")
     test_check_connection()
-    print("\nStep 3: translate a placeholder token (exploratory - format unconfirmed)")
-    test_command_tokens()
-    print("\nStep 4: send a placeholder command (exploratory - format unconfirmed)")
-    test_send_command()
+
+    # SendCommandToSDR("TEST") is only safe to fire blind when nothing
+    # real is on the other end - a placeholder string is exactly the
+    # "manipulated/unvalidated command" risk this whole project exists
+    # to prevent once real hardware is actually connected. -1 is the
+    # observed "nothing connected" return; any other value means
+    # AutoConnectSDR found something real.
+    if connect_result == -1:
+        print("\nStep 3: translate a placeholder token (exploratory - format unconfirmed)")
+        test_command_tokens()
+        print("\nStep 4: send a placeholder command (exploratory - format unconfirmed)")
+        test_send_command()
+    else:
+        print(
+            f"\nSkipping CommandTokens/SendCommandToSDR - AutoConnectSDR returned "
+            f"{connect_result} (something real is connected). Sending a placeholder "
+            f"command to actual hardware is not safe until the real token format is "
+            f"confirmed - see validate_token() in services/middleware.py for why."
+        )
+
     print("\nStep 5: disconnect")
     test_disconnect()

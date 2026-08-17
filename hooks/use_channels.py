@@ -2,6 +2,7 @@ import os
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from services.middleware import Token, dispatch_token
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
@@ -102,6 +103,18 @@ class ChannelManager(QObject):
 
     def get_state(self, address: int) -> ChannelState:
         return self.states[address]
+
+    def send_token(self, token: Token) -> None:
+        """Entry point for an external caller (Transit.dll, eventually)
+        that only knows "channel N, do X" - never a ChannelController
+        object, and never a raw hex command. Looks up the right
+        controller for token.channel and hands off to
+        services.middleware.dispatch_token(), which validates the
+        token before it ever reaches real hardware - see
+        services/middleware.py for what that validation actually
+        blocks."""
+        controller = self.get_controller(token.channel - 1)  # Token uses CH01-16, get_controller uses the internal 0-based address
+        dispatch_token(controller, token)
 
     def brute_force_query(self, address: int, on: bool):
         """Standalone diagnostic, separate from the cards: type in one

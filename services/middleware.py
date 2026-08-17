@@ -21,10 +21,18 @@ which already do exactly that.
 """
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from hooks.use_channel import ChannelController
 from services.protocol import constants as c
 from state.level_map import LEVEL_TO_HEX
+
+if TYPE_CHECKING:
+    # Only needed for the type hint on dispatch_token() below, never
+    # at runtime - importing this for real would create a circular
+    # import: hooks/__init__.py eagerly imports use_app -> use_channels
+    # -> (now) this module, so this module importing hooks.use_channel
+    # back would loop into a package that's still mid-load.
+    from hooks.use_channel import ChannelController
 
 MAX_CHANNELS = 16  # matches hooks/use_channels.py - keep these in sync
 
@@ -82,7 +90,7 @@ def validate_token(token: Token) -> None:
         raise InvalidToken(f"mode is only valid with SET_MODE, got action={token.action}")
 
 
-def dispatch_token(controller: ChannelController, token: Token) -> None:
+def dispatch_token(controller: "ChannelController", token: Token) -> None:
     """Translate + send: validates first, then calls the one matching
     ChannelController method for real. controller must already be the
     ChannelController for token.channel - picking the right controller

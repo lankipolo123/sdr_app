@@ -27,10 +27,9 @@ whole-frame test was never going to succeed. This test instead sends
 ONE byte at a time (exactly what the table's keys look like), to
 confirm CommandTokens actually works for input it's built to recognize.
 
-00-10 (0-16 decimal) lining up with this app's channel range (1-16) is
-suggestive - possibly a per-channel-number token - but that's a guess;
-this test's job is just to confirm the DLL returns a real code instead
-of "??" for these bytes, not to explain what they mean.
+This test only checks the exact table entries found by disassembly
+against the DLL's actual output - nothing about what these codes mean
+is asserted here, only whether the DLL returns them.
 """
 import os
 import sys
@@ -47,14 +46,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.middleware import dll_command_tokens
 
-# Every one of these is a real key found in the DLL's own .rdata table -
-# the expected outputs are the exact values sitting right next to each
-# key in the binary, so this test knows what "correct" looks like.
+# The complete table found in the DLL's own .rdata section - every key
+# it has, not a sample. Expected outputs are the exact values sitting
+# right next to each key in the binary, so this test knows what
+# "correct" looks like for every entry that exists, not just some of
+# them.
 KNOWN_TABLE = {
     b"\x00": "X#0",
     b"\x01": "X#A",
+    b"\x02": "X#B",
+    b"\x03": "X#C",
+    b"\x04": "X#D",
+    b"\x05": "X#E",
+    b"\x06": "X#F",
+    b"\x07": "X#G",
+    b"\x08": "X#H",
+    b"\x09": "X#I",
     b"\x0a": "X#J",
+    b"\x0b": "X#K",
+    b"\x0c": "X#L",
     b"\x0d": "X#M",
+    b"\x0e": "X#N",
+    b"\x0f": "X#O",
     b"\x10": "X#P",
     b"\x7e": "XME",
     b"\xff": "XOP",
@@ -63,8 +76,8 @@ KNOWN_TABLE = {
     b"\xd2": "XGY",
 }
 
-print("Testing single bytes against the table found by disassembly.\n")
-any_match = False
+print(f"Testing all {len(KNOWN_TABLE)} entries found in the DLL's table.\n")
+matches = 0
 for raw, expected_code in KNOWN_TABLE.items():
     value, error = dll_command_tokens(raw)
     if value is None:
@@ -78,13 +91,7 @@ for raw, expected_code in KNOWN_TABLE.items():
         decoded = "(not valid hex?)"
     match = "MATCH" if decoded.rstrip('\x00') == expected_code else "no match"
     if match == "MATCH":
-        any_match = True
+        matches += 1
     print(f"  byte {raw.hex().upper()}: got {decoded!r} (raw hex: {value})  expected {expected_code!r}  [{match}]")
 
-print()
-if any_match:
-    print("At least one single-byte input matched its expected table value -")
-    print("CommandTokens really does translate real input when given what it expects.")
-else:
-    print("Still no matches even byte-by-byte - the input format guess above is wrong too,")
-    print("worth going back to disassembly rather than guessing further.")
+print(f"\n{matches}/{len(KNOWN_TABLE)} entries matched exactly.")

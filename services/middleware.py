@@ -11,14 +11,25 @@ validate_token() re-checks every field defensively as if it arrived as
 plain untyped ints, because across a real FFI/DLL boundary that's
 exactly what it would be.
 
-This is a sketch for review, not wired into the running app - nothing
-here is imported by main.py/app.py/pages/. If it's adopted, dispatch_token()
-would sit in front of ChannelController (hooks/use_channel.py), reusing
-its existing connect/retry/send logic rather than reimplementing it -
-Transit.dll's "auto connect / check status / disconnect / send to SDR"
-functions map directly onto ConnectionController and ChannelController,
-which already do exactly that.
+The Token/validate_token/dispatch_token pipeline below is still a
+sketch for review, not wired into the running app - ChannelManager.
+send_token() (hooks/use_channels.py) can call it, but nothing in the
+GUI calls send_token() yet; ChannelCard still calls ChannelController's
+methods directly. If adopted, dispatch_token() would sit in front of
+ChannelController (hooks/use_channel.py), reusing its existing
+connect/retry/send logic rather than reimplementing it - Transit.dll's
+"auto connect / check status / disconnect / send to SDR" functions map
+directly onto ConnectionController and ChannelController, which already
+do exactly that.
+
+dll_command_tokens() at the bottom of this file IS wired into the
+running app (pages/main_page.py's dev-mode preview) - it's a separate,
+much smaller thing: a direct ctypes call into Transit.dll's real
+CommandTokens export, Windows-only, fails soft (never raises) so a
+missing/absent DLL can't take the GUI down.
 """
+import ctypes
+import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -121,3 +132,70 @@ def dispatch_token(controller: "ChannelController", token: Token) -> None:
         # fallback - an Action with no dispatch branch is a bug in
         # THIS file, not something to swallow.
         raise InvalidToken(f"no dispatch implemented for action={token.action}")
+
+
+# ---- Real Transit.dll call (dev-mode preview only) ----
+
+# Same "dll/Transit.dll" relative path as services/test_transit_dll.py,
+# but resolved from THIS file's location rather than the current
+# working directory - main.py can be launched from anywhere, unlike
+# the standalone test script which assumes it's run from the repo root.
+_DLL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dll", "Transit.dll")
+
+_dll = None          # cached handle once successfully loaded
+_dll_load_error = None  # cached failure reason, so a missing DLL doesn't retry on every call
+
+
+def _get_dll():
+    global _dll, _dll_load_error
+    if _dll is not None or _dll_load_error is not None:
+        return _dll
+    try:
+        if not hasattr(ctypes, "WinDLL"):
+            raise OSError("Transit.dll is a Windows DLL - ctypes.WinDLL doesn't exist on this platform")
+        dll = ctypes.WinDLL(_DLL_PATH)
+        dll.CommandTokens.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
+        dll.CommandTokens.restype = ctypes.c_long
+        _dll = dll
+    except OSError as e:
+        _dll_load_error = str(e)
+    return _dll
+
+
+def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
+    """Calls the real Transit.dll CommandTokens export on data (the
+    raw TX frame bytes). Returns (value, None) on success, or
+    (None, reason) on any failure - DLL not loadable, wrong platform,
+    or the call itself raising. This is what the main Logs panel's TX
+    line and dev mode's "ENC:" preview both show now, in place of the
+    old Python-side AES-256-GCM demo (encode_message() above this
+    section is unchanged and still usable, just no longer called from
+    here).
+
+    A tuple, not a single string with the error baked in as bracketed
+    text - callers need to tell success from failure explicitly (the
+    main Logs panel wants a short generic fallback on failure, dev
+    mode wants the real reason), and string-sniffing a magic prefix to
+    tell them apart is fragile compared to just returning both.
+
+    CommandTokens' real expected input/output format is NOT confirmed
+    yet - only smoke-tested with a throwaway placeholder string, never
+    with real command bytes (see services/test_transit_dll.py). Hex-
+    encodes data before passing it across, since raw binary could
+    contain an embedded null byte and truncate a C string early - hex
+    digits are always a safe, printable, null-free choice regardless
+    of what the DLL turns out to actually expect.
+
+    Never raises: the main Logs panel and dev mode are both optional/
+    cosmetic, so a missing DLL, a non-Windows platform, or an
+    unexpected call failure must never be able to take the GUI down -
+    they just come back as the error half of the tuple instead."""
+    dll = _get_dll()
+    if dll is None:
+        return None, _dll_load_error
+    try:
+        out = ctypes.create_string_buffer(256)
+        dll.CommandTokens(data.hex().encode(), out, ctypes.sizeof(out))
+        return out.value.decode(errors="replace"), None
+    except Exception as e:
+        return None, str(e)

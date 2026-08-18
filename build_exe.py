@@ -6,10 +6,14 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 ICON_ICO = os.path.join(ROOT, "assets", "icons", "app_icon.ico")
 ASSETS_DIR = os.path.join(ROOT, "assets")
 MAIN_SCRIPT = os.path.join(ROOT, "main.py")
+ENCRYPTED_ARCHIVE = os.path.join(ROOT, "app_encrypted.pyz")
 
 UPX_DIR = os.environ.get("UPX_DIR")
 
-ADD_DATA = f"{ASSETS_DIR}{os.pathsep}assets"
+ADD_DATA = [
+    f"{ASSETS_DIR}{os.pathsep}assets",
+    f"{ENCRYPTED_ARCHIVE}{os.pathsep}.",
+]
 
 UNUSED_QT_MODULES = [
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
@@ -32,10 +36,33 @@ UNUSED_QT_MODULES = [
     "PySide6.QtTest",
 ]
 
+# main.py only ever reaches the rest of the app (app.py, hooks/,
+# components/, pages/, services/, state/, styles/, utils/) through a
+# dynamic importlib.import_module() call - deliberate, so PyInstaller's
+# static analysis never discovers or bundles that code as plain,
+# decompilable bytecode (see crypto_loader.py/build_encrypt.py: it ships
+# AES-encrypted instead, in app_encrypted.pyz). The cost: PyInstaller's
+# usual automatic discovery (which normally finds every real import by
+# walking the module graph from main.py) never runs on any of it either,
+# so every third-party package AND stdlib submodule that code actually
+# uses has to be listed explicitly here - confirmed one at a time against
+# a real built-and-run onedir binary (not guessed): PySide6/qtawesome are
+# genuinely third-party, the rest are stdlib submodules PyInstaller's
+# default bundling doesn't include unless something in the discovered
+# graph really imports them.
+HIDDEN_IMPORTS = [
+    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "qtawesome",
+    "logging.handlers", "configparser", "contextlib", "copy", "ctypes",
+    "collections", "dataclasses", "json", "struct", "enum", "typing",
+]
+
 
 def main():
     if not os.path.exists(ICON_ICO):
         sys.exit(f"Missing icon: {ICON_ICO}")
+
+    print("Encrypting app source ->", ENCRYPTED_ARCHIVE)
+    subprocess.run([sys.executable, os.path.join(ROOT, "build_encrypt.py")], check=True, cwd=ROOT)
 
     args = [
         sys.executable, "-OO", "-m", "PyInstaller",
@@ -44,10 +71,13 @@ def main():
         "--onedir",
         "--windowed",
         "--icon", ICON_ICO,
-        "--add-data", ADD_DATA,
-        "--collect-data", "qtawesome",
         "--noconfirm",
     ]
+    for entry in ADD_DATA:
+        args += ["--add-data", entry]
+    args += ["--collect-data", "qtawesome"]
+    for module in HIDDEN_IMPORTS:
+        args += ["--hidden-import", module]
     for module in UNUSED_QT_MODULES:
         args += ["--exclude-module", module]
     if UPX_DIR:

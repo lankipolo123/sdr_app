@@ -118,6 +118,16 @@ pip install -r requirements-build.txt
 python build_exe.py
 ```
 
+`build_exe.py` first runs `build_encrypt.py`, which AES-encrypts the
+app's own source (`app.py`, `components/`, `hooks/`, `pages/`,
+`services/`, `state/`, `styles/`, `utils/`) into `app_encrypted.pyz` -
+third-party packages (PySide6, qtawesome) and stdlib aren't touched,
+just this repo's own code. PyInstaller then bundles that archive
+instead of plain `.py`/`.pyc` files; `crypto_loader.py` decrypts it in
+memory at launch (only when frozen - `python main.py` from source
+runs the plain files directly, unaffected). `app_encrypted.pyz` is
+gitignored and regenerated on every build, not something to commit.
+
 Output lands in `dist/TX Controller/` - a folder build (`--onedir`,
 so launch is fast - no self-extraction on every start like
 `--onefile` would need), with `TX Controller.exe`, its icon, and
@@ -173,4 +183,10 @@ open items below.
 - **Not code-signed.** Windows SmartScreen will flag the `.exe` as
   from an unknown publisher until a code-signing certificate is
   bought and wired into the build (see Install section above).
-- PyArmor intentionally left out for now, per request.
+- **Source protection is AES encryption of the shipped bytecode
+  (`crypto_loader.py`/`build_encrypt.py`), not real obfuscation.**
+  PyArmor was considered and intentionally skipped - its free tier's
+  terms prohibit commercial use, and this is a real commercial build.
+  The AES key ships inside the binary itself (has to, for the app to
+  decrypt its own code at launch), so this stops casual inspection of
+  the shipped `.exe`, not a determined reverse-engineering effort.

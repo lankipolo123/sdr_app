@@ -9,6 +9,7 @@ from components import (
     TitleBar, ResizableContainer,
 )
 from hooks.use_channels import MAX_CHANNELS
+from services.middleware import decode_dll_text, dll_command_tokens
 from services.protocol.packet_parser import describe_command
 from services.team_vocab import encode_team_tokens
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
@@ -329,25 +330,40 @@ class MainWindow(QMainWindow):
         # (commands.output_on(self.wire_address) etc., see hooks/
         # use_channel.py) - same value, not a coincidence.
         #
-        # Transit.dll's CommandTokens (services/middleware.py,
-        # services/test_command_tokens.py) is a separate, still-
-        # exploratory finding from disassembly - not what's shown here.
-        # This is the team's OWN defined 3-letter vocabulary (see
-        # services/team_vocab.py), applied in pure Python - no DLL, no
-        # platform dependency, and every token is a value the team
-        # actually specified rather than one reverse-engineered from a
-        # binary. Fields with no team-defined token yet (address,
-        # frequency) show as an explicit bracketed placeholder instead
-        # of a guess - see team_vocab.py's module docstring.
+        # CommandTokens' real lookup table (confirmed by disassembling
+        # Transit.dll - see services/test_command_tokens.py) only has
+        # entries for single bytes, one 2-hex-digit key per entry
+        # (00-10, 7E, FF, D0-D2) - it does ONE whole-input match, not a
+        # scan across a longer string. `address` alone (0-16) IS one
+        # of those keys, so this passes just that byte - confirmed
+        # working, see services/test_command_tokens.py's byte-by-byte
+        # results. Per the senior: the DLL "just calls the function
+        # name, not anything too much" - i.e. it's this simple table
+        # lookup and nothing smarter, so the FME/NOX/etc vocabulary
+        # below is NOT fed into it or expected to come out of it.
         decoded = describe_command(data)
-        team_tokens = encode_team_tokens(data)
-        self.logs_panel.append_line(f"TX CH{address:02d}: {team_tokens}")
+        encoded_value, encoded_error = dll_command_tokens(bytes([address]))
+        # The literal token text ("X#P"), not the hex it's built from -
+        # see decode_dll_text()'s docstring for why this is safe now.
+        encoded_text = decode_dll_text(encoded_value) if encoded_value is not None else None
+        # Short, generic fallback in the main log if the DLL isn't
+        # reachable - the real reason (missing file, wrong platform,
+        # call failure) only shows in dev mode below, not here.
+        main_display = encoded_text if encoded_text is not None else "[middleware unavailable]"
+        self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
-            # Two separate list items, not one line with embedded
+            dev_display = encoded_text if encoded_text is not None else f"[middleware unavailable: {encoded_error}]"
+            # services/team_vocab.py: the FME/NOX/NTX/... vocabulary -
+            # separate from Transit.dll entirely, not derived from or
+            # fed into it (see comment above). Shown as its own line
+            # so the two don't get conflated as one value.
+            team_tokens = encode_team_tokens(data)
+            # Three separate list items, not one line with embedded
             # newlines - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,
             # so embedded \n would just get squashed into one row.
             self.dev_logs_panel.append_line(f"CH{address:02d}: {decoded}")
+            self.dev_logs_panel.append_line(f"ENC: {dev_display}")
             self.dev_logs_panel.append_line(f"TOK: {team_tokens}")
 
     def _on_raw_rx(self, address: int, data: bytes):

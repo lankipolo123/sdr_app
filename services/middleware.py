@@ -30,6 +30,7 @@ missing/absent DLL can't take the GUI down.
 """
 import ctypes
 import os
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -140,7 +141,19 @@ def dispatch_token(controller: "ChannelController", token: Token) -> None:
 # but resolved from THIS file's location rather than the current
 # working directory - main.py can be launched from anywhere, unlike
 # the standalone test script which assumes it's run from the repo root.
-_DLL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dll", "Transit.dll")
+#
+# sys.frozen is set by PyInstaller (and other freezers) on the packaged
+# .exe, never when running from source - __file__-based resolution
+# would silently break under a onefile build, since PyInstaller
+# extracts everything to a temporary directory at runtime and __file__
+# points there, not to wherever the real installed .exe (and the real
+# dll/Transit.dll shipped next to it - see installer.iss) actually
+# lives on disk. sys.executable is the real .exe's own path in that
+# case, so dll/Transit.dll needs to be found relative to THAT instead.
+if getattr(sys, "frozen", False):
+    _DLL_PATH = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "dll", "Transit.dll")
+else:
+    _DLL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dll", "Transit.dll")
 
 _dll = None          # cached handle once successfully loaded
 _dll_load_error = None  # cached failure reason, so a missing DLL doesn't retry on every call

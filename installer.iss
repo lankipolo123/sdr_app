@@ -53,10 +53,15 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
-; Only the one file - build_exe.py already produces a single-file
-; onefile .exe with everything (icon, assets/) bundled inside it, so
-; there's nothing else to copy alongside it here.
+; The onefile .exe itself (icon, assets/ already bundled inside it by
+; build_exe.py) - Transit.dll below is a real, separate file though,
+; not something PyInstaller bundles: services/middleware.py loads it
+; via ctypes.WinDLL from dll\Transit.dll next to the running .exe
+; (sys.executable's own directory once frozen - see _DLL_PATH there),
+; so it has to actually exist on disk at that path, not be embedded
+; inside the single-file binary.
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dll\Transit.dll"; DestDir: "{app}\dll"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

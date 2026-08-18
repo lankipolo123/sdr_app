@@ -21,17 +21,20 @@ def default_log_folder() -> str:
 
 
 def resource_path(*parts: str) -> str:
-    """Path to a bundled READ-ONLY asset (icon, etc.) - resolves inside
-    the PyInstaller onefile temp extraction dir (sys._MEIPASS) when
-    frozen, or the real project directory otherwise.
+    """Path to a bundled READ-ONLY asset (icon, etc.) - resolves next
+    to the running .exe when frozen, or the real project directory
+    otherwise. sys._MEIPASS only exists under PyInstaller's --onefile
+    mode (its temp self-extraction dir); this app builds --onedir, so
+    that attribute is never actually set and the fallback -
+    os.path.dirname(sys.executable), i.e. the app's own install folder
+    - is what's really used. Kept as a fallback rather than removed in
+    case the build ever switches back to --onefile.
 
     Deliberately separate from user_data_dir(): that one is for
-    WRITABLE runtime files (config/logs) that must live outside the
-    temp extraction dir to actually persist - a frozen onefile exe
-    re-extracts to a fresh temp dir every launch, so anything written
-    there is gone the moment the process exits. Assets only ever need
-    reading, so the temp extraction dir is exactly where they should
-    come from when frozen."""
+    WRITABLE runtime files (config/logs), which must never live inside
+    the app's own install folder (no write permission there for a
+    per-machine install, and it'd vanish on uninstall/reinstall
+    anyway)."""
     if is_frozen():
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:

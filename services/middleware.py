@@ -144,12 +144,13 @@ def dispatch_token(controller: "ChannelController", token: Token) -> None:
 #
 # sys.frozen is set by PyInstaller (and other freezers) on the packaged
 # .exe, never when running from source - __file__-based resolution
-# would silently break under a onefile build, since PyInstaller
-# extracts everything to a temporary directory at runtime and __file__
-# points there, not to wherever the real installed .exe (and the real
-# dll/Transit.dll shipped next to it - see installer.iss) actually
-# lives on disk. sys.executable is the real .exe's own path in that
-# case, so dll/Transit.dll needs to be found relative to THAT instead.
+# would silently break under a frozen build. This app builds --onedir
+# (see build_exe.py), but even under --onefile, __file__ would point
+# into PyInstaller's temporary extraction dir, not wherever the real
+# installed .exe (and the real dll/Transit.dll shipped next to it -
+# see installer.iss) actually lives on disk. sys.executable is the
+# real .exe's own path either way, so dll/Transit.dll needs to be
+# found relative to THAT instead.
 if getattr(sys, "frozen", False):
     _DLL_PATH = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "dll", "Transit.dll")
 else:

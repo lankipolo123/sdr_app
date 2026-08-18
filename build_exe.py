@@ -10,11 +10,20 @@ Then just:
 
     python build_exe.py
 
-Output lands in dist/Noise Controller.exe - a single file, no console
-window, with the app icon and the assets/ folder (icons) bundled
-inside it. dist/, build/, and *.spec are all gitignored, so this
-script (not a checked-in .spec file) is what stays reproducible in
-version control.
+Output lands in dist/Noise Controller/Noise Controller.exe - a folder
+build (--onedir), no console window, with the app icon and the
+assets/ folder (icons) bundled alongside the exe. dist/, build/, and
+*.spec are all gitignored, so this script (not a checked-in .spec
+file) is what stays reproducible in version control.
+
+--onedir instead of --onefile: a onefile .exe has to silently unzip
+its entire bundled Python/Qt runtime to a temp folder on EVERY launch
+before it can start (a real, noticeable multi-second delay, worse
+with UPX since those files also need decompressing) - --onedir runs
+directly from an already-unpacked folder, so launch is near-instant.
+Trade-off: the installer now has to ship a folder of files instead of
+one portable .exe (see installer.iss), which is fine since Inno Setup
+handles a folder just as easily.
 
 SIZE: the app only ever imports PySide6.QtCore/QtGui/QtWidgets (QtTest
 is dry_run.py's own dependency, not the shipped app's - confirmed by
@@ -92,7 +101,7 @@ def main():
         sys.executable, "-OO", "-m", "PyInstaller",
         MAIN_SCRIPT,
         "--name", "Noise Controller",
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--icon", ICON_ICO,
         "--add-data", ADD_DATA,

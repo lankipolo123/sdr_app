@@ -8,17 +8,24 @@ RS422 - a simplified, customer-facing rebuild of the original
 
 ## Install (Windows)
 
-1. Click the download badge above (or go to the repo's
-   [Releases](../../releases) page) and download `Noise Controller.exe`.
-2. Windows will show an "Unknown Publisher" SmartScreen warning the
-   first time you run it - expected, since the build isn't
-   code-signed, not a sign anything's wrong. Click "More info" then
-   "Run anyway".
-3. That's it. It's a single portable `.exe` - no installer, no Start
-   Menu entry yet. Double-click it to launch any time.
+Two ways to get it:
+
+- **Installer** (recommended): run `Noise Controller Setup.exe`
+  (built via `installer.iss` - see "Building it yourself" below) for
+  a real install wizard with a Start Menu entry and uninstaller.
+- **Portable zip**: click the download badge above (or go to the repo's
+  [Releases](../../releases) page), download `Noise Controller.zip`,
+  and extract it anywhere. Launch `Noise Controller.exe` from inside
+  the extracted folder - no installer, no Start Menu entry, but
+  nothing to install either.
+
+Either way, Windows will show an "Unknown Publisher" SmartScreen
+warning the first time you run it - expected, since the build isn't
+code-signed, not a sign anything's wrong. Click "More info" then "Run
+anyway".
 
 No Python, no terminal, nothing else to install. Each release also
-includes `Noise Controller.exe.sha256`, a checksum you can compare
+includes `Noise Controller.zip.sha256`, a checksum you can compare
 against if you want to confirm your download matches exactly what was
 built.
 
@@ -111,9 +118,11 @@ pip install -r requirements-build.txt
 python build_exe.py
 ```
 
-Output lands in `dist/Noise Controller.exe` - one file, no console
-window, icon and `assets/` bundled inside. To also produce a proper
-installer (Start Menu/Desktop shortcuts, uninstall entry) via
+Output lands in `dist/Noise Controller/` - a folder build (`--onedir`,
+so launch is fast - no self-extraction on every start like
+`--onefile` would need), with `Noise Controller.exe`, its icon, and
+`assets/` all alongside each other. To also produce a proper installer
+(Start Menu/Desktop shortcuts, uninstall entry) via
 [Inno Setup](https://jrsoftware.org/isinfo.php):
 
 ```bash

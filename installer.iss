@@ -7,7 +7,8 @@
 ;     iscc installer.iss
 ;
 ; Run build_exe.py FIRST - this script packages whatever's already in
-; dist\Noise Controller.exe, it doesn't build it. Output lands in
+; dist\Noise Controller\ (a --onedir folder build, not a single .exe -
+; see build_exe.py for why), it doesn't build it. Output lands in
 ; installer_output\Noise Controller Setup.exe - a real install wizard
 ; (destination folder, Start Menu group, optional desktop shortcut)
 ; with an uninstaller registered in Windows' "Add or Remove Programs".
@@ -57,14 +58,15 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
-; The onefile .exe itself (icon, assets/ already bundled inside it by
-; build_exe.py) - Transit.dll below is a real, separate file though,
-; not something PyInstaller bundles: services/middleware.py loads it
-; via ctypes.WinDLL from dll\Transit.dll next to the running .exe
-; (sys.executable's own directory once frozen - see _DLL_PATH there),
-; so it has to actually exist on disk at that path, not be embedded
-; inside the single-file binary.
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; --onedir build: dist\Noise Controller\ is a whole folder (the exe
+; plus its Python/Qt runtime and assets/), not a single file, so this
+; copies everything in it recursively. Transit.dll below is a real,
+; separate file though, not something PyInstaller bundles:
+; services/middleware.py loads it via ctypes.WinDLL from dll\Transit.dll
+; next to the running .exe (sys.executable's own directory once frozen
+; - see _DLL_PATH there), so it has to actually exist on disk at that
+; path, not be embedded inside the app folder PyInstaller produces.
+Source: "dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dll\Transit.dll"; DestDir: "{app}\dll"; Flags: ignoreversion
 
 [Icons]

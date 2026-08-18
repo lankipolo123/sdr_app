@@ -1,9 +1,9 @@
 
 LEVEL_TO_HEX = {
     0: None,
-    1: 0x02,
-    2: 0x01,
-    3: 0x00,
+    1: 2,
+    2: 1,
+    3: 0,
 }
 
 HEX_TO_LEVEL = {code: level for level, code in LEVEL_TO_HEX.items() if code is not None}

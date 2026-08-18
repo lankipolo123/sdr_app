@@ -4,6 +4,8 @@ import time
 import serial
 import serial.tools.list_ports
 
+from services.middleware import dll_log_text
+
 # Same named logger the rest of the app uses (setup_logger in
 # utils/logging_service.py) - logging.getLogger() with the same name
 # always returns the same singleton, so this works without threading a
@@ -112,7 +114,9 @@ class SerialManager:
         # off mid-byte on any adapter that really does gate its driver
         # this way. Harmless on an adapter that ignores RTS entirely.
         port_name = self._port.port
-        _logger.info(f"SerialManager: RTS HIGH on {port_name}, writing {len(data)} bytes: {data.hex(' ').upper()}")
+        # No raw hex in the log, same rule as the GUI - see
+        # services/middleware.py's dll_log_text().
+        _logger.info(f"SerialManager: RTS HIGH on {port_name}, writing {len(data)} bytes: {dll_log_text(data)}")
         self._port.rts = True
         time.sleep(RTS_TURNAROUND_S)
         self._port.write(data)

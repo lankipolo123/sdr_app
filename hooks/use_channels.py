@@ -2,7 +2,7 @@ import os
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from services.middleware import Token, dispatch_token
+from services.middleware import Token, dispatch_token, dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
@@ -202,7 +202,9 @@ class _QueryAttempt(QObject):
         self.raw_seen = True
         port = self.ports[self.port_index]
         if self.manager.logger:
-            self.manager.logger.info(f"Query: raw bytes on {port}: {data.hex(' ').upper()}")
+            # No raw hex in the log, same rule as the GUI - see
+            # services/middleware.py's dll_log_text().
+            self.manager.logger.info(f"Query: raw bytes on {port}: {dll_log_text(data)}")
         self.manager.raw_rx.emit(self.address, data)
 
     def _on_frame(self, response: ParsedFrame):

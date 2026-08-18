@@ -267,6 +267,17 @@ def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
     return " ".join(tokens), None
 
 
+def dll_log_text(data: bytes) -> str:
+    """Convenience wrapper around dll_decode_frame() for plain log
+    lines (SerialManager, ChannelController, etc.) that just want one
+    hex-free string to write to the log - those call sites don't need
+    to distinguish failure reasons the way the GUI's dev-mode display
+    does, just something other than raw hex to put in the line.
+    Never raises, same guarantee as dll_decode_frame() itself."""
+    value, error = dll_decode_frame(data)
+    return value if value is not None else f"[middleware unavailable: {error}]"
+
+
 def decode_dll_text(hex_value: str) -> str:
     """Turns dll_command_tokens()'s hex string back into the actual
     token text - "58 23 50" -> "X#P" - since every response CommandTokens

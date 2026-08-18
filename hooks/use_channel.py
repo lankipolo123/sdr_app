@@ -3,6 +3,7 @@ from collections import deque
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from services.middleware import dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame, describe_command
 from state.channel_state import ChannelState
@@ -280,7 +281,9 @@ class ChannelController(QObject):
         # frame, and those mean very different things when diagnosing a
         # dead receive path. Logging every raw chunk closes that gap.
         if self.logger:
-            self.logger.info(f"RAW RX ch{self.wire_address}: {chunk.hex(' ').upper()}")
+            # No raw hex in the log, same rule as the GUI - see
+            # services/middleware.py's dll_log_text().
+            self.logger.info(f"RAW RX ch{self.wire_address}: {dll_log_text(chunk)}")
 
     def _find_and_open_connection(self) -> ConnectionController | None:
         ports = ConnectionController.list_ports()
@@ -308,7 +311,7 @@ class ChannelController(QObject):
             # decode can't tell which one the user actually meant to change).
             self.logger.info(
                 f"TX ch{self.wire_address} ({label}){attempt_note}: "
-                f"{describe_command(frame)} | {frame.hex(' ').upper()}"
+                f"{describe_command(frame)} | {dll_log_text(frame)}"
             )
 
         sent = self._temp_conn.send(frame)
@@ -467,14 +470,14 @@ class ChannelController(QObject):
                 self.logger.warning(
                     f"{self.display_name}: ignoring unexpected Status Query frame "
                     f"while waiting for {pending_label or 'nothing'} - likely "
-                    f"collision noise, not a real response: {frame.raw.hex(' ').upper()}"
+                    f"collision noise, not a real response: {dll_log_text(frame.raw)}"
                 )
             return
         if not is_ack and not is_status:
             if self.logger:
                 self.logger.warning(
                     f"{self.display_name}: ignoring unrecognized frame while "
-                    f"waiting for {pending_label or 'nothing'}: {frame.raw.hex(' ').upper()}"
+                    f"waiting for {pending_label or 'nothing'}: {dll_log_text(frame.raw)}"
                 )
             return
 
@@ -482,7 +485,7 @@ class ChannelController(QObject):
         self._cancel_pending_timeout()
         self._close_temp_conn()
         if self.logger:
-            self.logger.info(f"RX ch{self.wire_address}: {frame.raw.hex(' ').upper()} -> {frame.describe()}")
+            self.logger.info(f"RX ch{self.wire_address}: {dll_log_text(frame.raw)} -> {frame.describe()}")
 
         if is_ack:
             if frame.buf[0] == c.RESP_SUCCESS:

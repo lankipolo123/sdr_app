@@ -68,6 +68,11 @@ UNUSED_QT_MODULES = [
     "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
     "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtStateMachine",
     "PySide6.QtSvg", "PySide6.QtSvgWidgets",  # app icons are .ico/qtawesome fonts, not .svg
+    "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",  # plain QWidgets only, no OpenGL views anywhere
+    "PySide6.QtWebChannel", "PySide6.QtWebSockets", "PySide6.QtNetworkAuth", "PySide6.QtHttpServer",
+    "PySide6.QtQuickControls2", "PySide6.QtQuickTest", "PySide6.QtSpatialAudio",
+    "PySide6.QtGraphs", "PySide6.QtGraphsWidgets", "PySide6.QtQuick3DPhysics",
+    "PySide6.QtVirtualKeyboard", "PySide6.QtTextToSpeech",
     "PySide6.QtTest",  # dry_run.py's own dependency, not the shipped app's
 ]
 
@@ -77,7 +82,14 @@ def main():
         sys.exit(f"Missing icon: {ICON_ICO}")
 
     args = [
-        sys.executable, "-m", "PyInstaller",
+        # -OO strips docstrings and assert statements at compile time,
+        # before PyInstaller ever bundles the resulting bytecode - a
+        # real size cut (docstrings in this codebase are long) and it
+        # also means anyone decompiling the shipped .exe doesn't get
+        # those docstrings back. Confirmed safe: nothing in the actual
+        # app (as opposed to tests/) uses `assert` for real logic, so
+        # -OO stripping asserts can't silently disable anything here.
+        sys.executable, "-OO", "-m", "PyInstaller",
         MAIN_SCRIPT,
         "--name", "Noise Controller",
         "--onefile",

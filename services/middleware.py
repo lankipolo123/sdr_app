@@ -238,9 +238,13 @@ def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
 
     A byte with no table entry (anything outside 00-10, 7E, FF,
     D0-D2 - e.g. most bytes of an arbitrary frequency value) still
-    gets a real answer from the DLL, just its documented "??"
-    (unrecognized) response - shown as-is, not hidden or replaced,
-    since that's the real, honest output for that byte.
+    gets a real answer from the DLL, its documented "??"
+    (unrecognized) response - dropped from the joined output rather
+    than shown, purely for display noise (one less recognizable field
+    isn't information the DLL wasn't already going to omit - "??"
+    carries no more meaning than a gap does). Every byte is still sent
+    to the DLL for real; this only affects which of the real responses
+    make it into the joined string.
 
     Returns (joined_text, None) on success, or (None, reason) the
     moment the DLL itself is unreachable (not loaded/wrong platform) -
@@ -257,7 +261,9 @@ def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
         value, error = dll_command_tokens(bytes([byte]))
         if value is None:
             return None, error
-        tokens.append(decode_dll_text(value))
+        text = decode_dll_text(value)
+        if text != "??":
+            tokens.append(text)
     return " ".join(tokens), None
 
 

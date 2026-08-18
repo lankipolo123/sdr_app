@@ -23,10 +23,17 @@ ever works against __stdcall exports - CDLL would get the stack
 cleanup wrong and likely crash or corrupt the stack on return.
 """
 import ctypes
+import os
 import sys
 
 if not sys.platform.startswith("win"):
     sys.exit("This only runs on Windows - Transit.dll is a native Windows DLL.")
+
+# Running this file directly only puts services\ on sys.path, not the
+# project root - needed below for services.protocol.commands.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from services.protocol.commands import query_status
 
 DLL_PATH = "dll/Transit.dll"  # matches the "dll\Transit.dll" path hardcoded in the original VB6 Declare statement
 
@@ -95,6 +102,36 @@ def test_send_command(command: bytes = b"TEST"):
     return result
 
 
+def test_send_real_status_query(addr: int = 0):
+    """Sends a REAL, well-formed Status Query frame (services/protocol/
+    commands.py's query_status()) through SendCommandToSDR, using its
+    already-declared (char* command, long length) signature - the same
+    raw-buffer-plus-length shape AutoConnectSDR/CheckConnection/
+    DisconnectSDR already use, and the exact same raw bytes pyserial
+    already writes today (see services/serial/serial_thread.py). This
+    is the most direct, least-invented guess available for what
+    SendCommandToSDR expects - not a wild guess, just the one shape its
+    own already-declared argtypes support.
+
+    Status Query is read-only - it asks the module for its current
+    state, it changes nothing - so this is the safest real command to
+    probe the send path with, even against real hardware. It does NOT
+    confirm how a response comes back, though: SendCommandToSDR's
+    signature has no output buffer, and no DLL export for reading data
+    back has been found yet. Call test_check_connection() again after
+    this and compare its buffer by eye against what it showed before -
+    if it now shows Status Query fields (output/mode/freq/bw/power -
+    see ParsedFrame.describe in services/protocol/packet_parser.py),
+    that's evidence CheckConnection doubles as the response channel.
+    If it's unchanged, sending is confirmed but reading responses back
+    through the DLL is still an open question, not a confirmed one."""
+    frame = query_status(addr)
+    print(f"Sending real Status Query frame: {frame.hex(' ').upper()}")
+    result = dll.SendCommandToSDR(frame, len(frame))
+    print(f"SendCommandToSDR(<status query frame>) -> return={result}")
+    return result
+
+
 if __name__ == "__main__":
     print(f"Loaded {DLL_PATH} OK\n")
     print("Step 1: connect")
@@ -115,11 +152,27 @@ if __name__ == "__main__":
         test_send_command()
     else:
         print(
-            f"\nSkipping CommandTokens/SendCommandToSDR - AutoConnectSDR returned "
-            f"{connect_result} (something real is connected). Sending a placeholder "
-            f"command to actual hardware is not safe until the real token format is "
-            f"confirmed - see validate_token() in services/middleware.py for why."
+            f"\nAutoConnectSDR returned {connect_result} - something real is connected."
         )
+        print(
+            "Skipping the placeholder CommandTokens/SendCommandToSDR probes above - "
+            "those send an arbitrary made-up string, not a real command, so they're "
+            "only safe when nothing real is on the other end."
+        )
+        print(
+            "\nStep 4: probe SendCommandToSDR with a REAL, well-formed, read-only "
+            "Status Query frame instead (see test_send_real_status_query()'s "
+            "docstring for why this specific command is the safe choice here)."
+        )
+        answer = input(
+            "Send a real Status Query frame to the connected hardware now? [y/N] "
+        ).strip().lower()
+        if answer == "y":
+            test_send_real_status_query()
+            print("\nStep 4b: check status again - compare this buffer to Step 2's by eye")
+            test_check_connection()
+        else:
+            print("Skipped - no real command sent.")
 
     print("\nStep 5: disconnect")
     test_disconnect()

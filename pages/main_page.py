@@ -11,6 +11,7 @@ from components import (
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import decode_dll_text, dll_command_tokens
 from services.protocol.packet_parser import describe_command
+from services.team_vocab import encode_team_tokens
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
 
@@ -333,17 +334,13 @@ class MainWindow(QMainWindow):
         # Transit.dll - see services/test_command_tokens.py) only has
         # entries for single bytes, one 2-hex-digit key per entry
         # (00-10, 7E, FF, D0-D2) - it does ONE whole-input match, not a
-        # scan across a longer string. Passing it the whole multi-byte
-        # `data` frame (as this used to do) could never match anything
-        # and always fell back to "??" - not a bug, just the wrong
-        # input shape. `address` alone (0-16) IS one of those keys, so
-        # this passes just that byte - confirmed working, see
-        # services/test_command_tokens.py's byte-by-byte results.
-        #
-        # Both Logs and Dev Logs now show only this real, confirmed-
-        # working middleware value - no raw hex anywhere, since the
-        # whole point of Transit.dll is that raw hex is never what's
-        # displayed or sent to an external party.
+        # scan across a longer string. `address` alone (0-16) IS one
+        # of those keys, so this passes just that byte - confirmed
+        # working, see services/test_command_tokens.py's byte-by-byte
+        # results. Per the senior: the DLL "just calls the function
+        # name, not anything too much" - i.e. it's this simple table
+        # lookup and nothing smarter, so the FME/NOX/etc vocabulary
+        # below is NOT fed into it or expected to come out of it.
         decoded = describe_command(data)
         encoded_value, encoded_error = dll_command_tokens(bytes([address]))
         # The literal token text ("X#P"), not the hex it's built from -
@@ -356,12 +353,18 @@ class MainWindow(QMainWindow):
         self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
             dev_display = encoded_text if encoded_text is not None else f"[middleware unavailable: {encoded_error}]"
-            # Two separate list items, not one line with embedded
+            # services/team_vocab.py: the FME/NOX/NTX/... vocabulary -
+            # separate from Transit.dll entirely, not derived from or
+            # fed into it (see comment above). Shown as its own line
+            # so the two don't get conflated as one value.
+            team_tokens = encode_team_tokens(data)
+            # Three separate list items, not one line with embedded
             # newlines - QListWidget doesn't grow a row's height for
             # multi-line text without extra delegate/word-wrap setup,
             # so embedded \n would just get squashed into one row.
             self.dev_logs_panel.append_line(f"CH{address:02d}: {decoded}")
             self.dev_logs_panel.append_line(f"ENC: {dev_display}")
+            self.dev_logs_panel.append_line(f"TOK: {team_tokens}")
 
     def _on_raw_rx(self, address: int, data: bytes):
         self.logs_panel.append_line(f"RX CH{address:02d}: {data.hex(' ').upper()}")

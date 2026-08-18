@@ -369,7 +369,25 @@ class MainWindow(QMainWindow):
             self.dev_logs_panel.append_line(f"TOK: {team_tokens}")
 
     def _on_raw_rx(self, address: int, data: bytes):
-        self.logs_panel.append_line(f"RX CH{address:02d}: {data.hex(' ').upper()}")
+        # Same no-raw-hex rule as _on_raw_tx above - this used to show
+        # data.hex(' ').upper() directly, which was an oversight, not a
+        # deliberate exception: RX was never brought in line with TX
+        # when the DLL/vocabulary switch happened there.
+        #
+        # `data` here is whatever bytes were actually read off the
+        # port, BEFORE the frame parser runs - it may be a partial or
+        # otherwise invalid chunk, not guaranteed to be a well-formed
+        # frame (see ChannelController._on_raw_rx_bytes). dll_decode_
+        # frame() has no such assumption - it just maps each byte
+        # through CommandTokens independently - so it's used here
+        # instead of encode_team_tokens(), which assumes a real
+        # HEAD/type/addr/buf_len/payload layout.
+        encoded_value, encoded_error = dll_decode_frame(data)
+        main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
+        self.logs_panel.append_line(f"RX CH{address:02d}: {main_display}")
+        if self.dev_mode:
+            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
+            self.dev_logs_panel.append_line(f"RX ENC CH{address:02d}: {dev_display}")
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

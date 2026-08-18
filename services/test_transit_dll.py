@@ -198,6 +198,42 @@ def test_send_real_status_query_hex(addr: int = 0):
     return result
 
 
+def translate_frame_via_dll(frame: bytes) -> str:
+    """Runs CommandTokens once per byte of `frame` (its confirmed,
+    only-ever-one-byte-per-call shape - see services/middleware.py's
+    dll_decode_frame(), same idea, duplicated here rather than
+    imported so this script keeps working standalone) and concatenates
+    the results with no separator - CommandTokens' own outputs are
+    short fixed-width codes (X#B, XME, ...), so a plain concatenation
+    is the most direct guess at what a translated command string looks
+    like, no space character invented that was never observed
+    anywhere in the DLL's own output."""
+    tokens = []
+    for byte in frame:
+        out = ctypes.create_string_buffer(256)
+        dll.CommandTokens(bytes([byte]).hex().upper().encode(), out, ctypes.sizeof(out))
+        tokens.append(out.value.decode('ascii', errors='replace'))
+    return "".join(tokens)
+
+
+def test_send_translated_status_query(addr: int = 0):
+    """The lead from CommandTokens/SendCommandToSDR's own names (the
+    whiteboard's "Translate Tokens" -> "Send to SDR" pipeline): rather
+    than sending the raw Status Query frame (confirmed failing, -2,
+    both as raw bytes and hex-encoded - see the two probes above),
+    this sends what CommandTokens itself produces for that frame -
+    e.g. "XMEXMEX#CX#0X#0X#JX#M" for a real 7-byte Status Query -
+    exactly the translated form these two function names suggest
+    SendCommandToSDR is meant to receive next."""
+    frame = query_status(addr)
+    translated = translate_frame_via_dll(frame)
+    print(f"CommandTokens-translated Status Query: {translated!r}")
+    command = translated.encode()
+    result = dll.SendCommandToSDR(command, len(command))
+    print(f"SendCommandToSDR(<translated status query>) -> return={result}")
+    return result
+
+
 if __name__ == "__main__":
     print(f"Loaded {DLL_PATH} OK\n")
     print("Step 1: connect")
@@ -249,7 +285,13 @@ if __name__ == "__main__":
             test_send_real_status_query()
             print("\nStep 4b: hex-encoded")
             test_send_real_status_query_hex()
-            print("\nStep 4c: check status again - compare this buffer to Step 2's by eye")
+            print(
+                "\nStep 4c: CommandTokens-translated (Step 2b confirmed CommandTokens "
+                "only recognizes real protocol bytes, not the FME/NOX vocabulary - "
+                "this sends ITS translated output, not the raw frame)"
+            )
+            test_send_translated_status_query()
+            print("\nStep 4d: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

@@ -132,6 +132,27 @@ def test_send_real_status_query(addr: int = 0):
     return result
 
 
+def test_send_real_status_query_hex(addr: int = 0):
+    """Same real Status Query frame as test_send_real_status_query(),
+    but hex-encoded and uppercased first (frame.hex().upper().encode())
+    instead of sent as raw binary - the same fix already confirmed
+    necessary for CommandTokens (see dll_command_tokens()'s docstring
+    in services/middleware.py): a char* argument across this DLL's ABI
+    gets truncated at the first embedded null byte if treated as a C
+    string internally, and a real protocol frame like this one
+    (7E 7E FF 00 00 0A 0D) has null bytes sitting right in the middle
+    (the addr/buf_len fields). Worth trying before concluding anything
+    about SendCommandToSDR's real expected format from a raw-bytes
+    attempt alone - the raw attempt may have just hit the same
+    already-known truncation bug, not a wrong approach."""
+    frame = query_status(addr)
+    hex_command = frame.hex().upper().encode()
+    print(f"Sending hex-encoded Status Query frame: {hex_command!r}")
+    result = dll.SendCommandToSDR(hex_command, len(hex_command))
+    print(f"SendCommandToSDR(<hex-encoded status query>) -> return={result}")
+    return result
+
+
 if __name__ == "__main__":
     print(f"Loaded {DLL_PATH} OK\n")
     print("Step 1: connect")
@@ -143,8 +164,10 @@ if __name__ == "__main__":
     # real is on the other end - a placeholder string is exactly the
     # "manipulated/unvalidated command" risk this whole project exists
     # to prevent once real hardware is actually connected. -1 is the
-    # observed "nothing connected" return; any other value means
-    # AutoConnectSDR found something real.
+    # observed "nothing connected" return; 4 is now a CONFIRMED
+    # "connected" return (buffer=b'Connected', observed against real
+    # hardware) - any non--1 value means AutoConnectSDR found something
+    # real, not just "not -1".
     if connect_result == -1:
         print("\nStep 3: translate a placeholder token (exploratory - format unconfirmed)")
         test_command_tokens()
@@ -161,15 +184,21 @@ if __name__ == "__main__":
         )
         print(
             "\nStep 4: probe SendCommandToSDR with a REAL, well-formed, read-only "
-            "Status Query frame instead (see test_send_real_status_query()'s "
-            "docstring for why this specific command is the safe choice here)."
+            "Status Query frame - once as raw bytes, once hex-encoded (the fix "
+            "already confirmed necessary for CommandTokens - see "
+            "test_send_real_status_query_hex()'s docstring). A raw-bytes attempt "
+            "failing doesn't confirm the format is wrong; it may just be the same "
+            "null-byte truncation bug CommandTokens already hit."
         )
         answer = input(
-            "Send a real Status Query frame to the connected hardware now? [y/N] "
+            "Send real Status Query probes to the connected hardware now? [y/N] "
         ).strip().lower()
         if answer == "y":
+            print("\nStep 4a: raw bytes")
             test_send_real_status_query()
-            print("\nStep 4b: check status again - compare this buffer to Step 2's by eye")
+            print("\nStep 4b: hex-encoded")
+            test_send_real_status_query_hex()
+            print("\nStep 4c: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

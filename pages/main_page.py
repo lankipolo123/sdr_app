@@ -9,7 +9,7 @@ from components import (
     TitleBar, ResizableContainer,
 )
 from hooks.use_channels import MAX_CHANNELS
-from services.middleware import decode_dll_text, dll_command_tokens
+from services.middleware import dll_decode_frame
 from services.protocol.packet_parser import describe_command
 from services.team_vocab import encode_team_tokens
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
@@ -333,26 +333,28 @@ class MainWindow(QMainWindow):
         # CommandTokens' real lookup table (confirmed by disassembling
         # Transit.dll - see services/test_command_tokens.py) only has
         # entries for single bytes, one 2-hex-digit key per entry
-        # (00-10, 7E, FF, D0-D2) - it does ONE whole-input match, not a
-        # scan across a longer string. `address` alone (0-16) IS one
-        # of those keys, so this passes just that byte - confirmed
-        # working, see services/test_command_tokens.py's byte-by-byte
-        # results. Per the senior: the DLL "just calls the function
-        # name, not anything too much" - i.e. it's this simple table
-        # lookup and nothing smarter, so the FME/NOX/etc vocabulary
-        # below is NOT fed into it or expected to come out of it.
+        # (00-10, 7E, FF, D0-D2) - it does ONE whole-input match per
+        # call, never a scan across a longer string. Per the senior:
+        # the DLL "just calls the function name, not anything too
+        # much" - it's this simple table lookup and nothing smarter,
+        # so the FME/NOX/etc vocabulary below is NOT fed into it or
+        # expected to come out of it.
+        #
+        # dll_decode_frame() (services/middleware.py) covers the WHOLE
+        # frame - not just the address byte - by driving that same
+        # confirmed single-byte call once per byte and joining the
+        # results, since that's the only way to get full-frame
+        # coverage out of a function that can't take more than one
+        # byte per call.
         decoded = describe_command(data)
-        encoded_value, encoded_error = dll_command_tokens(bytes([address]))
-        # The literal token text ("X#P"), not the hex it's built from -
-        # see decode_dll_text()'s docstring for why this is safe now.
-        encoded_text = decode_dll_text(encoded_value) if encoded_value is not None else None
+        encoded_value, encoded_error = dll_decode_frame(data)
         # Short, generic fallback in the main log if the DLL isn't
         # reachable - the real reason (missing file, wrong platform,
         # call failure) only shows in dev mode below, not here.
-        main_display = encoded_text if encoded_text is not None else "[middleware unavailable]"
+        main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
         self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
         if self.dev_mode:
-            dev_display = encoded_text if encoded_text is not None else f"[middleware unavailable: {encoded_error}]"
+            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
             # services/team_vocab.py: the FME/NOX/NTX/... vocabulary -
             # separate from Transit.dll entirely, not derived from or
             # fed into it (see comment above). Shown as its own line

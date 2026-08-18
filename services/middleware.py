@@ -285,6 +285,20 @@ def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
             out = ctypes.create_string_buffer(256)
             dll.CommandTokens(bytes([byte]).hex().upper().encode(), out, ctypes.sizeof(out))
             token = out.value  # e.g. b"X#E" - CommandTokens' own confirmed output, used as-is
+            if token == b"??":
+                # No token exists for this byte - true for most bytes of
+                # a Signal Control frame's frequency field (a real
+                # 300-6000 MHz value, not a small enum like mode/
+                # bandwidth/power, which DO all fall inside the
+                # confirmed 22-entry table). Sending the literal text
+                # "??" as a stand-in for an arbitrary byte would be
+                # wrong - it isn't a real value, just CommandTokens'
+                # "unrecognized" marker. Falls back to the raw byte
+                # itself instead, same one-unit-per-call pattern,
+                # unconfirmed against real hardware (unlike the
+                # in-table byte case above) but the closest honest
+                # substitute for "there is no token for this value."
+                token = bytes([byte])
             result = dll.SendCommandToSDR(token, len(token))
         return result, None
     except Exception as e:

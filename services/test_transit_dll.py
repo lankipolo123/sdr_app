@@ -34,6 +34,10 @@ if not sys.platform.startswith("win"):
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.protocol.commands import query_status
+from services.team_vocab import (
+    HEAD_TOKEN, STOP_TOKEN, TYPE_TOKENS, OUTPUT_TOKENS, MODE_TOKENS,
+    BANDWIDTH_TOKENS, RESP_TOKENS, LEVEL_TOKENS,
+)
 
 DLL_PATH = "dll/Transit.dll"  # matches the "dll\Transit.dll" path hardcoded in the original VB6 Declare statement
 
@@ -91,6 +95,47 @@ def test_command_tokens(token: bytes = b"TEST"):
     result = dll.CommandTokens(token, out, ctypes.sizeof(out))
     print(f"CommandTokens({token!r}) -> return={result}, buffer={out.value!r}")
     return result
+
+
+def test_command_tokens_team_vocab():
+    """Both real SendCommandToSDR attempts (raw frame bytes, and the
+    same frame hex-encoded) returned -2 - the same failure code either
+    way, which rules out null-byte truncation as the cause (the
+    hex-encoded attempt has zero null bytes and still failed
+    identically). That points at content, not encoding: SendCommandToSDR
+    may only accept output that's already been through CommandTokens,
+    not a raw protocol frame at all - matching the function names
+    themselves (CommandTokens = "Translate Tokens" on the whiteboard,
+    feeding SendCommandToSDR next) and matching what you said you made
+    the FME/NOX/etc vocabulary FOR: CommandTokens' real input, not a
+    display-only scheme.
+
+    Every CommandTokens probe so far (services/test_command_tokens.py)
+    only tried single raw hex bytes (0x00-0x10 etc), never your actual
+    multi-character token strings. This tries those instead - every
+    token from services/team_vocab.py, one at a time, as plain ASCII
+    text (e.g. b"NOX", b"FME"). Fully safe to run even with real
+    hardware connected: CommandTokens only translates, per its own
+    name and the whiteboard design - it doesn't touch
+    SendCommandToSDR or the wire itself.
+
+    A token CommandTokens actually recognizes should come back as
+    something other than "??" - if any do, that's the strongest lead
+    yet on what SendCommandToSDR expects as input."""
+    tokens = {
+        "HEAD": HEAD_TOKEN,
+        "STOP": STOP_TOKEN,
+        **{f"TYPE({hex(k)})": v for k, v in TYPE_TOKENS.items()},
+        **{f"OUTPUT({hex(k)})": v for k, v in OUTPUT_TOKENS.items()},
+        **{f"MODE({hex(k)})": v for k, v in MODE_TOKENS.items()},
+        **{f"BW({mhz}MHz)": v for mhz, v in BANDWIDTH_TOKENS.items()},
+        **{f"RESP({hex(k)})": v for k, v in RESP_TOKENS.items()},
+        **{f"LEVEL({lvl})": v for lvl, v in LEVEL_TOKENS.items()},
+    }
+    for label, token in tokens.items():
+        out = ctypes.create_string_buffer(256)
+        result = dll.CommandTokens(token.encode(), out, ctypes.sizeof(out))
+        print(f"  {label} = {token!r} -> return={result}, buffer={out.value!r}")
 
 
 def test_send_command(command: bytes = b"TEST"):
@@ -159,6 +204,12 @@ if __name__ == "__main__":
     connect_result = test_auto_connect()
     print("\nStep 2: check status")
     test_check_connection()
+
+    # Safe regardless of connection state - CommandTokens only
+    # translates, per its own name and the whiteboard design, it
+    # doesn't touch the wire or SendCommandToSDR itself.
+    print("\nStep 2b: probe CommandTokens with the real FME/NOX/etc team vocabulary")
+    test_command_tokens_team_vocab()
 
     # SendCommandToSDR("TEST") is only safe to fire blind when nothing
     # real is on the other end - a placeholder string is exactly the

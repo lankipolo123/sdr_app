@@ -159,19 +159,25 @@ def _get_dll():
         # AutoConnectSDR's shape is CONFIRMED (real VB6 Declare
         # statement, and observed working against real hardware -
         # return=4, buffer=b'Connected' - see services/test_transit_dll.py).
-        # CheckConnection/DisconnectSDR/SendCommandToSDR are declared
-        # the same (char* buffer, long length) -> long shape by
-        # symmetry, NOT independently confirmed the same way - see
-        # services/test_transit_dll.py's docstring for the full history,
-        # including that SendCommandToSDR has returned -2 for every
-        # content format tried against real hardware so far.
+        # CheckConnection/DisconnectSDR are declared the same (char*
+        # buffer, long length) -> long shape by symmetry, NOT
+        # independently confirmed the same way.
         dll.AutoConnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
         dll.AutoConnectSDR.restype = ctypes.c_long
         dll.CheckConnection.argtypes = [ctypes.c_char_p, ctypes.c_long]
         dll.CheckConnection.restype = ctypes.c_long
         dll.DisconnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
         dll.DisconnectSDR.restype = ctypes.c_long
-        dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+        # SendCommandToSDR's signature - CONFIRMED via
+        # services/test_transit_dll.py's SEND_ATTEMPTS battery: 8 other
+        # signature/content guesses all returned -2 (one crashed) on
+        # real hardware; THIS shape (address as its own string
+        # parameter, not embedded in the command) returned 1
+        # consistently across 5 real attempts in a row. That confirms
+        # the DLL accepts this call - it does NOT yet confirm real
+        # hardware receives/acts on it (no response-reading mechanism
+        # exists yet - see dll_send_command()'s docstring).
+        dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
         dll.SendCommandToSDR.restype = ctypes.c_long
         _dll = dll
     except OSError as e:
@@ -236,23 +242,39 @@ def dll_disconnect() -> tuple[int | None, str | None, str | None]:
 
 
 def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
-    """Calls SendCommandToSDR with `data` sent exactly as given - no
-    translation, no hex-encoding done here. NOT CONFIRMED WORKING:
-    every content format tried against real hardware so far (raw frame
-    bytes, hex-encoded, CommandTokens-translated, address-token + real
-    frame) has returned -2 identically - see services/test_transit_dll.py's
-    docstring for the full investigation. This function doesn't pick a
-    format; the caller decides what `data` contains.
+    """Calls SendCommandToSDR with the address split out as its own
+    parameter - CONFIRMED as the one shape (of 9 tried, see
+    services/test_transit_dll.py's SEND_ATTEMPTS) that doesn't return
+    -2: SendCommandToSDR(str(address).encode(), content, len(content)),
+    where content is `data` (a real frame built by packet_builder.py -
+    HEAD, type, addr, buf_len, payload, STOP) with the address byte at
+    index 3 removed and passed separately instead. Returned 1
+    consistently across 5 real attempts in a row on real hardware, not
+    a one-off.
+
+    This confirms the DLL ACCEPTS the call - it does NOT yet confirm
+    real hardware receives or acts on it. There is still no confirmed
+    way to read a response back through the DLL (SendCommandToSDR's
+    signature has no output buffer, and no "read a response" export
+    has been found), so whether a module actually reacts to this still
+    needs a physical check (spectrum analyzer, an LED, anything
+    external) on an actuating command like Output ON - not something
+    this function alone can confirm.
 
     Returns (return_code, None) on a completed call - including a
     negative/failure return_code, which is still a REAL answer from the
     DLL, not a Python-side failure - or (None, reason) only if the DLL
-    itself couldn't be reached."""
+    itself couldn't be reached or `data` is too short to contain an
+    address byte."""
+    if len(data) < 4:
+        return None, f"frame too short to contain an address byte: {len(data)} bytes"
     dll = _get_dll()
     if dll is None:
         return None, _dll_load_error
     try:
-        result = dll.SendCommandToSDR(data, len(data))
+        addr_str = str(data[3]).encode()
+        content = data[:3] + data[4:]
+        result = dll.SendCommandToSDR(addr_str, content, len(content))
         return result, None
     except Exception as e:
         return None, str(e)

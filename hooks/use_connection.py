@@ -10,14 +10,18 @@ class ConnectionController(QObject):
     internally, confirmed via AutoConnectSDR (services/test_transit_dll.py:
     return=4, buffer=b'Connected' with real hardware attached).
 
-    SendCommandToSDR's real expected content format is NOT confirmed -
-    every format tried against real hardware (raw frame bytes,
-    hex-encoded, CommandTokens-translated, address-token + real frame)
-    has returned -2 identically. send() below still calls it and still
-    reports the command as sent (see send()'s own docstring for why),
-    but nothing currently confirms a real module ever receives or acts
-    on it - that's a known, open gap, not something this class papers
-    over.
+    SendCommandToSDR's content format is now CONFIRMED (not
+    guessed) to be accepted by the DLL, out of 9 signature/content
+    theories tried (services/test_transit_dll.py's SEND_ATTEMPTS): the
+    address passed as its own string parameter, separate from the rest
+    of the command, returned 1 consistently across 5 real attempts in
+    a row - every other theory returned -2 (one crashed). See
+    dll_send_command()'s own docstring (services/middleware.py) for the
+    exact shape. This confirms the DLL ACCEPTS the call - it does NOT
+    yet confirm a real module receives or acts on it, since there is
+    still no confirmed way to read a response back (see the next
+    paragraph) - that's a known, open gap, not something this class
+    papers over.
 
     There is also no confirmed way to receive a response back through
     the DLL - SendCommandToSDR's signature has no output buffer, and no
@@ -94,14 +98,16 @@ class ConnectionController(QObject):
             self.error.emit(f"SendCommandToSDR unreachable: {error}")
             return False
         # Emitted regardless of return_code - NOT a confirmation the
-        # command was correctly received. SendCommandToSDR's return
-        # code isn't confirmed to mean "success" vs "failure" at all
-        # yet (see dll_send_command()'s docstring). raw_tx here means
-        # "this reached the DLL call boundary," the same thing
-        # pyserial's write() used to mean (the OS accepted the bytes,
-        # not that hardware acked them) - real confirmation only ever
-        # came from a later response frame, which nothing currently
-        # produces (see frame_received in the class docstring above).
+        # command was correctly received. The call shape itself is now
+        # confirmed accepted (see class docstring), but what a given
+        # return_code actually MEANS (does 1 mean "success"? does a
+        # negative value always mean "rejected"?) is still not
+        # independently confirmed. raw_tx here means "this reached the
+        # DLL call boundary," the same thing pyserial's write() used to
+        # mean (the OS accepted the bytes, not that hardware acked
+        # them) - real confirmation only ever came from a later
+        # response frame, which nothing currently produces (see
+        # frame_received in the class docstring above).
         self.raw_tx.emit(data)
         if return_code < 0:
             self.error.emit(f"SendCommandToSDR returned {return_code} (meaning not confirmed yet)")

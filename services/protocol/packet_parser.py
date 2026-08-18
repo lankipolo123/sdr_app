@@ -6,21 +6,6 @@ from state.level_map import HEX_TO_LEVEL, LEVEL_LABELS
 
 
 def describe_command(frame: bytes) -> str:
-    """Human-readable summary of an OUTGOING command frame - Signal
-    Control's payload here means mode+freq+bandwidth+power to SET, not
-    a 1-byte success/fail response code the way the same type byte
-    means in a reply (see ParsedFrame.describe) - commands and
-    responses need separate decoders even though they share type
-    bytes. Decodes the actual bytes about to go out (re-derives fields
-    the same way packet_builder.py encodes them) rather than trusting
-    the caller's own free-text label, so it can't silently drift out
-    of sync with what the frame actually contains.
-
-    Power shows as the same Low/Med/High/Off vocabulary the slider
-    itself uses (see state/level_map.py) rather than the raw hex code
-    - a log meant to be human-readable shouldn't make the reader
-    mentally reverse a hex-to-level lookup that's already defined
-    once, right there."""
     if len(frame) < 5:
         return "malformed frame"
     type_byte = frame[2]

@@ -1,31 +1,3 @@
-"""Full-stack dry run against a fake Transit.dll - no real serial port,
-no real DLL needed.
-
-Exercises the same code path a real run does end to end: AppController,
-MainWindow, ChannelManager, ChannelController, ChannelCard, config
-persistence, and shutdown safety - all against a FakeSDR standing in
-for Transit.dll (see tests/fake_hardware.py), so regressions anywhere
-in the "command sent -> UI updates" pipeline get caught without needing
-hardware or a real DLL on hand.
-
-IMPORTANT SCOPE CHANGE from the pyserial-based version of this file:
-there is currently no confirmed way to receive a real response back
-through the DLL (see services/test_transit_dll.py). Every command now
-always hits its response timeout and applies optimistically -
-UNCONFIRMED - the same path a real unanswered command already used to
-hit, except now EVERY command takes that path, not just an unlucky
-one. Scenarios that used to depend on a confirmed ACK/rejection/byte-
-level-collision response arriving (explicit device rejection reverting
-the UI, colliding-bus corruption, per-address ground-truth checks via
-a simulated device's own state) have been removed - there is nothing
-left to simulate a response WITH. What's still verified: the correct
-frame bytes get sent for each action, the port scheduler still
-serializes access correctly, and the optimistic-apply/UNCONFIRMED
-path itself behaves as designed.
-
-Run: python tests/dry_run.py
-Exits non-zero (and prints a summary of FAILs) if anything's wrong.
-"""
 import configparser
 import os
 import sys
@@ -56,9 +28,6 @@ def pump(ms: int):
 
 
 def main():
-    # Qt swallows exceptions raised inside signal handlers by default -
-    # without this, a real bug in a slot would print a traceback but
-    # otherwise pass silently and this dry run would report false PASSes.
     def excepthook(exc_type, exc_value, exc_tb):
         import traceback
         UNCAUGHT.append("".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
@@ -84,25 +53,13 @@ def main():
     from services.protocol.packet_parser import ParsedFrame
     from state.level_map import LEVEL_LABELS, LEVEL_TO_HEX
 
-    WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
+    WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
-    # Slider sends are now debounced (see channel_card.py) - any test that
-    # drags the slider and expects the resulting command to have already
-    # gone out needs to wait out the debounce window first.
     SLIDER_SETTLE_MS = SLIDER_SEND_DEBOUNCE_MS + 100
 
-    # Route confirm dialogs straight to "confirmed" - a real modal exec()
-    # loop would just hang forever with nothing to click it.
     ConfirmDialog.ask = staticmethod(lambda *a, **k: True)
 
     def make_app_controller(work_dir: str | None = None):
-        # Each call gets its OWN fresh, isolated temp dir by default - two
-        # unrelated test sections must never share a config.json/
-        # channels.ini, or one section's leftover channel state (now
-        # including mode/output, not just last_level) would silently
-        # bleed into the next section's "fresh" controller. Only the
-        # explicit restart test below passes the SAME work_dir on purpose,
-        # to prove state actually survives a real restart.
         work_dir = work_dir or tempfile.mkdtemp(prefix="sdr_dry_run_")
         controller = AppController.__new__(AppController)
         controller.config = ConfigService(path=os.path.join(work_dir, "config.json"))
@@ -119,11 +76,6 @@ def main():
     window = MainWindow(controller)
     window.show()
 
-    # There's no warning banner in the UI anymore (removed - it gave
-    # misleading "no response"/rejection reports even on commands that
-    # had actually reached the hardware, on a line where confirmation
-    # itself is unreliable). command_timeout still fires and still gets
-    # logged - just captured directly here instead of read off a label.
     messages = []
     controller.channels.command_timeout.connect(lambda msg: messages.append(msg))
 
@@ -142,7 +94,7 @@ def main():
     check("card starts locked - slider disabled until tapped", not card.slider.isEnabled())
 
     print("\n=== Tap-to-arm: locked controls can't send until the card itself is clicked ===")
-    card.toggle.click()  # disabled - click() is a no-op on a disabled QPushButton
+    card.toggle.click()
     pump(100)
     check("a click on a still-locked toggle does nothing", not sdr.sent_frames)
     card.arm()
@@ -155,18 +107,18 @@ def main():
     check("arming CH02 locks CH01 back down", not card.toggle.isEnabled())
     check("CH01's slider is locked too", not card.slider.isEnabled())
     check("CH02 itself is armed", other_card.toggle.isEnabled())
-    card.arm()  # switch attention back to CH01 for the rest of this run
+    card.arm()
     check("re-arming CH01 locks CH02 back down", not other_card.toggle.isEnabled())
 
     print("\n=== Clicking outside every card locks the armed one back down too ===")
-    QTest.mouseClick(window.controls_bar.status_label, Qt.LeftButton)  # a neutral widget, not part of any card
+    QTest.mouseClick(window.controls_bar.status_label, Qt.LeftButton)
     check("clicking outside CH01 locks it back down", not card.toggle.isEnabled())
     check("no card is armed anymore", window._armed_card is None)
-    card.arm()  # re-arm CH01 for the rest of this run
+    card.arm()
 
     print("\n=== ON button (single Output ON command) - no confirmed response path, applies optimistically ===")
     card.toggle.click()
-    pump(WORST_CASE_MS)  # every command now exhausts its retry cycle - see module docstring
+    pump(WORST_CASE_MS)
     check("toggle stayed checked (applied optimistically after the retry cycle exhausted)", card.toggle.isChecked())
     check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
     check("the correct Output ON frame was actually sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_on(1))
@@ -200,7 +152,7 @@ def main():
     check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
 
     print("\n=== OFF button turned it off - power_code stays whatever the slider last set it to ===")
-    card.toggle.click()  # off -> on again: still just a single Output ON command
+    card.toggle.click()
     pump(WORST_CASE_MS)
     check("hardware back on (optimistic apply)", card.toggle.isChecked())
     check("slider visually resumed to last non-off level (3, Max) - UI-only", card.slider.value() == 3)
@@ -233,7 +185,7 @@ def main():
         window2._cards[0].toggle.isChecked(),
     )
     window2._cards[0].arm()
-    window2._cards[0].toggle.click()  # was restored to on, so this click turns it off this time
+    window2._cards[0].toggle.click()
     pump(WORST_CASE_MS)
     check("second run's OFF click applies optimistically", not window2._cards[0].toggle.isChecked())
     check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
@@ -248,9 +200,7 @@ def main():
     window3 = MainWindow(controller3)
     window3.show()
     window3._cards[0].arm()
-    window3._cards[0].toggle.click()  # sends a command; nothing will ever confirm it
-    # Deliberately no pump() here - shut down while the retry/response
-    # timer is still running.
+    window3._cards[0].toggle.click()
     controller3.shutdown()
     window3.close()
     pump(50)
@@ -287,7 +237,7 @@ def main():
     check("starts off, as configured", not window16._cards[0].toggle.isChecked())
 
     window16._cards[0].arm()
-    window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands, sent one after the other
+    window16._cards[0].slider.setValue(2)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_resume_signal = commands.set_signal(
         1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[2],
@@ -314,11 +264,11 @@ def main():
     window19.show()
 
     window19._cards[0].arm()
-    window19._cards[0].toggle.click()  # channel A starts its retry cycle - holds the port for its 1st attempt
+    window19._cards[0].toggle.click()
     pump(50)
 
     window19._cards[1].arm()
-    window19._cards[1].toggle.click()  # channel B's command queues behind A's in-flight attempt
+    window19._cards[1].toggle.click()
     pump(200)
     check(
         "channel B hasn't sent anything yet - A's 1st attempt hasn't timed out yet",
@@ -329,13 +279,13 @@ def main():
         controller19.channels.controllers[1]._awaiting_port,
     )
 
-    pump(RESPONSE_TIMEOUT_MS + 300)  # A's 1st attempt times out and releases the port - B shouldn't have to wait any longer than that
+    pump(RESPONSE_TIMEOUT_MS + 300)
     check(
         "channel B's command actually goes out as soon as A's current attempt releases the port, not after A's whole cycle",
         any(f == commands.output_on(2) for f in sched_sdr.sent_frames),
     )
 
-    pump(WORST_CASE_MS + 500)  # A yielded one attempt to B, so give it that much extra room to finish its own cycle
+    pump(WORST_CASE_MS + 500)
     check(
         "channel A's own UI still shows optimistically applied (unconfirmed) once its cycle finally exhausts",
         window19._cards[0].toggle.isChecked(),
@@ -353,12 +303,12 @@ def main():
     window20.show()
 
     window20._cards[0].arm()
-    window20._cards[0].toggle.click()  # channel A starts its retry cycle - holds the port for its 1st attempt
+    window20._cards[0].toggle.click()
     pump(50)
 
     query_wait_results = []
     controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
-    controller20.channels.brute_force_query(2, on=True)  # queues behind channel A's in-flight attempt
+    controller20.channels.brute_force_query(2, on=True)
     pump(200)
     check(
         "Query hasn't sent anything yet - channel A's 1st attempt hasn't timed out yet",
@@ -366,7 +316,7 @@ def main():
     )
     check("Query produced no result yet (still queued)", not query_wait_results)
 
-    pump(RESPONSE_TIMEOUT_MS + 300)  # channel A's 1st attempt times out and releases the port - Query shouldn't have to wait any longer than that
+    pump(RESPONSE_TIMEOUT_MS + 300)
     check(
         "Query's command actually goes out as soon as channel A's current attempt releases the port, not after A's whole cycle",
         any(f == commands.output_on(2) for f in query_wait_sdr.sent_frames),
@@ -396,14 +346,14 @@ def main():
     card8 = window8._cards[0]
     card8.arm()
 
-    card8.toggle.click()  # ON - stays genuinely pending, nothing ever confirms it
+    card8.toggle.click()
     pump(100)
     check("output not yet resolved (command still pending)", card8.controller._pending_label is not None)
 
     spurious = ParsedFrame(
         type=c.TYPE_STATUS_QUERY,
         addr=0,
-        buf=bytes([0x00, 0xAA, 0x00, 0x00, 0x03, 0xAB]),  # claims output OFF, power 0xAB - nobody sent this
+        buf=bytes([0x00, 0xAA, 0x00, 0x00, 0x03, 0xAB]),
         raw=b"\x7E\x7E\xFF\x00\x06\x00\xAA\x00\x00\x03\xAB\x0A\x0D",
     )
     card8.controller.handle_frame(spurious)
@@ -420,7 +370,7 @@ def main():
         card8.controller._pending_label is not None,
     )
 
-    pump(WORST_CASE_MS)  # let the real command exhaust retries normally
+    pump(WORST_CASE_MS)
     check(
         "the real command still resolves normally afterward (optimistic apply, undisturbed)",
         card8.toggle.isChecked(),
@@ -476,7 +426,7 @@ def main():
     check("mode dropdown starts on Pseudo Random Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
 
     window_mode._cards[0].arm()
-    window_mode._cards[0].mode_combo.setCurrentIndex(1)  # Linear Sweep
+    window_mode._cards[0].mode_combo.setCurrentIndex(1)
     pump(300)
     check("picking a mode alone does NOT send - Set is required", not mode_sdr.sent_frames)
     window_mode._cards[0].mode_set_btn.click()
@@ -487,11 +437,6 @@ def main():
     check("Set actually sent the Linear Sweep Signal Control frame", mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame)
     check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
 
-    # Regression: a combo box's dropdown list is its own top-level popup,
-    # not a child of the card in Qt's widget tree - isAncestorOf() used
-    # to see a click on an item in that list as "outside" the card and
-    # disarm it mid-selection, disabling the combo box right as the
-    # click was supposed to register (reported as "hard to click on it").
     window_mode._cards[0].mode_combo.showPopup()
     pump(50)
     popup = QApplication.activePopupWidget()

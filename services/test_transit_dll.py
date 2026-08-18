@@ -1,34 +1,3 @@
-"""Manual test harness for Transit.dll - run this ON WINDOWS with a
-Python interpreter matching the DLL's own bitness (confirm with `file`/
-pefile - a 64-bit Python process cannot load a 32-bit DLL or vice versa).
-
-AutoConnectSDR/CheckConnection/DisconnectSDR's signatures - a string
-buffer + a length, returning a status code - are now CONFIRMED working
-against the real 64-bit DLL (loaded clean, no crash, sensible output:
-AutoConnectSDR returned -1/"DisConnected" with no real hardware
-attached, exactly the expected behavior). AutoConnectSDR's shape was
-originally taken from the VB6 Declare statement:
-    Private Declare Function AutoConnectSDR Lib "dll\\Transit.dll" _
-        (ByVal outBuffer As String, ByVal maxLength As Long) As Long
-
-CommandTokens and SendCommandToSDR's real behavior is now CONFIRMED
-- both by disassembling the REAL working 32-bit Transit.dll (pulled
-from an actual installed "Noise Controller" app, not necessarily the
-same file as this repo's dll/Transit.dll - see the conversation) and
-by real hardware actually responding: Output ON/OFF and Signal Control
-(mode/frequency/bandwidth/power) both confirmed physically reaching
-the module, via send_frame_one_token_at_a_time()'s approach - one
-CommandTokens-translated token per byte, hex-text fallback for bytes
-with no alias (see that function's docstring for the exact, traced
-parsing logic this is based on). test_command_tokens()/test_send_command()
-below are the OLD placeholder probes from before any of this was
-confirmed - kept for the -1/nothing-connected path, not because
-they're still the recommended way to test anything.
-
-ctypes.WinDLL (not CDLL) because VB6's plain Declare statement only
-ever works against __stdcall exports - CDLL would get the stack
-cleanup wrong and likely crash or corrupt the stack on return.
-"""
 import ctypes
 import os
 import sys
@@ -36,8 +5,6 @@ import sys
 if not sys.platform.startswith("win"):
     sys.exit("This only runs on Windows - Transit.dll is a native Windows DLL.")
 
-# Running this file directly only puts services\ on sys.path, not the
-# project root - needed below for services.protocol.commands.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.protocol.commands import query_status, set_signal
@@ -48,24 +15,19 @@ from services.team_vocab import (
 )
 from state.level_map import LEVEL_TO_HEX
 
-DLL_PATH = "dll/Transit.dll"  # matches the "dll\Transit.dll" path hardcoded in the original VB6 Declare statement
+DLL_PATH = "dll/Transit.dll"
 
 dll = ctypes.WinDLL(DLL_PATH)
 
-# --- Confirmed from the VB6 Declare ---
 dll.AutoConnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
 dll.AutoConnectSDR.restype = ctypes.c_long
 
-# --- Guesses - confirm against real docs before trusting these ---
 dll.CheckConnection.argtypes = [ctypes.c_char_p, ctypes.c_long]
 dll.CheckConnection.restype = ctypes.c_long
 
 dll.DisconnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
 dll.DisconnectSDR.restype = ctypes.c_long
 
-# CommandTokens is the "Translate Tokens" function from the whiteboard -
-# almost certainly takes a token string in and writes a translated
-# command into outBuffer, but the exact shape is unconfirmed.
 dll.CommandTokens.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
 dll.CommandTokens.restype = ctypes.c_long
 
@@ -95,11 +57,6 @@ def test_disconnect():
 
 
 def test_command_tokens(token: bytes = b"TEST"):
-    # Placeholder input - the real token vocabulary isn't finalized yet
-    # (see services/middleware.py's Token/Action for the current Python-
-    # side design). This just checks CommandTokens doesn't crash and
-    # shows what comes back for an arbitrary string, not a real
-    # correctness test.
     out = ctypes.create_string_buffer(256)
     result = dll.CommandTokens(token, out, ctypes.sizeof(out))
     print(f"CommandTokens({token!r}) -> return={result}, buffer={out.value!r}")
@@ -107,30 +64,6 @@ def test_command_tokens(token: bytes = b"TEST"):
 
 
 def test_command_tokens_team_vocab():
-    """Both real SendCommandToSDR attempts (raw frame bytes, and the
-    same frame hex-encoded) returned -2 - the same failure code either
-    way, which rules out null-byte truncation as the cause (the
-    hex-encoded attempt has zero null bytes and still failed
-    identically). That points at content, not encoding: SendCommandToSDR
-    may only accept output that's already been through CommandTokens,
-    not a raw protocol frame at all - matching the function names
-    themselves (CommandTokens = "Translate Tokens" on the whiteboard,
-    feeding SendCommandToSDR next) and matching what you said you made
-    the FME/NOX/etc vocabulary FOR: CommandTokens' real input, not a
-    display-only scheme.
-
-    Every CommandTokens probe so far (services/test_command_tokens.py)
-    only tried single raw hex bytes (0x00-0x10 etc), never your actual
-    multi-character token strings. This tries those instead - every
-    token from services/team_vocab.py, one at a time, as plain ASCII
-    text (e.g. b"NOX", b"FME"). Fully safe to run even with real
-    hardware connected: CommandTokens only translates, per its own
-    name and the whiteboard design - it doesn't touch
-    SendCommandToSDR or the wire itself.
-
-    A token CommandTokens actually recognizes should come back as
-    something other than "??" - if any do, that's the strongest lead
-    yet on what SendCommandToSDR expects as input."""
     tokens = {
         "HEAD": HEAD_TOKEN,
         "STOP": STOP_TOKEN,
@@ -148,24 +81,12 @@ def test_command_tokens_team_vocab():
 
 
 def test_send_command(command: bytes = b"TEST"):
-    # Also a placeholder - real usage almost certainly needs a
-    # successful AutoConnectSDR first, and a real command string in
-    # whatever format CommandTokens is meant to produce.
     result = dll.SendCommandToSDR(command, len(command))
     print(f"SendCommandToSDR({command!r}) -> return={result}")
     return result
 
 
 def translate_frame_via_dll(frame: bytes) -> str:
-    """Runs CommandTokens once per byte of `frame` (its confirmed,
-    only-ever-one-byte-per-call shape - see services/middleware.py's
-    dll_decode_frame(), same idea, duplicated here rather than
-    imported so this script keeps working standalone) and concatenates
-    the results with no separator - CommandTokens' own outputs are
-    short fixed-width codes (X#B, XME, ...), so a plain concatenation
-    is the most direct guess at what a translated command string looks
-    like, no space character invented that was never observed
-    anywhere in the DLL's own output."""
     tokens = []
     for byte in frame:
         out = ctypes.create_string_buffer(256)
@@ -175,24 +96,6 @@ def translate_frame_via_dll(frame: bytes) -> str:
 
 
 def send_frame_one_token_at_a_time(frame: bytes):
-    """The confirmed-on-real-hardware theory: CommandTokens once per
-    byte (its confirmed one-byte-per-call shape), then SendCommandToSDR
-    with just that one token as its entire content - one call per
-    byte, in order. Bytes with no alias token (CommandTokens returns
-    "??" - true for most of a Signal Control frame's frequency field,
-    a real 300-6000 MHz value, unlike mode/bandwidth/power which are
-    all small enums inside the confirmed 22-entry table) fall back to
-    2-digit UPPERCASE HEX TEXT of the raw byte (e.g. b"92" for 0x92) -
-    CONFIRMED by tracing SendCommandToSDR's actual parsing logic with
-    radare2, not a guess: it hashes/looks up its input against the
-    same 22-entry table first, and if that misses, parses the input
-    STRING as 2-digit hex (radix 16) and uses that value. A raw binary
-    byte (an earlier, wrong attempt) isn't parseable hex text at all.
-
-    Prints every step so a mid-sequence change in behavior is visible,
-    not just a final pass/fail - this is the actual diagnostic value
-    of testing one byte at a time instead of trusting a single
-    all-or-nothing result."""
     print(f"Sending frame {frame.hex(' ').upper()} as one bare token per byte:")
     dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
     dll.SendCommandToSDR.restype = ctypes.c_long
@@ -213,56 +116,20 @@ def send_frame_one_token_at_a_time(frame: bytes):
 
 
 def test_send_one_token_at_a_time(addr: int = 5):
-    """Status Query version of send_frame_one_token_at_a_time() - see
-    that function's docstring. Kept as its own name since this is the
-    read-only, always-safe-to-run probe (Status Query changes nothing
-    on the module) - see test_send_signal_control_one_token_at_a_time()
-    below for the actuating (Signal Control) version, which needs its
-    own explicit confirmation since it can actually change RF output
-    configuration on real hardware."""
     return send_frame_one_token_at_a_time(query_status(addr))
 
 
 def test_send_signal_control_one_token_at_a_time(addr: int = 5):
-    """Same one-bare-token-per-byte approach as
-    test_send_one_token_at_a_time(), but for a REAL Signal Control
-    frame instead of a read-only Status Query - this is how modulation
-    (mode/frequency/bandwidth/power) actually gets sent, and unlike
-    Output ON/OFF (whose only possible bytes, 0x00/0x01, are both in
-    the confirmed 22-entry alias table), most of the frequency field's
-    bytes have no alias and go through the hex-text fallback path
-    instead - see send_frame_one_token_at_a_time()'s docstring for
-    exactly how.
-
-    Uses the same BLIND_DEFAULT_MODE/FREQ_MHZ/BANDWIDTH_MHZ the real
-    app falls back to when no confirmed baseline exists (services/
-    protocol/constants.py), and a low (not max) power level - this
-    DOES change real RF output configuration on the module, it is not
-    read-only like Status Query, which is why __main__ gates it behind
-    its own separate confirmation."""
     frame = set_signal(addr, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1])
     return send_frame_one_token_at_a_time(frame)
 
 
 class SendAttempt:
-    """One candidate theory of what SendCommandToSDR actually wants -
-    both its argument SIGNATURE and its CONTENT, since both are
-    unconfirmed (see this file's module docstring: only AutoConnectSDR's
-    shape came from a real VB6 Declare; the rest, including
-    SendCommandToSDR's very argument count, were guessed by symmetry).
-    `run` sets dll.SendCommandToSDR.argtypes/.restype itself right
-    before calling - ctypes allows re-declaring these freely between
-    calls on the same underlying export - and returns a plain dict so
-    every candidate reports the same shape of result regardless of how
-    different its actual call looks, for a clean side-by-side summary
-    at the end. Never lets a wrong-signature guess crash the whole
-    run: a ctypes.ArgumentError (wrong Python type for the declared
-    argtypes) is caught and reported as its own outcome, not a crash."""
 
     def __init__(self, label: str, reasoning: str, run):
         self.label = label
         self.reasoning = reasoning
-        self.run = run  # callable(addr: int) -> dict
+        self.run = run
 
 
 def _try_send(argtypes, restype, args) -> dict:
@@ -276,7 +143,6 @@ def _try_send(argtypes, restype, args) -> dict:
 
 
 def _addr_token(addr_byte: bytes) -> str:
-    """CommandTokens' translated text for one raw byte - e.g. b'\\x05' -> 'X#E'."""
     out = ctypes.create_string_buffer(256)
     dll.CommandTokens(addr_byte.hex().upper().encode(), out, ctypes.sizeof(out))
     return out.value.decode("ascii", errors="replace")
@@ -299,13 +165,13 @@ def _run_translated_whole_frame_2arg(addr: int) -> dict:
 
 def _run_addr_token_plus_real_2arg(addr: int) -> dict:
     frame = query_status(addr)
-    token = _addr_token(frame[3:4])  # byte 3 is the address field - see packet_builder.py
-    content = token.encode() + frame[:3] + frame[4:]  # address byte dropped, replaced by its token
+    token = _addr_token(frame[3:4])
+    content = token.encode() + frame[:3] + frame[4:]
     return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
 
 
 def _run_stripped_framing_raw_2arg(addr: int) -> dict:
-    content = query_status(addr)[2:-2]  # drop HEAD (first 2 bytes) and STOP (last 2 bytes)
+    content = query_status(addr)[2:-2]
     return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
 
 
@@ -325,7 +191,7 @@ def _run_3arg_matching_commandtokens_shape(addr: int) -> dict:
 
 def _run_addr_as_separate_int_arg(addr: int) -> dict:
     frame = query_status(addr)
-    content = frame[:3] + frame[4:]  # HEAD/type/buf_len/payload/STOP, address byte removed
+    content = frame[:3] + frame[4:]
     return _try_send(
         [ctypes.c_long, ctypes.c_char_p, ctypes.c_long], ctypes.c_long,
         (addr, content, len(content)),
@@ -333,26 +199,16 @@ def _run_addr_as_separate_int_arg(addr: int) -> dict:
 
 
 def _run_addr_as_separate_string_arg(addr: int) -> dict:
-    # Follow-up to _run_addr_as_separate_int_arg: THAT attempt crashed
-    # on real hardware with "access violation reading 0x...05" - the
-    # DLL tried to dereference our literal address int (5) as a
-    # pointer. That's real negative evidence the address parameter (if
-    # it exists at all) isn't a plain c_long in that slot - it has to
-    # be something pointer-shaped, or the DLL would never have tried
-    # to read memory AT the value 5. This tries the address as an
-    # actual string pointer instead (e.g. b"5"), all-pointer args like
-    # CommandTokens' own confirmed-safe 3-arg shape, to avoid repeating
-    # the same crash while still testing "address as its own parameter."
     frame = query_status(addr)
     addr_str = str(addr).encode()
-    content = frame[:3] + frame[4:]  # address byte removed, same as the int-arg attempt above
+    content = frame[:3] + frame[4:]
     return _try_send(
         [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long], ctypes.c_long,
         (addr_str, content, len(content)),
     )
 
 
-REPEAT_COUNT = 4  # how many extra times to re-run a non-(-2) result before trusting it - see run_send_attempts()
+REPEAT_COUNT = 4
 
 SEND_ATTEMPTS = [
     SendAttempt(
@@ -423,30 +279,6 @@ SEND_ATTEMPTS = [
 
 
 def run_send_attempts(addr: int = 5):
-    """Runs every SEND_ATTEMPTS candidate in turn against a REAL,
-    well-formed, read-only Status Query for `addr` (a real channel,
-    not 0 - the whiteboard's SDR module diagram labels modules SDR1
-    through SDR16, no SDR0) and prints a side-by-side summary at the
-    end. Status Query is read-only - it asks the module for its
-    current state, it changes nothing - so this is the safest real
-    command to probe with, even against real hardware, no matter which
-    signature/content guess turns out to be closest.
-
-    A run_fn raising is caught per-attempt (see SendAttempt/_try_send)
-    so one bad signature guess (wrong ctypes arg types for real
-    hardware to reject at the Python/ctypes boundary, not the DLL's
-    own boundary) can't take down every other candidate in the same
-    run. Extending this with a new theory later is one new
-    SendAttempt(...) entry in SEND_ATTEMPTS above, not a new
-    hand-written function + a new __main__ wiring step.
-
-    Any candidate that returns something OTHER than -2 (the dominant
-    result every other attempt has gotten so far) or a crash gets
-    automatically re-run REPEAT_COUNT more times before this returns -
-    one good result could be a fluke (electrical noise, stale DLL
-    state left over from a PRIOR attempt in the same run), not a
-    confirmed working format. Still just a read-only Status Query each
-    time, same risk profile as the single attempt above."""
     results = []
     for attempt in SEND_ATTEMPTS:
         print(f"\n  {attempt.label}: {attempt.reasoning}")
@@ -492,20 +324,9 @@ if __name__ == "__main__":
     print("\nStep 2: check status")
     test_check_connection()
 
-    # Safe regardless of connection state - CommandTokens only
-    # translates, per its own name and the whiteboard design, it
-    # doesn't touch the wire or SendCommandToSDR itself.
     print("\nStep 2b: probe CommandTokens with the real FME/NOX/etc team vocabulary")
     test_command_tokens_team_vocab()
 
-    # SendCommandToSDR("TEST") is only safe to fire blind when nothing
-    # real is on the other end - a placeholder string is exactly the
-    # "manipulated/unvalidated command" risk this whole project exists
-    # to prevent once real hardware is actually connected. -1 is the
-    # observed "nothing connected" return; 4 is now a CONFIRMED
-    # "connected" return (buffer=b'Connected', observed against real
-    # hardware) - any non--1 value means AutoConnectSDR found something
-    # real, not just "not -1".
     if connect_result == -1:
         print("\nStep 3: translate a placeholder token (exploratory - format unconfirmed)")
         test_command_tokens()

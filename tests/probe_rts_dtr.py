@@ -1,8 +1,3 @@
-"""Toggles RTS/DTR on a COM port so a multimeter on suspected spare wires
-can confirm whether either line is physically broken out.
-
-Usage: python tests/probe_rts_dtr.py COM5
-"""
 import sys
 
 try:

@@ -1,47 +1,3 @@
-"""Builds the standalone Windows .exe with PyInstaller.
-
-Run this ON WINDOWS (PyInstaller builds for whatever OS it runs on -
-there's no cross-compiling a Windows .exe from Linux/Mac). Needs
-PyInstaller installed first:
-
-    pip install pyinstaller
-
-Then just:
-
-    python build_exe.py
-
-Output lands in dist/Noise Controller/Noise Controller.exe - a folder
-build (--onedir), no console window, with the app icon and the
-assets/ folder (icons) bundled alongside the exe. dist/, build/, and
-*.spec are all gitignored, so this script (not a checked-in .spec
-file) is what stays reproducible in version control.
-
---onedir instead of --onefile: a onefile .exe has to silently unzip
-its entire bundled Python/Qt runtime to a temp folder on EVERY launch
-before it can start (a real, noticeable multi-second delay, worse
-with UPX since those files also need decompressing) - --onedir runs
-directly from an already-unpacked folder, so launch is near-instant.
-Trade-off: the installer now has to ship a folder of files instead of
-one portable .exe (see installer.iss), which is fine since Inno Setup
-handles a folder just as easily.
-
-SIZE: the app only ever imports PySide6.QtCore/QtGui/QtWidgets (QtTest
-is dry_run.py's own dependency, not the shipped app's - confirmed by
-grepping every "from PySide6." import in the codebase), but
-PyInstaller's PySide6 hook bundles the ENTIRE Qt runtime by default -
-QtWebEngine, Qml, Multimedia, Sql, Bluetooth, and a dozen others this
-app never touches, easily 100+MB on its own. EXCLUDES below drops the
-Python-level modules for all of those; --upx-dir additionally
-compresses whatever binaries remain if UPX is installed (optional -
-https://upx.github.io, unzip it anywhere and pass that folder's path
-as UPX_DIR below or via the UPX_DIR env var - some antivirus engines
-flag UPX-compressed executables as suspicious more often than
-uncompressed ones, a real tradeoff to know about, not just a free
-win). Actual before/after savings should be measured on a real build,
-not assumed from this list alone - PyInstaller's own dependency
-analysis can still pull in a plugin indirectly (e.g. a platform
-integration DLL) despite an --exclude-module for its Python wrapper.
-"""
 import os
 import subprocess
 import sys
@@ -51,19 +7,10 @@ ICON_ICO = os.path.join(ROOT, "assets", "icons", "app_icon.ico")
 ASSETS_DIR = os.path.join(ROOT, "assets")
 MAIN_SCRIPT = os.path.join(ROOT, "main.py")
 
-# Optional - set this to a real UPX install directory (or the UPX_DIR
-# env var) to also compress the bundled binaries. None = skip UPX
-# entirely, which is also PyInstaller's own default.
 UPX_DIR = os.environ.get("UPX_DIR")
 
-# PyInstaller wants SRC<sep>DEST for --add-data, and the separator is
-# platform-specific (';' on Windows, ':' elsewhere) - os.pathsep gets
-# this right without hardcoding a platform.
 ADD_DATA = f"{ASSETS_DIR}{os.pathsep}assets"
 
-# Qt modules this app never imports (see the module docstring above) -
-# PySide6's own submodules, not third-party packages, so these are
-# safe to drop regardless of what else is installed alongside PySide6.
 UNUSED_QT_MODULES = [
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuick3D",
@@ -76,13 +23,13 @@ UNUSED_QT_MODULES = [
     "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DInput",
     "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
     "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtStateMachine",
-    "PySide6.QtSvg", "PySide6.QtSvgWidgets",  # app icons are .ico/qtawesome fonts, not .svg
-    "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",  # plain QWidgets only, no OpenGL views anywhere
+    "PySide6.QtSvg", "PySide6.QtSvgWidgets",
+    "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",
     "PySide6.QtWebChannel", "PySide6.QtWebSockets", "PySide6.QtNetworkAuth", "PySide6.QtHttpServer",
     "PySide6.QtQuickControls2", "PySide6.QtQuickTest", "PySide6.QtSpatialAudio",
     "PySide6.QtGraphs", "PySide6.QtGraphsWidgets", "PySide6.QtQuick3DPhysics",
     "PySide6.QtVirtualKeyboard", "PySide6.QtTextToSpeech",
-    "PySide6.QtTest",  # dry_run.py's own dependency, not the shipped app's
+    "PySide6.QtTest",
 ]
 
 
@@ -91,13 +38,6 @@ def main():
         sys.exit(f"Missing icon: {ICON_ICO}")
 
     args = [
-        # -OO strips docstrings and assert statements at compile time,
-        # before PyInstaller ever bundles the resulting bytecode - a
-        # real size cut (docstrings in this codebase are long) and it
-        # also means anyone decompiling the shipped .exe doesn't get
-        # those docstrings back. Confirmed safe: nothing in the actual
-        # app (as opposed to tests/) uses `assert` for real logic, so
-        # -OO stripping asserts can't silently disable anything here.
         sys.executable, "-OO", "-m", "PyInstaller",
         MAIN_SCRIPT,
         "--name", "Noise Controller",
@@ -105,11 +45,6 @@ def main():
         "--windowed",
         "--icon", ICON_ICO,
         "--add-data", ADD_DATA,
-        # qtawesome ships its icon font/data as package resources -
-        # PyInstaller's static import analysis doesn't see those (they're
-        # loaded by qtawesome internally, not import-ed), so without this
-        # they'd silently go missing from the bundle and every icon in
-        # the app would just fail to render at runtime.
         "--collect-data", "qtawesome",
         "--noconfirm",
     ]

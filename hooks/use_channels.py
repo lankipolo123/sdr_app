@@ -11,28 +11,17 @@ from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_port_scheduler import PortScheduler
 
-MAX_CHANNELS = 16  # ceiling on how many addresses the UI shows cards for
+MAX_CHANNELS = 16
 
 QUERY_TIMEOUT_MS = 300
-QUERY_MAX_ATTEMPTS = 4  # re-send the targeted query a few times before giving up
+QUERY_MAX_ATTEMPTS = 4
 
 
 class ChannelManager(QObject):
-    """Owns one ChannelController per address, all 16 live from the
-    moment the app starts. There's no discovery/scan step and no
-    online/offline distinction anymore - every ChannelController already
-    brute-force finds and opens its own port fresh for every command it
-    sends (see hooks/use_channel.py), with retries and an optimistic
-    apply-on-timeout if nothing answers. That's strictly better than
-    requiring a prior Scan or +Addr response before a channel becomes
-    controllable: on a shared/collision-prone line, waiting for a
-    confirmed discovery response first only means waiting for something
-    that might never come, when the blind command would have gotten
-    through anyway."""
 
     command_timeout = Signal(str)
-    raw_tx = Signal(int, bytes)          # address, bytes sent
-    raw_rx = Signal(int, bytes)          # address, bytes received
+    raw_tx = Signal(int, bytes)
+    raw_rx = Signal(int, bytes)
 
     def __init__(self, config_service, logger=None):
         super().__init__()
@@ -42,27 +31,10 @@ class ChannelManager(QObject):
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
 
-        # Lives next to config.json, in whatever directory THIS
-        # ConfigService instance actually points at - not a fixed global
-        # path, or every ConfigService instance (e.g. two isolated test
-        # runs, each with their own tmp config dir) would read/write the
-        # exact same real channels.ini and cross-contaminate each other's
-        # channel state.
         self._channels_path = os.path.join(os.path.dirname(self.config.path), "channels.ini")
 
-        # Shared by every channel AND Query - there's only one physical
-        # port on the confirmed real wiring, so only one command anywhere
-        # is ever allowed to actively use it at a time (see
-        # use_port_scheduler.py). Without this, two channels used close
-        # together could each try to open the same port at once and
-        # collide, repeatedly failing and freezing the GUI while they
-        # fought over it.
         self.port_scheduler = PortScheduler()
 
-        # Every channel's own mode/power/output is persisted to a single
-        # flat .ini file (see utils/channel_store.py), not this JSON
-        # config - read once up front rather than re-reading the file
-        # for every one of the 16 channels being constructed.
         saved_states = load_channel_states(self._channels_path)
 
         self.states: dict[int, ChannelState] = {}
@@ -73,9 +45,6 @@ class ChannelManager(QObject):
                 state, baud, parity, data_bits, self.logger, port_scheduler=self.port_scheduler,
             )
             controller.command_timeout.connect(self.command_timeout.emit)
-            # wire_address (not the raw 0-based address) so this matches
-            # the CH number everywhere else a controller identifies
-            # itself - see ChannelController.wire_address.
             controller.raw_tx.connect(lambda data, ctrl=controller: self.raw_tx.emit(ctrl.wire_address, data))
             controller.raw_rx.connect(lambda data, ctrl=controller: self.raw_rx.emit(ctrl.wire_address, data))
             self.states[address] = state
@@ -84,12 +53,6 @@ class ChannelManager(QObject):
     def _make_state(self, address: int, saved: dict | None) -> ChannelState:
         state = ChannelState(address)
         if saved:
-            # UI-only restore - shows the card looking like it did last
-            # session (mode dropdown, slider position, toggle state), but
-            # nothing here actually sends a command. Matches the app's
-            # existing "nothing happens automatically on launch" design
-            # (no auto-scan, no auto-query) - a real send only ever
-            # follows an explicit tap/interaction with that specific card.
             if "mode" in saved:
                 state.data.mode = saved["mode"]
             if "last_level" in saved:
@@ -105,30 +68,10 @@ class ChannelManager(QObject):
         return self.states[address]
 
     def send_token(self, token: Token) -> None:
-        """Entry point for an external caller (Transit.dll, eventually)
-        that only knows "channel N, do X" - never a ChannelController
-        object, and never a raw hex command. Looks up the right
-        controller for token.channel and hands off to
-        services.middleware.dispatch_token(), which validates the
-        token before it ever reaches real hardware - see
-        services/middleware.py for what that validation actually
-        blocks."""
-        controller = self.get_controller(token.channel - 1)  # Token uses CH01-16, get_controller uses the internal 0-based address
+        controller = self.get_controller(token.channel - 1)
         dispatch_token(controller, token)
 
     def brute_force_query(self, address: int, on: bool):
-        """Standalone diagnostic, separate from the cards: type in one
-        address, brute-force finds an available port the same way every
-        real command does (see ConnectionController.list_ports() /
-        ChannelController._find_and_open_connection), sends Output ON/OFF
-        to it, and actually waits for and verifies the response -
-        retrying up to QUERY_MAX_ATTEMPTS times - instead of firing
-        blind. Doesn't touch states/controllers or build a card; this
-        isn't a real channel connection, just a one-off check.
-
-        The actual attempt/retry/port-sweep sequence lives in
-        _QueryAttempt below, one instance per call, so this method just
-        validates ports exist and hands off."""
         ports = ConnectionController.list_ports()
         if not ports:
             self.command_timeout.emit("Query: no ports available.")
@@ -148,19 +91,6 @@ class ChannelManager(QObject):
 
 
 class _QueryAttempt(QObject):
-    """One brute-force Query run: sweep every available port, and on
-    each one retry up to QUERY_MAX_ATTEMPTS times before moving to the
-    next port, exactly like a ChannelController's own retry loop.
-
-    A plain object (not the queue-based reuse a ChannelController gets)
-    since Query is a one-off diagnostic, not a persistent per-channel
-    connection - each call to ChannelManager.brute_force_query() builds
-    a fresh instance and throws it away once it resolves. Goes through
-    the same shared port_scheduler every channel does, using itself as
-    the scheduler's identity token (see PortScheduler) - without that,
-    Query could collide with a card's in-flight command the exact same
-    way two channels used close together used to collide with each
-    other."""
 
     def __init__(self, manager: "ChannelManager", address: int, on: bool,
                  ports: list[str], baud: int, parity: str, data_bits: int):
@@ -202,8 +132,6 @@ class _QueryAttempt(QObject):
         self.raw_seen = True
         port = self.ports[self.port_index]
         if self.manager.logger:
-            # No raw hex in the log, same rule as the GUI - see
-            # services/middleware.py's dll_log_text().
             self.manager.logger.info(f"Query: raw bytes on {port}: {dll_log_text(data)}")
         self.manager.raw_rx.emit(self.address, data)
 
@@ -222,12 +150,6 @@ class _QueryAttempt(QObject):
         )
 
     def _request_attempt(self):
-        # Asks for the port for exactly ONE attempt (open, send, wait)
-        # rather than for this whole address's entire sweep-and-retry
-        # cycle - otherwise an unanswering address would hold the shared
-        # port for up to QUERY_MAX_ATTEMPTS * len(ports) attempts in a
-        # row, freezing every channel card queued behind it for that
-        # whole stretch.
         self.manager.port_scheduler.acquire(self, self._on_port_granted)
 
     def _on_port_granted(self):

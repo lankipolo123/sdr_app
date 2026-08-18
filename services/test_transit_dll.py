@@ -147,68 +147,6 @@ def test_send_command(command: bytes = b"TEST"):
     return result
 
 
-def test_send_real_status_query(addr: int = 5):
-    """Sends a REAL, well-formed Status Query frame (services/protocol/
-    commands.py's query_status()) through SendCommandToSDR, using its
-    already-declared (char* command, long length) signature - the same
-    raw-buffer-plus-length shape AutoConnectSDR/CheckConnection/
-    DisconnectSDR already use, and the exact same raw bytes pyserial
-    already writes today (see services/serial/serial_thread.py). This
-    is the most direct, least-invented guess available for what
-    SendCommandToSDR expects - not a wild guess, just the one shape its
-    own already-declared argtypes support.
-
-    Defaults to addr=5, a REAL channel, not 0 - every prior test used
-    query_status()'s old default of 0, and the whiteboard's SDR module
-    diagram labels modules SDR1 through SDR16, no SDR0. If address 0
-    isn't a real module, the whiteboard's own "Validate command before
-    send to SDR" step would reject it every time regardless of content
-    - which would explain why raw bytes, hex-encoded, and translated
-    content all failed with the identical -2. Worth ruling out before
-    trusting any conclusion drawn from the addr=0 attempts.
-
-    Status Query is read-only - it asks the module for its current
-    state, it changes nothing - so this is the safest real command to
-    probe the send path with, even against real hardware. It does NOT
-    confirm how a response comes back, though: SendCommandToSDR's
-    signature has no output buffer, and no DLL export for reading data
-    back has been found yet. Call test_check_connection() again after
-    this and compare its buffer by eye against what it showed before -
-    if it now shows Status Query fields (output/mode/freq/bw/power -
-    see ParsedFrame.describe in services/protocol/packet_parser.py),
-    that's evidence CheckConnection doubles as the response channel.
-    If it's unchanged, sending is confirmed but reading responses back
-    through the DLL is still an open question, not a confirmed one."""
-    frame = query_status(addr)
-    print(f"Sending real Status Query frame: {frame.hex(' ').upper()}")
-    result = dll.SendCommandToSDR(frame, len(frame))
-    print(f"SendCommandToSDR(<status query frame>) -> return={result}")
-    return result
-
-
-def test_send_real_status_query_hex(addr: int = 5):
-    """Same real Status Query frame as test_send_real_status_query()
-    (addr=5, a real channel, not the old addr=0 default - see that
-    function's docstring for why), but hex-encoded and uppercased
-    first (frame.hex().upper().encode()) instead of sent as raw
-    binary - the same fix already confirmed
-    necessary for CommandTokens (see dll_command_tokens()'s docstring
-    in services/middleware.py): a char* argument across this DLL's ABI
-    gets truncated at the first embedded null byte if treated as a C
-    string internally, and a real protocol frame like this one
-    (7E 7E FF 00 00 0A 0D) has null bytes sitting right in the middle
-    (the addr/buf_len fields). Worth trying before concluding anything
-    about SendCommandToSDR's real expected format from a raw-bytes
-    attempt alone - the raw attempt may have just hit the same
-    already-known truncation bug, not a wrong approach."""
-    frame = query_status(addr)
-    hex_command = frame.hex().upper().encode()
-    print(f"Sending hex-encoded Status Query frame: {hex_command!r}")
-    result = dll.SendCommandToSDR(hex_command, len(hex_command))
-    print(f"SendCommandToSDR(<hex-encoded status query>) -> return={result}")
-    return result
-
-
 def translate_frame_via_dll(frame: bytes) -> str:
     """Runs CommandTokens once per byte of `frame` (its confirmed,
     only-ever-one-byte-per-call shape - see services/middleware.py's
@@ -227,62 +165,182 @@ def translate_frame_via_dll(frame: bytes) -> str:
     return "".join(tokens)
 
 
-def test_send_translated_status_query(addr: int = 5):
-    """The lead from CommandTokens/SendCommandToSDR's own names (the
-    whiteboard's "Translate Tokens" -> "Send to SDR" pipeline): rather
-    than sending the raw Status Query frame (confirmed failing, -2,
-    both as raw bytes and hex-encoded - see the two probes above),
-    this sends what CommandTokens itself produces for that frame -
-    e.g. "XMEXMEX#CX#0X#0X#JX#M" for a real 7-byte Status Query -
-    exactly the translated form these two function names suggest
-    SendCommandToSDR is meant to receive next.
+class SendAttempt:
+    """One candidate theory of what SendCommandToSDR actually wants -
+    both its argument SIGNATURE and its CONTENT, since both are
+    unconfirmed (see this file's module docstring: only AutoConnectSDR's
+    shape came from a real VB6 Declare; the rest, including
+    SendCommandToSDR's very argument count, were guessed by symmetry).
+    `run` sets dll.SendCommandToSDR.argtypes/.restype itself right
+    before calling - ctypes allows re-declaring these freely between
+    calls on the same underlying export - and returns a plain dict so
+    every candidate reports the same shape of result regardless of how
+    different its actual call looks, for a clean side-by-side summary
+    at the end. Never lets a wrong-signature guess crash the whole
+    run: a ctypes.ArgumentError (wrong Python type for the declared
+    argtypes) is caught and reported as its own outcome, not a crash."""
 
-    UPDATE: a later whiteboard photo (TOKENS legend: X#0=0, X#1=1,
-    ... right next to "Select what SDR number") suggests CommandTokens
-    actually only translates WHICH MODULE a command targets, not every
-    byte of its content - see test_send_addr_token_plus_real_command()
-    below for that alternative theory, tried separately rather than
-    replacing this one, since neither is confirmed yet."""
+    def __init__(self, label: str, reasoning: str, run):
+        self.label = label
+        self.reasoning = reasoning
+        self.run = run  # callable(addr: int) -> dict
+
+
+def _try_send(argtypes, restype, args) -> dict:
+    dll.SendCommandToSDR.argtypes = argtypes
+    dll.SendCommandToSDR.restype = restype
+    try:
+        result = dll.SendCommandToSDR(*args)
+        return {"return_code": result, "error": None}
+    except Exception as e:
+        return {"return_code": None, "error": str(e)}
+
+
+def _addr_token(addr_byte: bytes) -> str:
+    """CommandTokens' translated text for one raw byte - e.g. b'\\x05' -> 'X#E'."""
+    out = ctypes.create_string_buffer(256)
+    dll.CommandTokens(addr_byte.hex().upper().encode(), out, ctypes.sizeof(out))
+    return out.value.decode("ascii", errors="replace")
+
+
+def _run_raw_bytes_2arg(addr: int) -> dict:
     frame = query_status(addr)
-    translated = translate_frame_via_dll(frame)
-    print(f"CommandTokens-translated Status Query: {translated!r}")
-    command = translated.encode()
-    result = dll.SendCommandToSDR(command, len(command))
-    print(f"SendCommandToSDR(<translated status query>) -> return={result}")
-    return result
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (frame, len(frame)))
 
 
-def test_send_addr_token_plus_real_command(addr: int = 5):
-    """Alternative theory to test_send_translated_status_query() above,
-    from the whiteboard: the TOKENS legend (X#0=0, X#1=1, ...) sits
-    right next to "Select what SDR number", not next to the command
-    content - CommandTokens translates WHICH module a command targets,
-    not the command's bytes. That fits the confirmed data better too:
-    the real table only covers 0x00-0x10 (0-16, exactly MAX_CHANNELS),
-    and the same raw byte (e.g. 0x01) is simultaneously
-    TYPE_OUTPUT_SWITCH, OUTPUT_ON, MODE_LINEAR_SWEEP, and RESP_FAILED
-    in the real protocol - one flat table translating every byte could
-    never disambiguate those; translating just the address field can.
+def _run_hex_encoded_2arg(addr: int) -> dict:
+    content = query_status(addr).hex().upper().encode()
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
 
-    So this translates ONLY the address byte through CommandTokens
-    (confirmed working, e.g. 0x05 -> "X#E"), then sends that token
-    followed by the REST of the real frame UNTRANSLATED (type,
-    buf_len, payload, STOP - left as real bytes, address byte
-    dropped since it's now represented by the token instead) - i.e.
-    "address swapped for its token, the actual command stays real."
-    Exact placement (token prepended to the front) is still a guess -
-    the whiteboard doesn't show the wire format for the combined
-    message, just that translation and command content are separate
-    concerns."""
+
+def _run_translated_whole_frame_2arg(addr: int) -> dict:
+    content = translate_frame_via_dll(query_status(addr)).encode()
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
+
+
+def _run_addr_token_plus_real_2arg(addr: int) -> dict:
+    frame = query_status(addr)
+    token = _addr_token(frame[3:4])  # byte 3 is the address field - see packet_builder.py
+    content = token.encode() + frame[:3] + frame[4:]  # address byte dropped, replaced by its token
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
+
+
+def _run_stripped_framing_raw_2arg(addr: int) -> dict:
+    content = query_status(addr)[2:-2]  # drop HEAD (first 2 bytes) and STOP (last 2 bytes)
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
+
+
+def _run_stripped_framing_hex_2arg(addr: int) -> dict:
+    content = query_status(addr)[2:-2].hex().upper().encode()
+    return _try_send([ctypes.c_char_p, ctypes.c_long], ctypes.c_long, (content, len(content)))
+
+
+def _run_3arg_matching_commandtokens_shape(addr: int) -> dict:
     frame = query_status(addr)
     out = ctypes.create_string_buffer(256)
-    dll.CommandTokens(frame[3:4].hex().upper().encode(), out, ctypes.sizeof(out))
-    addr_token = out.value.decode('ascii', errors='replace')
-    command = addr_token.encode() + frame[:3] + frame[4:]
-    print(f"Sending addr-token({addr_token!r}) + rest of real frame: {command!r}")
-    result = dll.SendCommandToSDR(command, len(command))
-    print(f"SendCommandToSDR(<addr-token + real frame>) -> return={result}")
-    return result
+    return _try_send(
+        [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long], ctypes.c_long,
+        (frame, out, len(frame)),
+    )
+
+
+def _run_addr_as_separate_int_arg(addr: int) -> dict:
+    frame = query_status(addr)
+    content = frame[:3] + frame[4:]  # HEAD/type/buf_len/payload/STOP, address byte removed
+    return _try_send(
+        [ctypes.c_long, ctypes.c_char_p, ctypes.c_long], ctypes.c_long,
+        (addr, content, len(content)),
+    )
+
+
+SEND_ATTEMPTS = [
+    SendAttempt(
+        "raw_bytes_2arg",
+        "The most direct, least-invented guess: real frame bytes, (char* command, long length) - "
+        "the same raw-buffer-plus-length shape AutoConnectSDR/CheckConnection/DisconnectSDR use.",
+        _run_raw_bytes_2arg,
+    ),
+    SendAttempt(
+        "hex_encoded_2arg",
+        "Same frame, hex-encoded+uppercased first - the fix already confirmed necessary for "
+        "CommandTokens (a char* gets truncated at the first embedded null byte if treated as a "
+        "C string, and a real frame has null bytes in its addr/buf_len fields).",
+        _run_hex_encoded_2arg,
+    ),
+    SendAttempt(
+        "translated_whole_frame_2arg",
+        "What CommandTokens itself produces for the whole frame, one byte at a time and joined - "
+        "the literal \"Translate Tokens\" -> \"Send to SDR\" pipeline the function names suggest.",
+        _run_translated_whole_frame_2arg,
+    ),
+    SendAttempt(
+        "addr_token_plus_real_2arg",
+        "Whiteboard theory: CommandTokens only translates WHICH module (its TOKENS legend sits "
+        "next to \"Select what SDR number\"), not command content - so only the address byte is "
+        "translated, prepended to the rest of the frame left as real bytes.",
+        _run_addr_token_plus_real_2arg,
+    ),
+    SendAttempt(
+        "stripped_framing_raw_2arg",
+        "NEW: maybe HEAD (7E7E) and STOP (0A0D) are added internally by the DLL and shouldn't be "
+        "in what we pass - sends just type+addr+buf_len+payload, raw bytes.",
+        _run_stripped_framing_raw_2arg,
+    ),
+    SendAttempt(
+        "stripped_framing_hex_2arg",
+        "NEW: same framing-stripped content as above, but hex-encoded - combining both open "
+        "theories (framing and null-byte-safety) in one attempt.",
+        _run_stripped_framing_hex_2arg,
+    ),
+    SendAttempt(
+        "3arg_matching_commandtokens_shape",
+        "NEW: SendCommandToSDR's argument count was never confirmed the way AutoConnectSDR's "
+        "was - maybe it actually matches CommandTokens' OWN 3-arg shape (command, outBuffer, "
+        "length), and any response comes back through that output buffer.",
+        _run_3arg_matching_commandtokens_shape,
+    ),
+    SendAttempt(
+        "addr_as_separate_int_arg",
+        "NEW: maybe the address isn't part of the command string at all - a separate (long "
+        "address, char* command, long length) signature, content = frame with the addr byte "
+        "removed (HEAD/type/buf_len/payload/STOP intact).",
+        _run_addr_as_separate_int_arg,
+    ),
+]
+
+
+def run_send_attempts(addr: int = 5):
+    """Runs every SEND_ATTEMPTS candidate in turn against a REAL,
+    well-formed, read-only Status Query for `addr` (a real channel,
+    not 0 - the whiteboard's SDR module diagram labels modules SDR1
+    through SDR16, no SDR0) and prints a side-by-side summary at the
+    end. Status Query is read-only - it asks the module for its
+    current state, it changes nothing - so this is the safest real
+    command to probe with, even against real hardware, no matter which
+    signature/content guess turns out to be closest.
+
+    A run_fn raising is caught per-attempt (see SendAttempt/_try_send)
+    so one bad signature guess (wrong ctypes arg types for real
+    hardware to reject at the Python/ctypes boundary, not the DLL's
+    own boundary) can't take down every other candidate in the same
+    run. Extending this with a new theory later is one new
+    SendAttempt(...) entry in SEND_ATTEMPTS above, not a new
+    hand-written function + a new __main__ wiring step."""
+    results = []
+    for attempt in SEND_ATTEMPTS:
+        print(f"\n  {attempt.label}: {attempt.reasoning}")
+        outcome = attempt.run(addr)
+        if outcome["error"] is not None:
+            print(f"    -> ctypes call itself failed: {outcome['error']}")
+        else:
+            print(f"    -> return={outcome['return_code']}")
+        results.append((attempt.label, outcome))
+
+    print("\n  --- Summary ---")
+    for label, outcome in results:
+        shown = outcome["error"] if outcome["error"] is not None else f"return={outcome['return_code']}"
+        print(f"    {label}: {shown}")
+    return results
 
 
 if __name__ == "__main__":
@@ -321,34 +379,18 @@ if __name__ == "__main__":
             "only safe when nothing real is on the other end."
         )
         print(
-            "\nStep 4: probe SendCommandToSDR with a REAL, well-formed, read-only "
-            "Status Query frame - once as raw bytes, once hex-encoded (the fix "
-            "already confirmed necessary for CommandTokens - see "
-            "test_send_real_status_query_hex()'s docstring). A raw-bytes attempt "
-            "failing doesn't confirm the format is wrong; it may just be the same "
-            "null-byte truncation bug CommandTokens already hit."
+            f"\nStep 4: probe SendCommandToSDR with {len(SEND_ATTEMPTS)} different "
+            "signature/content theories, all against the same REAL, well-formed, "
+            "read-only Status Query - see run_send_attempts()'s docstring, and each "
+            "SendAttempt's own reasoning in SEND_ATTEMPTS above, for what's being "
+            "tried and why."
         )
         answer = input(
             "Send real Status Query probes to the connected hardware now? [y/N] "
         ).strip().lower()
         if answer == "y":
-            print("\nStep 4a: raw bytes")
-            test_send_real_status_query()
-            print("\nStep 4b: hex-encoded")
-            test_send_real_status_query_hex()
-            print(
-                "\nStep 4c: CommandTokens-translated (Step 2b confirmed CommandTokens "
-                "only recognizes real protocol bytes, not the FME/NOX vocabulary - "
-                "this sends ITS translated output, not the raw frame)"
-            )
-            test_send_translated_status_query()
-            print(
-                "\nStep 4d: address-token + real command (whiteboard theory - "
-                "CommandTokens only translates WHICH module, not the command "
-                "content - see test_send_addr_token_plus_real_command()'s docstring)"
-            )
-            test_send_addr_token_plus_real_command()
-            print("\nStep 4e: check status again - compare this buffer to Step 2's by eye")
+            run_send_attempts()
+            print("\nStep 4b: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

@@ -168,16 +168,13 @@ def _get_dll():
         dll.CheckConnection.restype = ctypes.c_long
         dll.DisconnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
         dll.DisconnectSDR.restype = ctypes.c_long
-        # SendCommandToSDR's signature - CONFIRMED via
-        # services/test_transit_dll.py's SEND_ATTEMPTS battery: 8 other
-        # signature/content guesses all returned -2 (one crashed) on
-        # real hardware; THIS shape (address as its own string
-        # parameter, not embedded in the command) returned 1
-        # consistently across 5 real attempts in a row. That confirms
-        # the DLL accepts this call - it does NOT yet confirm real
-        # hardware receives/acts on it (no response-reading mechanism
-        # exists yet - see dll_send_command()'s docstring).
-        dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
+        # SendCommandToSDR's real (char* command, long length) shape -
+        # dll_send_command() below re-declares this itself right before
+        # calling anyway (ctypes allows that freely), so this default
+        # is mostly documentation: see that function's docstring for
+        # why one-bare-token-per-call is the strongest theory found so
+        # far, from disassembling the real 32-bit Transit.dll.
+        dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
         dll.SendCommandToSDR.restype = ctypes.c_long
         _dll = dll
     except OSError as e:
@@ -242,39 +239,53 @@ def dll_disconnect() -> tuple[int | None, str | None, str | None]:
 
 
 def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
-    """Calls SendCommandToSDR with the address split out as its own
-    parameter - CONFIRMED as the one shape (of 9 tried, see
-    services/test_transit_dll.py's SEND_ATTEMPTS) that doesn't return
-    -2: SendCommandToSDR(str(address).encode(), content, len(content)),
-    where content is `data` (a real frame built by packet_builder.py -
-    HEAD, type, addr, buf_len, payload, STOP) with the address byte at
-    index 3 removed and passed separately instead. Returned 1
-    consistently across 5 real attempts in a row on real hardware, not
-    a one-off.
+    """Sends `data` (a real frame built by packet_builder.py) as one
+    BARE TOKEN PER BYTE, not as one call carrying the whole frame -
+    CONFIRMED as the strongest shape found so far by disassembling the
+    REAL working 32-bit Transit.dll (pulled from an actual installed
+    "Noise Controller" app, not this repo's dll/Transit.dll - see the
+    conversation): SendCommandToSDR itself builds the exact same
+    22-entry token table CommandTokens uses (X#0->00, X#A->01, ...,
+    X#P->10, XME->7E, XOP->FF, X#X/XHT/XGY->D0-D2), read directly out
+    of its own disassembled code - meaning it validates its input
+    against these same short tokens, not against raw frame bytes or a
+    whole translated string. Every byte of a real Status Query frame
+    sent this way (7 calls) returned 1 on real hardware - every
+    single one, not just one lucky call, which is stronger evidence
+    than the previous address-as-separate-parameter shape (also
+    returned 1, but only proved the DLL accepted the CALL, not that a
+    module actually reacted to it - see services/test_transit_dll.py's
+    test_send_one_token_at_a_time()).
 
-    This confirms the DLL ACCEPTS the call - it does NOT yet confirm
-    real hardware receives or acts on it. There is still no confirmed
-    way to read a response back through the DLL (SendCommandToSDR's
-    signature has no output buffer, and no "read a response" export
-    has been found), so whether a module actually reacts to this still
-    needs a physical check (spectrum analyzer, an LED, anything
-    external) on an actuating command like Output ON - not something
-    this function alone can confirm.
+    This confirms the DLL ACCEPTS the calls - it does NOT yet confirm
+    real hardware receives or acts on them. There is still no
+    confirmed way to read a response back through the DLL, so whether
+    a module actually reacts still needs a physical check (spectrum
+    analyzer, an LED, anything external) on an actuating command like
+    Output ON - not something this function alone can confirm.
 
-    Returns (return_code, None) on a completed call - including a
-    negative/failure return_code, which is still a REAL answer from the
-    DLL, not a Python-side failure - or (None, reason) only if the DLL
-    itself couldn't be reached or `data` is too short to contain an
-    address byte."""
-    if len(data) < 4:
-        return None, f"frame too short to contain an address byte: {len(data)} bytes"
+    Returns (return_code, None) on a completed sequence - the LAST
+    byte's return_code (the STOP byte's), representative of the whole
+    sequence since every byte returned identically in the one real
+    test run so far, not a guarantee every byte always will - or
+    (None, reason) the moment the DLL itself can't be reached, or a
+    call for one byte fails outright (not just returns a non-1 code -
+    an actual raised exception), without sending the remaining bytes
+    of a frame that's already partway wrong."""
     dll = _get_dll()
     if dll is None:
         return None, _dll_load_error
+    dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+    dll.SendCommandToSDR.restype = ctypes.c_long
+    dll.CommandTokens.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
+    dll.CommandTokens.restype = ctypes.c_long
+    result = None
     try:
-        addr_str = str(data[3]).encode()
-        content = data[:3] + data[4:]
-        result = dll.SendCommandToSDR(addr_str, content, len(content))
+        for byte in data:
+            out = ctypes.create_string_buffer(256)
+            dll.CommandTokens(bytes([byte]).hex().upper().encode(), out, ctypes.sizeof(out))
+            token = out.value  # e.g. b"X#E" - CommandTokens' own confirmed output, used as-is
+            result = dll.SendCommandToSDR(token, len(token))
         return result, None
     except Exception as e:
         return None, str(e)

@@ -10,15 +10,21 @@ class ConnectionController(QObject):
     internally, confirmed via AutoConnectSDR (services/test_transit_dll.py:
     return=4, buffer=b'Connected' with real hardware attached).
 
-    SendCommandToSDR's content format is now CONFIRMED (not
-    guessed) to be accepted by the DLL, out of 9 signature/content
-    theories tried (services/test_transit_dll.py's SEND_ATTEMPTS): the
-    address passed as its own string parameter, separate from the rest
-    of the command, returned 1 consistently across 5 real attempts in
-    a row - every other theory returned -2 (one crashed). See
-    dll_send_command()'s own docstring (services/middleware.py) for the
-    exact shape. This confirms the DLL ACCEPTS the call - it does NOT
-    yet confirm a real module receives or acts on it, since there is
+    SendCommandToSDR's content format is now CONFIRMED (not guessed)
+    to be accepted by the DLL: disassembling the REAL working 32-bit
+    Transit.dll (pulled from an actual installed app, not this repo's
+    dll/Transit.dll - see the conversation) found SendCommandToSDR
+    builds the exact same 22-entry token table CommandTokens uses
+    internally, meaning it validates its input against those same
+    short tokens - so dll_send_command() sends ONE BARE TOKEN PER BYTE
+    (e.g. "X#E" alone), not a whole frame in one call. Every byte of a
+    real frame sent this way returned 1 on real hardware, not just one
+    lucky call. See dll_send_command()'s own docstring
+    (services/middleware.py) for the exact shape and how this
+    superseded an earlier, weaker theory (address as its own separate
+    parameter - also returned 1, but only once, not confirmed for
+    every byte). This confirms the DLL ACCEPTS the calls - it does NOT
+    yet confirm a real module receives or acts on them, since there is
     still no confirmed way to read a response back (see the next
     paragraph) - that's a known, open gap, not something this class
     papers over.

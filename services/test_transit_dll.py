@@ -147,7 +147,7 @@ def test_send_command(command: bytes = b"TEST"):
     return result
 
 
-def test_send_real_status_query(addr: int = 0):
+def test_send_real_status_query(addr: int = 5):
     """Sends a REAL, well-formed Status Query frame (services/protocol/
     commands.py's query_status()) through SendCommandToSDR, using its
     already-declared (char* command, long length) signature - the same
@@ -157,6 +157,15 @@ def test_send_real_status_query(addr: int = 0):
     is the most direct, least-invented guess available for what
     SendCommandToSDR expects - not a wild guess, just the one shape its
     own already-declared argtypes support.
+
+    Defaults to addr=5, a REAL channel, not 0 - every prior test used
+    query_status()'s old default of 0, and the whiteboard's SDR module
+    diagram labels modules SDR1 through SDR16, no SDR0. If address 0
+    isn't a real module, the whiteboard's own "Validate command before
+    send to SDR" step would reject it every time regardless of content
+    - which would explain why raw bytes, hex-encoded, and translated
+    content all failed with the identical -2. Worth ruling out before
+    trusting any conclusion drawn from the addr=0 attempts.
 
     Status Query is read-only - it asks the module for its current
     state, it changes nothing - so this is the safest real command to
@@ -177,10 +186,12 @@ def test_send_real_status_query(addr: int = 0):
     return result
 
 
-def test_send_real_status_query_hex(addr: int = 0):
-    """Same real Status Query frame as test_send_real_status_query(),
-    but hex-encoded and uppercased first (frame.hex().upper().encode())
-    instead of sent as raw binary - the same fix already confirmed
+def test_send_real_status_query_hex(addr: int = 5):
+    """Same real Status Query frame as test_send_real_status_query()
+    (addr=5, a real channel, not the old addr=0 default - see that
+    function's docstring for why), but hex-encoded and uppercased
+    first (frame.hex().upper().encode()) instead of sent as raw
+    binary - the same fix already confirmed
     necessary for CommandTokens (see dll_command_tokens()'s docstring
     in services/middleware.py): a char* argument across this DLL's ABI
     gets truncated at the first embedded null byte if treated as a C
@@ -216,7 +227,7 @@ def translate_frame_via_dll(frame: bytes) -> str:
     return "".join(tokens)
 
 
-def test_send_translated_status_query(addr: int = 0):
+def test_send_translated_status_query(addr: int = 5):
     """The lead from CommandTokens/SendCommandToSDR's own names (the
     whiteboard's "Translate Tokens" -> "Send to SDR" pipeline): rather
     than sending the raw Status Query frame (confirmed failing, -2,
@@ -224,13 +235,53 @@ def test_send_translated_status_query(addr: int = 0):
     this sends what CommandTokens itself produces for that frame -
     e.g. "XMEXMEX#CX#0X#0X#JX#M" for a real 7-byte Status Query -
     exactly the translated form these two function names suggest
-    SendCommandToSDR is meant to receive next."""
+    SendCommandToSDR is meant to receive next.
+
+    UPDATE: a later whiteboard photo (TOKENS legend: X#0=0, X#1=1,
+    ... right next to "Select what SDR number") suggests CommandTokens
+    actually only translates WHICH MODULE a command targets, not every
+    byte of its content - see test_send_addr_token_plus_real_command()
+    below for that alternative theory, tried separately rather than
+    replacing this one, since neither is confirmed yet."""
     frame = query_status(addr)
     translated = translate_frame_via_dll(frame)
     print(f"CommandTokens-translated Status Query: {translated!r}")
     command = translated.encode()
     result = dll.SendCommandToSDR(command, len(command))
     print(f"SendCommandToSDR(<translated status query>) -> return={result}")
+    return result
+
+
+def test_send_addr_token_plus_real_command(addr: int = 5):
+    """Alternative theory to test_send_translated_status_query() above,
+    from the whiteboard: the TOKENS legend (X#0=0, X#1=1, ...) sits
+    right next to "Select what SDR number", not next to the command
+    content - CommandTokens translates WHICH module a command targets,
+    not the command's bytes. That fits the confirmed data better too:
+    the real table only covers 0x00-0x10 (0-16, exactly MAX_CHANNELS),
+    and the same raw byte (e.g. 0x01) is simultaneously
+    TYPE_OUTPUT_SWITCH, OUTPUT_ON, MODE_LINEAR_SWEEP, and RESP_FAILED
+    in the real protocol - one flat table translating every byte could
+    never disambiguate those; translating just the address field can.
+
+    So this translates ONLY the address byte through CommandTokens
+    (confirmed working, e.g. 0x05 -> "X#E"), then sends that token
+    followed by the REST of the real frame UNTRANSLATED (type,
+    buf_len, payload, STOP - left as real bytes, address byte
+    dropped since it's now represented by the token instead) - i.e.
+    "address swapped for its token, the actual command stays real."
+    Exact placement (token prepended to the front) is still a guess -
+    the whiteboard doesn't show the wire format for the combined
+    message, just that translation and command content are separate
+    concerns."""
+    frame = query_status(addr)
+    out = ctypes.create_string_buffer(256)
+    dll.CommandTokens(frame[3:4].hex().upper().encode(), out, ctypes.sizeof(out))
+    addr_token = out.value.decode('ascii', errors='replace')
+    command = addr_token.encode() + frame[:3] + frame[4:]
+    print(f"Sending addr-token({addr_token!r}) + rest of real frame: {command!r}")
+    result = dll.SendCommandToSDR(command, len(command))
+    print(f"SendCommandToSDR(<addr-token + real frame>) -> return={result}")
     return result
 
 
@@ -291,7 +342,13 @@ if __name__ == "__main__":
                 "this sends ITS translated output, not the raw frame)"
             )
             test_send_translated_status_query()
-            print("\nStep 4d: check status again - compare this buffer to Step 2's by eye")
+            print(
+                "\nStep 4d: address-token + real command (whiteboard theory - "
+                "CommandTokens only translates WHICH module, not the command "
+                "content - see test_send_addr_token_plus_real_command()'s docstring)"
+            )
+            test_send_addr_token_plus_real_command()
+            print("\nStep 4e: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

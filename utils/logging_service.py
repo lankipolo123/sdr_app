@@ -26,7 +26,10 @@ def clear_log(logger: logging.Logger):
     handler keeps writing to the same still-open file descriptor rather
     than a stale/deleted one. Goes through the handler's own lock
     (acquire/release) since the logger can be written to from other
-    threads (e.g. SerialThread) at any moment."""
+    threads at any moment - defensive even though nothing currently
+    logs off the main thread (no background read thread exists anymore
+    now that hooks/use_connection.py calls Transit.dll synchronously
+    instead of polling a real serial port)."""
     for handler in logger.handlers:
         if isinstance(handler, RotatingFileHandler):
             handler.acquire()

@@ -1,19 +1,27 @@
-"""Full-stack dry run against fake hardware - no real serial port needed.
+"""Full-stack dry run against a fake Transit.dll - no real serial port,
+no real DLL needed.
 
 Exercises the same code path a real run does end to end: AppController,
 MainWindow, ChannelManager, ChannelController, ChannelCard, config
-persistence, and shutdown safety - all against a FakeModulePort standing
-in for a real module, so regressions anywhere in the "command sent ->
-state synced -> UI updates" pipeline get caught without needing hardware
-on hand.
+persistence, and shutdown safety - all against a FakeSDR standing in
+for Transit.dll (see tests/fake_hardware.py), so regressions anywhere
+in the "command sent -> UI updates" pipeline get caught without needing
+hardware or a real DLL on hand.
 
-There is no discovery/Scan/+Addr step anymore - every one of the 16
-channel slots gets a real, live ChannelController from the moment the
-app starts, and every command it sends is inherently "blind": it
-brute-force finds an available port fresh, retries on no response, and
-optimistically applies the change on the UI even if nothing ever
-acknowledges it (confirmed on real hardware: an unacknowledged command
-often still reaches the module).
+IMPORTANT SCOPE CHANGE from the pyserial-based version of this file:
+there is currently no confirmed way to receive a real response back
+through the DLL (see services/test_transit_dll.py). Every command now
+always hits its response timeout and applies optimistically -
+UNCONFIRMED - the same path a real unanswered command already used to
+hit, except now EVERY command takes that path, not just an unlucky
+one. Scenarios that used to depend on a confirmed ACK/rejection/byte-
+level-collision response arriving (explicit device rejection reverting
+the UI, colliding-bus corruption, per-address ground-truth checks via
+a simulated device's own state) have been removed - there is nothing
+left to simulate a response WITH. What's still verified: the correct
+frame bytes get sent for each action, the port scheduler still
+serializes access correctly, and the optimistic-apply/UNCONFIRMED
+path itself behaves as designed.
 
 Run: python tests/dry_run.py
 Exits non-zero (and prints a summary of FAILs) if anything's wrong.
@@ -62,10 +70,7 @@ def main():
     app.setPalette(light_palette())
     app.setStyleSheet(build_global_qss())
 
-    from tests.fake_hardware import (
-        FakeModulePort, FakePortRegistry, FakeSharedBusPort, FakeAddressedBusPort,
-        install_fake_hardware,
-    )
+    from tests.fake_hardware import FakeSDR, install_fake_dll
 
     from utils.config_service import ConfigService
     from utils.logging_service import setup_logger
@@ -75,9 +80,9 @@ def main():
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
     from components.channel_card import SLIDER_SEND_DEBOUNCE_MS
-    from services.protocol import constants as c
+    from services.protocol import commands, constants as c
     from services.protocol.packet_parser import ParsedFrame
-    from state.level_map import LEVEL_LABELS
+    from state.level_map import LEVEL_LABELS, LEVEL_TO_HEX
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500  # full retry exhaustion + headroom
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
@@ -106,10 +111,8 @@ def main():
         return controller
 
     print("=== Run 1: every channel already live at launch, no discovery step ===")
-    module = FakeModulePort(address=1)  # wire address (1-16, matches CH01) - not the internal 0-based address card index 0 uses
-    registry = FakePortRegistry()
-    registry.add("FAKE0", module)
-    install_fake_hardware(registry)
+    sdr = FakeSDR(present=True)
+    install_fake_dll(sdr)
 
     restart_work_dir = tempfile.mkdtemp(prefix="sdr_dry_run_restart_")
     controller = make_app_controller(restart_work_dir)
@@ -132,7 +135,6 @@ def main():
 
     card = window._cards[0]
     check("card's display number is address+1 (CH01 for address 0)", card.state.display_number == 1)
-    check("initial state: output off (matches fake module default)", not module.output_on)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
     check("no baseline yet - nothing has ever queried status", controller.channels.states[0].data.mode is None)
@@ -142,7 +144,7 @@ def main():
     print("\n=== Tap-to-arm: locked controls can't send until the card itself is clicked ===")
     card.toggle.click()  # disabled - click() is a no-op on a disabled QPushButton
     pump(100)
-    check("a click on a still-locked toggle does nothing", not module.output_on)
+    check("a click on a still-locked toggle does nothing", not sdr.sent_frames)
     card.arm()
     check("arming enables the toggle", card.toggle.isEnabled())
     check("arming enables the slider", card.slider.isEnabled())
@@ -162,43 +164,47 @@ def main():
     check("no card is armed anymore", window._armed_card is None)
     card.arm()  # re-arm CH01 for the rest of this run
 
-    print("\n=== ON button (single Output ON command - no Signal Control riding along) ===")
+    print("\n=== ON button (single Output ON command) - no confirmed response path, applies optimistically ===")
     card.toggle.click()
-    pump(300)
-    check("hardware output turned on", module.output_on)
-    check("toggle stayed checked", card.toggle.isChecked())
+    pump(WORST_CASE_MS)  # every command now exhausts its retry cycle - see module docstring
+    check("toggle stayed checked (applied optimistically after the retry cycle exhausted)", card.toggle.isChecked())
     check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
-    check("ON alone never touches power_code - still the fake module's untouched default", module.power_code == 0x00)
-    check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not messages)
+    check("the correct Output ON frame was actually sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_on(1))
+    check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not any("GUESSED" in m for m in messages))
+    check("command_timeout fired - nothing can confirm this command yet (see module docstring)", any("UNCONFIRMED" in m for m in messages))
     check(
-        "the TX/RX log actually populated - raw_tx/raw_rx used to be dead signals, never emitted",
-        window.logs_panel.list.count() >= 2,  # at least one TX line and one RX line for this command
+        "the TX log actually populated - raw_tx used to be a dead signal, never emitted",
+        window.logs_panel.list.count() >= 1,
     )
-    check("the log's most recent line is CH01's confirmed ack, not stale/wrong-channel data", "CH01" in window.logs_panel.list.item(window.logs_panel.list.count() - 1).text())
+    check(
+        "the log's most recent line is CH01's TX, not stale/wrong-channel data",
+        "CH01" in window.logs_panel.list.item(window.logs_panel.list.count() - 1).text(),
+    )
+    messages.clear()
 
     print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
     card.slider.setValue(3)
-    pump(SLIDER_SETTLE_MS + 300)
-    check("hardware power_code matches L3 (0x00 / max)", module.power_code == 0x00)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS)
+    expected_max_frame = commands.set_signal(
+        1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[3],
+    )
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
-    check("guessed mode used (no real baseline exists)", module.mode == c.BLIND_DEFAULT_MODE)
-    check("guessed frequency used", module.freq_mhz == c.BLIND_DEFAULT_FREQ_MHZ)
-    check("guessed bandwidth used", module.bandwidth_mhz == c.BLIND_DEFAULT_BANDWIDTH_MHZ)
+    check("the correct Signal Control frame (guessed defaults, L3 power) was sent", sdr.sent_frames and sdr.sent_frames[-1] == expected_max_frame)
     check("guessed-defaults send logged a warning (no more UI banner for it)", any("GUESSED" in m for m in messages))
     messages.clear()
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
     card.slider.setValue(0)
-    pump(SLIDER_SETTLE_MS + 300)
-    check("hardware output turned off", not module.output_on)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS)
     check("toggle reactively switched off", not card.toggle.isChecked())
+    check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
 
     print("\n=== OFF button turned it off - power_code stays whatever the slider last set it to ===")
     card.toggle.click()  # off -> on again: still just a single Output ON command
-    pump(300)
-    check("hardware output back on", module.output_on)
+    pump(WORST_CASE_MS)
+    check("hardware back on (optimistic apply)", card.toggle.isChecked())
     check("slider visually resumed to last non-off level (3, Max) - UI-only", card.slider.value() == 3)
-    check("power_code untouched by ON alone - unchanged from the slider's last real send", module.power_code == 0x00)
+    check("the correct Output ON frame was sent (power_code untouched by ON alone)", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_on(1))
 
     last_level_before_shutdown = controller.channels.states[0].data.last_level
     print(f"\n=== Shutdown (last_level={last_level_before_shutdown} should persist) ===")
@@ -214,7 +220,7 @@ def main():
         saved.get("CH01", "power", fallback=None) == LEVEL_LABELS[last_level_before_shutdown],
     )
 
-    print("\n=== Run 2: restart against the same (still 'plugged in') hardware ===")
+    print("\n=== Run 2: restart, same fake DLL connection still 'plugged in' ===")
     controller2 = make_app_controller(restart_work_dir)
     window2 = MainWindow(controller2)
     window2.show()
@@ -228,26 +234,21 @@ def main():
     )
     window2._cards[0].arm()
     window2._cards[0].toggle.click()  # was restored to on, so this click turns it off this time
-    pump(300)
-    check("second run's OFF click still reaches the same physical hardware", not module.output_on)
-    check(
-        "power_code carries over from the module's last real Signal Control - OFF alone doesn't touch it",
-        module.power_code == 0x00,
-    )
+    pump(WORST_CASE_MS)
+    check("second run's OFF click applies optimistically", not window2._cards[0].toggle.isChecked())
+    check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
     controller2.shutdown()
     window2.close()
     pump(50)
 
     print("\n=== Shutdown while a command is still mid-flight (must not crash) ===")
-    silent_module = FakeModulePort(address=1, silent=True)  # wire address (matches CH01, card index 0)
-    registry_silent = FakePortRegistry()
-    registry_silent.add("FAKE_SILENT", silent_module)
-    install_fake_hardware(registry_silent)
+    mid_flight_sdr = FakeSDR(present=True)
+    install_fake_dll(mid_flight_sdr)
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
     window3._cards[0].arm()
-    window3._cards[0].toggle.click()  # sends a command that will never be ack'd
+    window3._cards[0].toggle.click()  # sends a command; nothing will ever confirm it
     # Deliberately no pump() here - shut down while the retry/response
     # timer is still running.
     controller3.shutdown()
@@ -255,136 +256,73 @@ def main():
     pump(50)
     check("mid-command shutdown completed without raising", True)
 
-    print("\n=== Command timeout (module goes silent), applies optimistically, still logged ===")
-    silent_later_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
-    registry_timeout = FakePortRegistry()
-    registry_timeout.add("FAKE_TIMEOUT", silent_later_module)
-    install_fake_hardware(registry_timeout)
+    print("\n=== Command timeout: applies optimistically, still logged as UNCONFIRMED ===")
+    timeout_sdr = FakeSDR(present=True)
+    install_fake_dll(timeout_sdr)
     controller6 = make_app_controller()
     window6 = MainWindow(controller6)
     window6.show()
     messages6 = []
     controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
-    silent_later_module.silent = True  # module "unplugged" - stops answering
     window6._cards[0].arm()
-    window6._cards[0].toggle.click()  # sends a command that will never be ack'd
-    check("toggle flips immediately (optimistic UI, before any ack)", window6._cards[0].toggle.isChecked())
+    window6._cards[0].toggle.click()
+    check("toggle flips immediately (optimistic UI, before any confirmation)", window6._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
-    check("command_timeout still fires (no UI banner, but still logged/emitted)", bool(messages6))
-    check("timeout message is non-empty", bool(messages6[0]) if messages6 else False)
-    check(
-        "toggle stays as clicked - applied optimistically since the module often "
-        "receives the command even without a readable ack back",
-        window6._cards[0].toggle.isChecked(),
-    )
-    check(
-        "but the fake module itself never actually got it this time (genuinely silent)",
-        not silent_later_module.output_on,
-    )
+    check("command_timeout fires (no UI banner, but still logged/emitted)", bool(messages6))
+    check("timeout message says UNCONFIRMED, not a false confirm", any("UNCONFIRMED" in m for m in messages6))
+    check("toggle stays as clicked - applied optimistically", window6._cards[0].toggle.isChecked())
+    check("the command was actually sent, even though nothing can confirm it landed", timeout_sdr.sent_frames and timeout_sdr.sent_frames[-1] == commands.output_on(1))
     controller6.shutdown()
     window6.close()
     pump(50)
 
-    print("\n=== Explicit rejection (RESP_FAILED) reverts the UI ===")
-    print("(different from a timeout - the device DID respond, just said no)")
-    # There's no discovery to seed the card's starting state from real
-    # hardware anymore, so every card always starts unchecked (off).
-    # Turn it on first (a normal single-command ON, succeeds), THEN
-    # start rejecting - clicking OFF from there is also a single command
-    # (turn_output_off), isolating the single-command rejection path
-    # cleanly.
-    reject_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
-    registry_reject = FakePortRegistry()
-    registry_reject.add("FAKE_REJECT", reject_module)
-    install_fake_hardware(registry_reject)
-    controller15 = make_app_controller()
-    window15 = MainWindow(controller15)
-    window15.show()
-    messages15 = []
-    controller15.channels.command_timeout.connect(lambda msg: messages15.append(msg))
-    window15._cards[0].arm()
-    window15._cards[0].toggle.click()  # off -> on: single Output ON command, succeeds normally
-    pump(300)
-    check("turned on normally first", window15._cards[0].toggle.isChecked())
-    check("hardware really turned on", reject_module.output_on)
-
-    reject_module.reject_next = True
-    window15._cards[0].toggle.click()  # on -> off: single command (turn_output_off)
-    check("toggle flips immediately (optimistic UI)", not window15._cards[0].toggle.isChecked())
-    pump(200)  # fake hardware replies near-instantly, no need to wait for the full timeout
-    check("toggle reverts back on after an explicit device rejection", window15._cards[0].toggle.isChecked())
-    check("hardware itself never actually turned off", reject_module.output_on)
-    check("rejection still fires command_timeout (no UI banner, but still logged/emitted)", bool(messages15))
-
-    controller15.shutdown()
-    window15.close()
-    pump(50)
-
-    print("\n=== resume_output(): if Output ON is rejected, Signal Control")
-    print("    succeeding right after must NOT flip output_on back to True ===")
-    print("(the ON button itself only ever sends a single Output ON command now -")
-    print(" resume_output()'s two-command sequence is only reachable through the")
-    print(" slider, when it's dragged to a level while output is currently off)")
-    resume_module = FakeModulePort(address=1, output_on=False)  # wire address (matches CH01, card index 0)
-    registry_resume = FakePortRegistry()
-    registry_resume.add("FAKE_RESUME", resume_module)
-    install_fake_hardware(registry_resume)
+    print("\n=== resume_output(): dragging the slider from Off sends Output ON, then Signal Control, in order ===")
+    print("(the ON button itself only sends a single Output ON command now - resume_output()'s")
+    print(" two-command sequence is only reachable through the slider, from Off)")
+    resume_sdr = FakeSDR(present=True)
+    install_fake_dll(resume_sdr)
     controller16 = make_app_controller()
     window16 = MainWindow(controller16)
     window16.show()
     check("starts off, as configured", not window16._cards[0].toggle.isChecked())
 
-    # Only the Output Switch half is rejected - Signal Control (the
-    # second command in the resume_output() sequence) goes through
-    # normally right after, since reject_next resets itself.
-    resume_module.reject_next = True
     window16._cards[0].arm()
-    window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands
-    pump(SLIDER_SETTLE_MS + 400)  # both commands round-trip well under this on fake hardware
-    check(
-        "output stays off - the Signal Control success must not override the Output ON rejection",
-        not resume_module.output_on,
+    window16._cards[0].slider.setValue(2)  # off -> level 2: resume_output(), 2 commands, sent one after the other
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
+    expected_resume_signal = commands.set_signal(
+        1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[2],
     )
-    check("card reflects that too, not stuck showing on", not window16._cards[0].toggle.isChecked())
+    check(
+        "Output ON was sent before Signal Control, in that order",
+        commands.output_on(1) in resume_sdr.sent_frames
+        and expected_resume_signal in resume_sdr.sent_frames
+        and resume_sdr.sent_frames.index(commands.output_on(1)) < resume_sdr.sent_frames.index(expected_resume_signal),
+    )
+    check("card ends up showing on (optimistic apply of both commands)", window16._cards[0].toggle.isChecked())
 
     controller16.shutdown()
     window16.close()
     pump(50)
 
     print("\n=== Port scheduler: a second channel's command waits its turn, doesn't collide ===")
-    print("(channel A now holds the port for one attempt at a time, not its whole")
-    print(" retry cycle - channel B gets a fair turn as soon as A's current attempt")
-    print(" times out, instead of waiting out A's entire ~5-6s worst case)")
-    # One shared port (the real-world case), not two separate ones -
-    # _find_and_open_connection() just grabs whichever port opens first
-    # without verifying a response actually comes from it, so two
-    # separate fake ports would let channel B accidentally latch onto
-    # channel A's (wrong) port on its first attempt - a red herring
-    # unrelated to the scheduler itself. Wire address 1 (channel A, card
-    # index 0) has no module in the bus at all, so it's genuinely never
-    # answered - FakeAddressedBusPort.write() finds no target and just
-    # drops it, same net effect as "silent" without also bypassing the
-    # module's own silent-flag check the way routing straight to
-    # _handle() would.
-    sched_module_b = FakeModulePort(address=2)  # wire address (matches CH02, card index 1) - answers normally once it gets a turn
-    sched_bus = FakeAddressedBusPort([sched_module_b])
-    registry_sched = FakePortRegistry()
-    registry_sched.add("FAKE_SCHED", sched_bus)
-    install_fake_hardware(registry_sched)
+    print("(channel A holds the port for one attempt at a time, not its whole retry cycle -")
+    print(" channel B gets a fair turn as soon as A's current attempt times out)")
+    sched_sdr = FakeSDR(present=True)
+    install_fake_dll(sched_sdr)
     controller19 = make_app_controller()
     window19 = MainWindow(controller19)
     window19.show()
 
     window19._cards[0].arm()
-    window19._cards[0].toggle.click()  # channel A starts its retry cycle (silent module) - holds the port for its 1st attempt
+    window19._cards[0].toggle.click()  # channel A starts its retry cycle - holds the port for its 1st attempt
     pump(50)
 
     window19._cards[1].arm()
     window19._cards[1].toggle.click()  # channel B's command queues behind A's in-flight attempt
     pump(200)
     check(
-        "channel B hasn't touched its module yet - A's 1st attempt hasn't timed out yet",
-        not sched_module_b.output_on,
+        "channel B hasn't sent anything yet - A's 1st attempt hasn't timed out yet",
+        not any(f == commands.output_on(2) for f in sched_sdr.sent_frames),
     )
     check(
         "channel B's controller is queued, not holding the port itself",
@@ -393,8 +331,8 @@ def main():
 
     pump(RESPONSE_TIMEOUT_MS + 300)  # A's 1st attempt times out and releases the port - B shouldn't have to wait any longer than that
     check(
-        "channel B's command runs and succeeds as soon as A's current attempt releases the port, not after A's whole cycle",
-        sched_module_b.output_on,
+        "channel B's command actually goes out as soon as A's current attempt releases the port, not after A's whole cycle",
+        any(f == commands.output_on(2) for f in sched_sdr.sent_frames),
     )
 
     pump(WORST_CASE_MS + 500)  # A yielded one attempt to B, so give it that much extra room to finish its own cycle
@@ -408,86 +346,59 @@ def main():
     pump(50)
 
     print("\n=== Port scheduler: Query also waits its turn behind a card's command ===")
-    print("(Query releases the port between its own attempts too - it only waits")
-    print(" out channel A's current attempt, not A's whole retry cycle)")
-    query_wait_module_b = FakeModulePort(address=2)  # wire address (matches CH02, card index 1)
-    query_wait_bus = FakeAddressedBusPort([query_wait_module_b])  # wire address 1 (channel A, card index 0) has no module - never answered
-    registry_query_wait = FakePortRegistry()
-    registry_query_wait.add("FAKE_QUERY_WAIT", query_wait_bus)
-    install_fake_hardware(registry_query_wait)
+    query_wait_sdr = FakeSDR(present=True)
+    install_fake_dll(query_wait_sdr)
     controller20 = make_app_controller()
     window20 = MainWindow(controller20)
     window20.show()
 
     window20._cards[0].arm()
-    window20._cards[0].toggle.click()  # channel A starts its retry cycle (nothing answers) - holds the port for its 1st attempt
+    window20._cards[0].toggle.click()  # channel A starts its retry cycle - holds the port for its 1st attempt
     pump(50)
 
     query_wait_results = []
     controller20.channels.command_timeout.connect(lambda msg: query_wait_results.append(msg))
-    controller20.channels.brute_force_query(2, on=True)  # wire address 2 (matches CH02/module_b) - queues behind channel A's in-flight attempt
+    controller20.channels.brute_force_query(2, on=True)  # queues behind channel A's in-flight attempt
     pump(200)
-    check("Query hasn't touched its module yet - channel A's 1st attempt hasn't timed out yet", not query_wait_module_b.output_on)
+    check(
+        "Query hasn't sent anything yet - channel A's 1st attempt hasn't timed out yet",
+        not any(f == commands.output_on(2) for f in query_wait_sdr.sent_frames),
+    )
     check("Query produced no result yet (still queued)", not query_wait_results)
 
     pump(RESPONSE_TIMEOUT_MS + 300)  # channel A's 1st attempt times out and releases the port - Query shouldn't have to wait any longer than that
-    check("Query runs and confirms as soon as channel A's current attempt releases the port, not after A's whole cycle", query_wait_module_b.output_on)
-    check("Query reported a real confirmed result", any("confirmed" in m for m in query_wait_results))
+    check(
+        "Query's command actually goes out as soon as channel A's current attempt releases the port, not after A's whole cycle",
+        any(f == commands.output_on(2) for f in query_wait_sdr.sent_frames),
+    )
+
+    pump(QUERY_WORST_CASE_MS)
+    check(
+        "Query eventually reports no response - there is no confirmed response path yet (see module docstring)",
+        any("no response" in m for m in query_wait_results),
+    )
 
     controller20.shutdown()
     window20.close()
     pump(50)
 
-    print("\n=== One shared port, two colliding modules (the actual confirmed wiring) ===")
-    print("(single USB-RS422 adapter driving two modules at once - every write")
-    print(" is heard by both, but what comes back is never a clean, parseable")
-    print(" response, only collision noise - same as real hardware testing)")
-    bus_module_a = FakeModulePort(address=0)
-    bus_module_b = FakeModulePort(address=1)
-    shared_bus = FakeSharedBusPort([bus_module_a, bus_module_b])
-    registry_bus = FakePortRegistry()
-    registry_bus.add("FAKE_SHARED_BUS", shared_bus)
-    install_fake_hardware(registry_bus)
-    controller7 = make_app_controller()
-    window7 = MainWindow(controller7)
-    window7.show()
-    messages7 = []
-    controller7.channels.command_timeout.connect(lambda msg: messages7.append(msg))
-    window7._cards[0].arm()
-    window7._cards[0].toggle.click()  # blind send straight into collision noise
-    check("optimistic UI applies immediately, before any response", window7._cards[0].toggle.isChecked())
-    pump(WORST_CASE_MS)
-    check(
-        "still applied after every retry exhausts with no valid response "
-        "(optimistic apply-on-timeout - real hardware showed unconfirmed commands often land anyway)",
-        window7._cards[0].toggle.isChecked(),
-    )
-    check("collision still fires command_timeout (no UI banner, but still logged/emitted)", bool(messages7))
-    check("no crash/hang against a colliding shared bus", True)
-    controller7.shutdown()
-    window7.close()
-    pump(50)
-
     print("\n=== A spurious Status-Query-shaped frame must NOT stomp real state ===")
     print("(no checksum in this protocol - collision noise can occasionally parse")
-    print(" as a structurally valid frame that was never actually sent. Nothing in")
-    print(" the app calls read_status() automatically, so a Status Query response")
-    print(" arriving while only a plain Output ON/OFF ack is pending is always")
-    print(" either noise or a genuine bug - either way it must be ignored, not")
-    print(" trusted at face value)")
-    silent_spurious_module = FakeModulePort(address=0, silent=True)
-    registry_spurious = FakePortRegistry()
-    registry_spurious.add("FAKE_SPURIOUS", silent_spurious_module)
-    install_fake_hardware(registry_spurious)
+    print(" as a structurally valid frame that was never actually sent. This calls")
+    print(" ChannelController.handle_frame() directly - it's still real, unremoved")
+    print(" code, exercised in isolation from the transport it doesn't currently")
+    print(" have a way to actually receive through)")
+    spurious_sdr = FakeSDR(present=True)
+    install_fake_dll(spurious_sdr)
     controller8 = make_app_controller()
     window8 = MainWindow(controller8)
     window8.show()
     card8 = window8._cards[0]
     card8.arm()
 
-    card8.toggle.click()  # ON - module is silent, so this stays genuinely pending
+    card8.toggle.click()  # ON - stays genuinely pending, nothing ever confirms it
     pump(100)
-    check("output not yet confirmed (module hasn't answered)", card8.controller._pending_label is not None)
+    check("output not yet resolved (command still pending)", card8.controller._pending_label is not None)
 
     spurious = ParsedFrame(
         type=c.TYPE_STATUS_QUERY,
@@ -509,7 +420,7 @@ def main():
         card8.controller._pending_label is not None,
     )
 
-    pump(WORST_CASE_MS)  # let the real (silent) command exhaust retries normally
+    pump(WORST_CASE_MS)  # let the real command exhaust retries normally
     check(
         "the real command still resolves normally afterward (optimistic apply, undisturbed)",
         card8.toggle.isChecked(),
@@ -519,13 +430,13 @@ def main():
     window8.close()
     pump(50)
 
-    print("\n=== Standalone Query (retry-verified, separate from the cards) ===")
-    print("(type an address directly, brute-force find the port, and actually")
-    print(" wait for and verify a REAL response, unlike the cards' blind sends)")
-    query_module = FakeModulePort(address=9)
-    registry_query = FakePortRegistry()
-    registry_query.add("FAKE_QUERY", query_module)
-    install_fake_hardware(registry_query)
+    print("\n=== Standalone Query (separate from the cards) ===")
+    print("(type an address directly, brute-force find the connection, send - there is")
+    print(" no confirmed response path yet, so this always ends up reporting no response,")
+    print(" same as every other command right now; what's still verified is that the")
+    print(" right frame actually goes out and cards/controllers are left untouched)")
+    query_sdr = FakeSDR(present=True)
+    install_fake_dll(query_sdr)
     controller17 = make_app_controller()
     window17 = MainWindow(controller17)
     window17.show()
@@ -534,12 +445,12 @@ def main():
     query_results = []
     controller17.channels.command_timeout.connect(lambda msg: query_results.append(msg))
     controller17.channels.brute_force_query(9, on=True)
-    pump(300)
-    check("query confirmed a real response", any("confirmed" in m for m in query_results))
-    check("query actually turned the module on", query_module.output_on)
+    pump(QUERY_WORST_CASE_MS)
+    check("the correct Output ON frame was sent for the queried address", commands.output_on(9) in query_sdr.sent_frames)
+    check("query eventually reports no response - no confirmed response path yet", any("no response" in m for m in query_results))
     check(
         "Query's own traffic shows in the log too, not just cards'",
-        window17.logs_panel.list.count() >= 2,
+        window17.logs_panel.list.count() >= 1,
     )
     check(
         "card 9's toggle stayed put - a standalone query doesn't touch it",
@@ -550,57 +461,13 @@ def main():
         controller17.channels.controllers.get(9) is controller_before,
     )
 
-    query_results.clear()
-    controller17.channels.brute_force_query(2, on=True)  # nothing at address 2
-    pump(QUERY_WORST_CASE_MS)
-    check(
-        "querying a wrong address reports no response, not a false confirm",
-        any("no response" in m for m in query_results),
-    )
-
     controller17.shutdown()
     window17.close()
     pump(50)
 
-    print("\n=== Two addresses sharing one physical port ===")
-    print("(the real-world setup: one adapter, ask address A, then address B on")
-    print(" the SAME port - both just blind-send independently, no claiming or")
-    print(" disconnecting needed between them anymore)")
-    share_a = FakeModulePort(address=5, freq_mhz=2400)  # wire address (matches CH05, card index 4)
-    share_b = FakeModulePort(address=7, freq_mhz=5800)  # wire address (matches CH07, card index 6)
-    addressed_bus = FakeAddressedBusPort([share_a, share_b])
-    registry_share = FakePortRegistry()
-    registry_share.add("FAKE_SHARE", addressed_bus)
-    install_fake_hardware(registry_share)
-    controller13 = make_app_controller()
-    window13 = MainWindow(controller13)
-    window13.show()
-
-    # Arming is exclusive - only one card unlocked at a time - so each
-    # address gets armed right before it's used, same as a real user
-    # selecting one card, acting on it, then selecting the next.
-    window13._cards[4].arm()
-    window13._cards[4].toggle.click()
-    pump(300)
-    check("CH05 turned on", share_a.output_on)
-    check("turning CH05 on doesn't leak into CH07", not share_b.output_on)
-
-    window13._cards[6].arm()
-    check("arming CH07 locked CH05 back down", not window13._cards[4].toggle.isEnabled())
-    window13._cards[6].toggle.click()
-    pump(300)
-    check("CH07 also works on the same shared port", share_b.output_on)
-    check("CH05 still on, unaffected by CH07's command", share_a.output_on)
-
-    controller13.shutdown()
-    window13.close()
-    pump(50)
-
     print("\n=== Modulation dropdown sends Signal Control and persists across restart ===")
-    mode_module = FakeModulePort(address=1)  # wire address (matches CH01, card index 0)
-    registry_mode = FakePortRegistry()
-    registry_mode.add("FAKE_MODE", mode_module)
-    install_fake_hardware(registry_mode)
+    mode_sdr = FakeSDR(present=True)
+    install_fake_dll(mode_sdr)
 
     mode_work_dir = tempfile.mkdtemp(prefix="sdr_dry_run_mode_")
     controller_mode = make_app_controller(mode_work_dir)
@@ -611,13 +478,13 @@ def main():
     window_mode._cards[0].arm()
     window_mode._cards[0].mode_combo.setCurrentIndex(1)  # Linear Sweep
     pump(300)
-    check(
-        "picking a mode alone does NOT send - Set is required",
-        mode_module.mode != c.MODE_LINEAR_SWEEP,
-    )
+    check("picking a mode alone does NOT send - Set is required", not mode_sdr.sent_frames)
     window_mode._cards[0].mode_set_btn.click()
-    pump(300)
-    check("Set actually changed the hardware mode to Linear Sweep", mode_module.mode == c.MODE_LINEAR_SWEEP)
+    pump(WORST_CASE_MS)
+    expected_mode_frame = commands.set_signal(
+        1, c.MODE_LINEAR_SWEEP, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
+    )
+    check("Set actually sent the Linear Sweep Signal Control frame", mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame)
     check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
 
     # Regression: a combo box's dropdown list is its own top-level popup,

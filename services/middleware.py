@@ -156,10 +156,106 @@ def _get_dll():
         dll = ctypes.WinDLL(_DLL_PATH)
         dll.CommandTokens.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long]
         dll.CommandTokens.restype = ctypes.c_long
+        # AutoConnectSDR's shape is CONFIRMED (real VB6 Declare
+        # statement, and observed working against real hardware -
+        # return=4, buffer=b'Connected' - see services/test_transit_dll.py).
+        # CheckConnection/DisconnectSDR/SendCommandToSDR are declared
+        # the same (char* buffer, long length) -> long shape by
+        # symmetry, NOT independently confirmed the same way - see
+        # services/test_transit_dll.py's docstring for the full history,
+        # including that SendCommandToSDR has returned -2 for every
+        # content format tried against real hardware so far.
+        dll.AutoConnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+        dll.AutoConnectSDR.restype = ctypes.c_long
+        dll.CheckConnection.argtypes = [ctypes.c_char_p, ctypes.c_long]
+        dll.CheckConnection.restype = ctypes.c_long
+        dll.DisconnectSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+        dll.DisconnectSDR.restype = ctypes.c_long
+        dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+        dll.SendCommandToSDR.restype = ctypes.c_long
         _dll = dll
     except OSError as e:
         _dll_load_error = str(e)
     return _dll
+
+
+def dll_auto_connect() -> tuple[int | None, str | None, str | None]:
+    """Calls the real Transit.dll AutoConnectSDR export - CONFIRMED
+    working (return=4, buffer=b'Connected' with real hardware attached;
+    return=-1, buffer=b'DisConnected' with nothing attached - see
+    services/test_transit_dll.py). No port name, baud, parity, or data
+    bits is passed - AutoConnectSDR owns port discovery entirely
+    internally, unlike the pyserial-based SerialManager.open() this
+    replaces (hooks/use_connection.py).
+
+    Returns (return_code, buffer_text, None) on a completed call, or
+    (None, None, reason) if the DLL itself couldn't be reached (missing
+    file, wrong platform, call raised) - same never-raises guarantee as
+    dll_command_tokens() below."""
+    dll = _get_dll()
+    if dll is None:
+        return None, None, _dll_load_error
+    try:
+        buf = ctypes.create_string_buffer(256)
+        result = dll.AutoConnectSDR(buf, ctypes.sizeof(buf))
+        return result, buf.value.decode("ascii", errors="replace"), None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def dll_check_connection() -> tuple[int | None, str | None, str | None]:
+    """Same shape as dll_auto_connect(), for CheckConnection - confirmed
+    callable and returns a sensible buffer (return=40, buffer=b'Connected'
+    observed with real hardware attached), though its return-code
+    convention (is 40 always "connected"? what does "not connected"
+    look like from THIS function specifically?) isn't independently
+    confirmed the way AutoConnectSDR's -1/4 is."""
+    dll = _get_dll()
+    if dll is None:
+        return None, None, _dll_load_error
+    try:
+        buf = ctypes.create_string_buffer(256)
+        result = dll.CheckConnection(buf, ctypes.sizeof(buf))
+        return result, buf.value.decode("ascii", errors="replace"), None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def dll_disconnect() -> tuple[int | None, str | None, str | None]:
+    """Same shape again, for DisconnectSDR - observed return=1,
+    buffer=b'' against real hardware (services/test_transit_dll.py)."""
+    dll = _get_dll()
+    if dll is None:
+        return None, None, _dll_load_error
+    try:
+        buf = ctypes.create_string_buffer(256)
+        result = dll.DisconnectSDR(buf, ctypes.sizeof(buf))
+        return result, buf.value.decode("ascii", errors="replace"), None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
+    """Calls SendCommandToSDR with `data` sent exactly as given - no
+    translation, no hex-encoding done here. NOT CONFIRMED WORKING:
+    every content format tried against real hardware so far (raw frame
+    bytes, hex-encoded, CommandTokens-translated, address-token + real
+    frame) has returned -2 identically - see services/test_transit_dll.py's
+    docstring for the full investigation. This function doesn't pick a
+    format; the caller decides what `data` contains.
+
+    Returns (return_code, None) on a completed call - including a
+    negative/failure return_code, which is still a REAL answer from the
+    DLL, not a Python-side failure - or (None, reason) only if the DLL
+    itself couldn't be reached."""
+    dll = _get_dll()
+    if dll is None:
+        return None, _dll_load_error
+    try:
+        result = dll.SendCommandToSDR(data, len(data))
+        return result, None
+    except Exception as e:
+        return None, str(e)
 
 
 def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
@@ -269,8 +365,8 @@ def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
 
 def dll_log_text(data: bytes) -> str:
     """Convenience wrapper around dll_decode_frame() for plain log
-    lines (SerialManager, ChannelController, etc.) that just want one
-    hex-free string to write to the log - those call sites don't need
+    lines (ChannelController, ChannelManager's _QueryAttempt, etc.)
+    that just want one hex-free string to write to the log - those call sites don't need
     to distinguish failure reasons the way the GUI's dev-mode display
     does, just something other than raw hex to put in the line.
     Never raises, same guarantee as dll_decode_frame() itself."""

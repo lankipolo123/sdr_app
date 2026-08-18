@@ -271,9 +271,14 @@ class ChannelController(QObject):
         self._send(frame, label, state_update)
 
     def _on_raw_rx_bytes(self, chunk: bytes):
-        # Fires for ANY bytes actually read off the port, even ones that
-        # never form a complete/valid frame (see SerialThread.run - this
-        # is emitted before the frame parser even runs). Only a fully
+        # Never actually fires right now - ConnectionController's
+        # raw_rx is currently never emitted (see its class docstring:
+        # no confirmed way to receive a response back through the DLL
+        # yet). Kept wired so this comes back to life automatically
+        # once that's figured out, same as frame_received/_on_frame_received
+        # below. Was originally meant to fire for ANY bytes actually
+        # read off the port, even ones that never form a complete/
+        # valid frame, emitted before the frame parser even runs. Only a fully
         # parsed, matching frame gets logged to the file today (see
         # handle_frame) - on a collision-prone line that leaves a real
         # gap: "zero RX log lines" could mean either genuinely nothing

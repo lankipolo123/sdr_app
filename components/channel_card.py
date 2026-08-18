@@ -39,7 +39,7 @@ def _signal_lock(widget):
 class ChannelCard(Card):
     """One hardware channel's controls, split left/right: the left column
     holds a Modulation dropdown (Pseudo Random Noise/Linear Sweep/
-    Multi-tone/Spectral Line, see services/protocol/constants.MODE_NAMES)
+    Multi-tone/Continuous Wave (CW), see services/protocol/constants.MODE_NAMES)
     with its own Set button beside it - picking an option only
     changes the dropdown, nothing sends until Set is clicked (see
     mode_set_btn/_on_mode_set) - and explicit ON/OFF buttons

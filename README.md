@@ -1,4 +1,4 @@
-# SDR Customer Control (simplified)
+# Noise Controller
 
 Desktop control application for a multi-channel SDR module setup over
 RS422 - a simplified, customer-facing rebuild of the original
@@ -9,7 +9,7 @@ RS422 - a simplified, customer-facing rebuild of the original
 ## Install (Windows)
 
 1. Click the download badge above (or go to the repo's
-   [Releases](../../releases) page) and download `TX Controller.exe`.
+   [Releases](../../releases) page) and download `Noise Controller.exe`.
 2. Windows will show an "Unknown Publisher" SmartScreen warning the
    first time you run it - expected, since the build isn't
    code-signed, not a sign anything's wrong. Click "More info" then
@@ -18,7 +18,7 @@ RS422 - a simplified, customer-facing rebuild of the original
    Menu entry yet. Double-click it to launch any time.
 
 No Python, no terminal, nothing else to install. Each release also
-includes `TX Controller.exe.sha256`, a checksum you can compare
+includes `Noise Controller.exe.sha256`, a checksum you can compare
 against if you want to confirm your download matches exactly what was
 built.
 
@@ -111,7 +111,7 @@ pip install -r requirements-build.txt
 python build_exe.py
 ```
 
-Output lands in `dist/TX Controller.exe` - one file, no console
+Output lands in `dist/Noise Controller.exe` - one file, no console
 window, icon and `assets/` bundled inside. To also produce a proper
 installer (Start Menu/Desktop shortcuts, uninstall entry) via
 [Inno Setup](https://jrsoftware.org/isinfo.php):
@@ -121,13 +121,13 @@ python build_exe.py
 iscc installer.iss
 ```
 
-Output lands in `installer_output/TX Controller Setup.exe`. Inno
+Output lands in `installer_output/Noise Controller Setup.exe`. Inno
 Setup is Windows-only, so this step can't be run or verified from
 Linux/Mac.
 
 ### Releasing automatically
 
-`.github/workflows/release.yml` builds `TX Controller.exe` on a real
+`.github/workflows/release.yml` builds `Noise Controller.exe` on a real
 Windows GitHub Actions runner and publishes it to a GitHub Release.
 Two ways to trigger it:
 

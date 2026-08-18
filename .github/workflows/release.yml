@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum "TX Controller.exe" > "TX Controller.exe.sha256"
+          sha256sum "Noise Controller.exe" > "Noise Controller.exe.sha256"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -63,14 +63,14 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: |
-            dist/TX Controller.exe
-            dist/TX Controller.exe.sha256
+            dist/Noise Controller.exe
+            dist/Noise Controller.exe.sha256
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown
             Publisher" warning the first time you run it. That's
             expected, not a sign anything is wrong - click "More info"
             then "Run anyway". Verify the download against
-            `TX Controller.exe.sha256` if you want to confirm it
+            `Noise Controller.exe.sha256` if you want to confirm it
             wasn't corrupted or altered, or build it yourself from
             source with `build_exe.py`.

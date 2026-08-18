@@ -21,7 +21,7 @@ MODE_NAMES = {
     MODE_WHITE_NOISE: "Pseudo Random Noise",
     MODE_LINEAR_SWEEP: "Linear Sweep",
     MODE_COMB_SPECTRUM: "Multi-tone",
-    MODE_SINGLE: "Spectral Line",
+    MODE_SINGLE: "Continuous Wave (CW)",
 }
 
 MODES_UNCONFIRMED = frozenset({MODE_SINGLE})

@@ -10,7 +10,7 @@ Then just:
 
     python build_exe.py
 
-Output lands in dist/TX Controller.exe - a single file, no console
+Output lands in dist/Noise Controller.exe - a single file, no console
 window, with the app icon and the assets/ folder (icons) bundled
 inside it. dist/, build/, and *.spec are all gitignored, so this
 script (not a checked-in .spec file) is what stays reproducible in
@@ -79,7 +79,7 @@ def main():
     args = [
         sys.executable, "-m", "PyInstaller",
         MAIN_SCRIPT,
-        "--name", "TX Controller",
+        "--name", "Noise Controller",
         "--onefile",
         "--windowed",
         "--icon", ICON_ICO,

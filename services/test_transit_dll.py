@@ -165,6 +165,45 @@ def translate_frame_via_dll(frame: bytes) -> str:
     return "".join(tokens)
 
 
+def test_send_one_token_at_a_time(addr: int = 5):
+    """NEW theory, from disassembling the REAL working Transit.dll (a
+    32-bit build, pulled from an actual installed "Noise Controller"
+    app - see the conversation, not this repo's dll/Transit.dll, whose
+    bitness/provenance is unconfirmed): SendCommandToSDR builds the
+    EXACT SAME 22-entry token table internally (X#0->00, X#A->01, ...,
+    X#P->10, XME->7E, XOP->FF, X#X/XHT/XGY->D0-D2) that CommandTokens
+    uses - confirmed by reading it directly out of SendCommandToSDR's
+    own disassembled code, not a guess. That means SendCommandToSDR
+    itself validates/parses its input against these SAME short tokens
+    - strongly suggesting it wants ONE BARE TOKEN per call (e.g. just
+    b"X#E" alone, nothing concatenated, nothing embedded in a longer
+    string), the same granularity CommandTokens already works at -
+    not a whole translated frame or a frame with a token spliced in,
+    both of which we already tried and got -2.
+
+    This calls CommandTokens once per byte of a real frame (confirmed
+    working, e.g. 0x05 -> "X#E"), then calls SendCommandToSDR with
+    JUST that one token as its entire content, one call per byte, in
+    order - mirroring the disassembly's own token-at-a-time table
+    lookup instead of trying to cram a whole frame into one call.
+    Prints every step so a mid-sequence change in behavior (e.g. the
+    HEAD tokens succeed but the address token fails) is visible, not
+    just a final pass/fail."""
+    frame = query_status(addr)
+    print(f"Sending frame {frame.hex(' ').upper()} as one bare token per byte:")
+    dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+    dll.SendCommandToSDR.restype = ctypes.c_long
+    results = []
+    for byte in frame:
+        out = ctypes.create_string_buffer(256)
+        dll.CommandTokens(bytes([byte]).hex().upper().encode(), out, ctypes.sizeof(out))
+        token = out.value
+        result = dll.SendCommandToSDR(token, len(token))
+        print(f"  byte 0x{byte:02X} -> token {token!r} -> SendCommandToSDR return={result}")
+        results.append((byte, token, result))
+    return results
+
+
 class SendAttempt:
     """One candidate theory of what SendCommandToSDR actually wants -
     both its argument SIGNATURE and its CONTENT, since both are
@@ -452,8 +491,15 @@ if __name__ == "__main__":
             "Send real Status Query probes to the connected hardware now? [y/N] "
         ).strip().lower()
         if answer == "y":
+            print(
+                "\nStep 4a: one bare token per byte (from disassembling the REAL "
+                "working 32-bit Transit.dll - see test_send_one_token_at_a_time()'s "
+                "docstring)"
+            )
+            test_send_one_token_at_a_time()
+            print("\nStep 4b: the 9-theory battery from before, for comparison")
             run_send_attempts()
-            print("\nStep 4b: check status again - compare this buffer to Step 2's by eye")
+            print("\nStep 4c: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

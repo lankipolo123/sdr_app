@@ -1,6 +1,5 @@
 import struct
-from dataclasses import dataclass, field
-from typing import Optional, List
+from dataclasses import dataclass
 
 from . import constants as c
 from state.level_map import HEX_TO_LEVEL, LEVEL_LABELS
@@ -92,52 +91,3 @@ class ParsedFrame:
             return "Address set OK" if code == c.RESP_SUCCESS else "Address set failed"
 
         return f"Unrecognized/short payload for type 0x{self.type:02X}"
-
-
-class FrameParseError(ValueError):
-    pass
-
-
-class FrameParser:
-    def __init__(self):
-        self._buf = bytearray()
-
-    def feed(self, data: bytes) -> List[ParsedFrame]:
-        self._buf.extend(data)
-        frames = []
-        while True:
-            frame = self._try_extract_one()
-            if frame is None:
-                break
-            frames.append(frame)
-        return frames
-
-    def _try_extract_one(self) -> Optional[ParsedFrame]:
-        head_idx = self._buf.find(c.HEAD)
-        if head_idx == -1:
-            if len(self._buf) > 1:
-                del self._buf[:-1]
-            return None
-        if head_idx > 0:
-            del self._buf[:head_idx]
-
-        if len(self._buf) < 5:
-            return None
-
-        type_byte = self._buf[2]
-        addr = self._buf[3]
-        buf_len = self._buf[4]
-        total_len = 5 + buf_len + 2
-
-        if len(self._buf) < total_len:
-            return None
-
-        candidate = bytes(self._buf[:total_len])
-        stop = candidate[-2:]
-        if stop != c.STOP:
-            del self._buf[:2]
-            return None
-
-        payload = candidate[5:5 + buf_len]
-        del self._buf[:total_len]
-        return ParsedFrame(type=type_byte, addr=addr, buf=payload, raw=candidate)

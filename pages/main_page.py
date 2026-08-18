@@ -10,17 +10,13 @@ from components import (
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
-from services.protocol.packet_parser import describe_command
-from services.team_vocab import encode_team_tokens
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
 
 TOP_ROW_HEIGHT = 90
 CONTROLS_MIN_WIDTH = 260
 LOGS_MIN_WIDTH = 260
-DEV_LOGS_MIN_WIDTH = 200
 
-DEV_MODE_SEQUENCE = ["`", "d", "e", "v"]
 CHANNELS_PER_ROW = 4
 
 
@@ -29,7 +25,7 @@ class MainWindow(QMainWindow):
     def __init__(self, app_controller):
         super().__init__()
         self.app = app_controller
-        self.setWindowTitle("Noise Controller")
+        self.setWindowTitle("TX Controller")
         self._apply_window_chrome()
 
         central = ResizableContainer(self)
@@ -37,7 +33,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self.title_bar = TitleBar(self, "Noise Controller", icon=self.windowIcon())
+        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
         self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
         root.addWidget(self.title_bar)
 
@@ -59,9 +55,6 @@ class MainWindow(QMainWindow):
 
         for address in range(MAX_CHANNELS):
             self._build_card(address)
-
-        self.dev_mode = False
-        self._dev_key_buffer = []
 
         QApplication.instance().installEventFilter(self)
 
@@ -87,12 +80,6 @@ class MainWindow(QMainWindow):
         self.logs_panel.setFixedHeight(TOP_ROW_HEIGHT)
         self.logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         top_row.addWidget(self.logs_panel, 4, alignment=Qt.AlignTop)
-
-        self.dev_logs_panel = LogsPanel("Dev Logs", icon="fa5s.code", min_width=DEV_LOGS_MIN_WIDTH)
-        self.dev_logs_panel.setFixedHeight(TOP_ROW_HEIGHT)
-        self.dev_logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.dev_logs_panel.setVisible(False)
-        top_row.addWidget(self.dev_logs_panel, 3, alignment=Qt.AlignTop)
 
         return top_row
 
@@ -147,29 +134,7 @@ class MainWindow(QMainWindow):
                 self._armed_card.disarm()
                 self._armed_card = None
 
-        if event.type() == QEvent.KeyPress and obj is self:
-            self._track_dev_mode_key(event)
-
         return super().eventFilter(obj, event)
-
-    def _track_dev_mode_key(self, event):
-        if event.isAutoRepeat():
-            return
-
-        if event.key() == Qt.Key_QuoteLeft:
-            char = "`"
-        elif event.text():
-            char = event.text().lower()
-        else:
-            return
-
-        self._dev_key_buffer.append(char)
-        self._dev_key_buffer = self._dev_key_buffer[-len(DEV_MODE_SEQUENCE):]
-        if self._dev_key_buffer == DEV_MODE_SEQUENCE:
-            self._dev_key_buffer = []
-            self.dev_mode = not self.dev_mode
-            self.title_bar.set_dev_mode(self.dev_mode)
-            self.dev_logs_panel.setVisible(self.dev_mode)
 
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
@@ -184,28 +149,17 @@ class MainWindow(QMainWindow):
     def _on_clear_log(self):
         clear_log(self.app.logger)
         self.logs_panel.clear()
-        self.dev_logs_panel.clear()
         self.controls_bar.set_status("Log cleared.")
 
     def _on_raw_tx(self, address: int, data: bytes):
-        decoded = describe_command(data)
-        encoded_value, encoded_error = dll_decode_frame(data)
+        encoded_value, _ = dll_decode_frame(data)
         main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
         self.logs_panel.append_line(f"TX CH{address:02d}: {main_display}")
-        if self.dev_mode:
-            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
-            team_tokens = encode_team_tokens(data)
-            self.dev_logs_panel.append_line(f"CH{address:02d}: {decoded}")
-            self.dev_logs_panel.append_line(f"ENC: {dev_display}")
-            self.dev_logs_panel.append_line(f"TOK: {team_tokens}")
 
     def _on_raw_rx(self, address: int, data: bytes):
-        encoded_value, encoded_error = dll_decode_frame(data)
+        encoded_value, _ = dll_decode_frame(data)
         main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
         self.logs_panel.append_line(f"RX CH{address:02d}: {main_display}")
-        if self.dev_mode:
-            dev_display = encoded_value if encoded_value is not None else f"[middleware unavailable: {encoded_error}]"
-            self.dev_logs_panel.append_line(f"RX ENC CH{address:02d}: {dev_display}")
 
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)

@@ -91,14 +91,6 @@ class TitleBar(QWidget):
         title_label.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
         layout.addWidget(title_label)
 
-        self.dev_badge = QLabel("DEV MODE")
-        self.dev_badge.setStyleSheet(
-            f"color: {STATUS_ERROR_LIGHT}; font-size: 10px; font-weight: 700; "
-            f"border: 1px solid {STATUS_ERROR_LIGHT}; border-radius: 4px; padding: 1px 6px;"
-        )
-        self.dev_badge.setVisible(False)
-        layout.addWidget(self.dev_badge)
-
         layout.addStretch()
 
         self.min_btn = _CaptionButton("minimize")
@@ -114,9 +106,6 @@ class TitleBar(QWidget):
             layout.addWidget(btn)
 
         outer.addWidget(row, 1)
-
-    def set_dev_mode(self, active: bool):
-        self.dev_badge.setVisible(active)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

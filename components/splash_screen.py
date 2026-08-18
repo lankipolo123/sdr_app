@@ -27,7 +27,7 @@ def build_splash(icon_path: str) -> QSplashScreen:
 
     painter.setPen(QColor(ACCENT_BLUE))
     painter.setFont(QFont("Segoe UI", 15, QFont.Bold))
-    painter.drawText(QRectF(0, 128, width, 28), Qt.AlignCenter, "Noise Controller")
+    painter.drawText(QRectF(0, 128, width, 28), Qt.AlignCenter, "TX Controller")
 
     painter.setPen(QColor(TEXT_LIGHT))
     painter.setFont(QFont("Segoe UI", 10))

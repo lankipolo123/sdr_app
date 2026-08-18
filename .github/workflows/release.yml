@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           cd dist
-          7z a "Noise Controller.zip" "Noise Controller"
+          7z a "TX Controller.zip" "TX Controller"
 
       - name: Compute SHA256 checksum
         # Published alongside the zip so anyone can verify the
@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum "Noise Controller.zip" > "Noise Controller.zip.sha256"
+          sha256sum "TX Controller.zip" > "TX Controller.zip.sha256"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -72,14 +72,14 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: |
-            dist/Noise Controller.zip
-            dist/Noise Controller.zip.sha256
+            dist/TX Controller.zip
+            dist/TX Controller.zip.sha256
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown
             Publisher" warning the first time you run it. That's
             expected, not a sign anything is wrong - click "More info"
             then "Run anyway". Verify the download against
-            `Noise Controller.zip.sha256` if you want to confirm it
+            `TX Controller.zip.sha256` if you want to confirm it
             wasn't corrupted or altered, or build it yourself from
             source with `build_exe.py`.

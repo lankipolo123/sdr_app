@@ -40,7 +40,7 @@ def main():
     args = [
         sys.executable, "-OO", "-m", "PyInstaller",
         MAIN_SCRIPT,
-        "--name", "Noise Controller",
+        "--name", "TX Controller",
         "--onedir",
         "--windowed",
         "--icon", ICON_ICO,

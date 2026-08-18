@@ -7,9 +7,9 @@ class ProtocolError(ValueError):
 
 
 def _frame(type_byte: int, addr: int, buf: bytes) -> bytes:
-    if not (0 <= addr <= 0xFF):
+    if not (0 <= addr <= 255):
         raise ProtocolError(f"Address out of range: {addr}")
-    if len(buf) > 0xFF:
+    if len(buf) > 255:
         raise ProtocolError("Payload too long for 1-byte BufLen field")
     return (
         c.HEAD
@@ -35,7 +35,7 @@ def build_signal_control(addr: int, mode: int, freq_mhz: int,
         )
     if bandwidth_mhz not in c.BANDWIDTH_CODES:
         raise ProtocolError(f"Unsupported bandwidth: {bandwidth_mhz} MHz")
-    if not (0 <= power_code <= 0xFF):
+    if not (0 <= power_code <= 255):
         raise ProtocolError(f"Power code out of range for a single byte: {power_code}")
 
     buf = bytes([mode]) \
@@ -45,7 +45,7 @@ def build_signal_control(addr: int, mode: int, freq_mhz: int,
     return _frame(c.TYPE_SIGNAL_CONTROL, addr, buf)
 
 
-def build_status_query(addr: int = 0x00) -> bytes:
+def build_status_query(addr: int = 0) -> bytes:
     return _frame(c.TYPE_STATUS_QUERY, addr, b"")
 
 
@@ -57,7 +57,3 @@ def build_addr_set(new_addr: int) -> bytes:
     if not (c.ADDR_MIN <= new_addr <= c.ADDR_MAX):
         raise ProtocolError(f"Address out of range: {new_addr}")
     return _frame(c.TYPE_ADDR_SET, c.BROADCAST_ADDR, bytes([new_addr]))
-
-
-def to_hex_str(data: bytes) -> str:
-    return " ".join(f"{b:02X}" for b in data)

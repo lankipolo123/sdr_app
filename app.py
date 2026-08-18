@@ -20,15 +20,6 @@ def run():
     if os.path.exists(ICON_PATH):
         qt_app.setWindowIcon(QIcon(ICON_PATH))
 
-    # AppController/MainWindow construction (loading saved channel
-    # state, building 16 channel cards, caching qtawesome icons to
-    # disk on a first run) all happens synchronously here, before the
-    # Qt event loop even starts - the splash is what's on screen for
-    # that stretch instead of nothing. processEvents() right after
-    # show() is what actually gets it painted before that blocking
-    # work begins; without it, Qt would just queue the paint and the
-    # splash would never visibly appear until everything below it was
-    # already done.
     splash = build_splash(ICON_PATH)
     splash.show()
     qt_app.processEvents()

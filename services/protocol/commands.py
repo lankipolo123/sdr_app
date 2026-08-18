@@ -14,7 +14,7 @@ def set_signal(addr: int, mode: int, freq_mhz: int, bandwidth_mhz: int, power_co
     return pb.build_signal_control(addr, mode, freq_mhz, bandwidth_mhz, power_code)
 
 
-def query_status(addr: int = 0x00) -> bytes:
+def query_status(addr: int = 0) -> bytes:
     return pb.build_status_query(addr)
 
 

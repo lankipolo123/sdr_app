@@ -21,17 +21,6 @@ def default_log_folder() -> str:
 
 
 def resource_path(*parts: str) -> str:
-    """Path to a bundled READ-ONLY asset (icon, etc.) - resolves inside
-    the PyInstaller onefile temp extraction dir (sys._MEIPASS) when
-    frozen, or the real project directory otherwise.
-
-    Deliberately separate from user_data_dir(): that one is for
-    WRITABLE runtime files (config/logs) that must live outside the
-    temp extraction dir to actually persist - a frozen onefile exe
-    re-extracts to a fresh temp dir every launch, so anything written
-    there is gone the moment the process exits. Assets only ever need
-    reading, so the temp extraction dir is exactly where they should
-    come from when frozen."""
     if is_frozen():
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:

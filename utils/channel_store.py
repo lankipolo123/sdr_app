@@ -12,17 +12,6 @@ _LEVEL_NAME_TO_LEVEL = {name: level for level, name in LEVEL_LABELS.items() if l
 
 
 def load_channel_states(path: str = CHANNEL_STORE_PATH) -> dict[int, dict]:
-    """Reads the flat, human-readable .ini file each channel's mode/power/
-    output state is persisted to - one [CH01]..[CH16] section per channel,
-    matching what's shown on the card, not the internal 0-based address.
-    Returns {address: {"mode": int, "last_level": int, "output_on": bool}}
-    keyed by the internal 0-based address (section "CH01" -> address 0),
-    same key ChannelManager.states/.controllers already use everywhere -
-    only ever includes the fields that were actually present and valid,
-    so a partially-written or hand-edited section still restores whatever
-    of it makes sense. A missing file, unreadable file, or malformed
-    section never raises - the caller just falls back to normal defaults
-    for whatever isn't present."""
     result: dict[int, dict] = {}
     if not os.path.exists(path):
         return result
@@ -62,11 +51,6 @@ def load_channel_states(path: str = CHANNEL_STORE_PATH) -> dict[int, dict]:
 
 
 def save_channel_states(states: dict, path: str = CHANNEL_STORE_PATH):
-    """Writes every channel's current mode/power/output out to the .ini
-    file, one [CHxx] section each. `states` is the same {address:
-    ChannelState} dict ChannelManager.states already is - display_number
-    (not the raw address) names the section, so the file reads the same
-    CH01/CH02/... numbering the UI and logs already use."""
     parser = configparser.ConfigParser()
     for address in sorted(states):
         state = states[address]

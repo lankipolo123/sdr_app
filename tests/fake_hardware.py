@@ -1,228 +1,38 @@
-"""Stands in for real serial hardware so the full app stack (discovery,
-command round-trips, protocol framing, reactive UI sync) can be exercised
-without a physical module attached. Used by tests/dry_run.py.
-
-FakeModulePort parses whatever the app writes to it with the same
-FrameParser the app itself uses, and answers with protocol-correct
-response frames - so everything above the serial byte stream (
-ConnectionController, SerialThread, ChannelController, the UI) runs
-completely for real against synthetic traffic, not mocked out.
-"""
-import struct
-import time
-
-from services.protocol import constants as c
-from services.protocol.packet_parser import FrameParser
 
 
-class FakeModulePort:
-    """One simulated hardware module. Each instance is one point-to-point
-    RS422 link's worth of state, matching how the real modules behave
-    (confirmed on real hardware: they don't share a bus)."""
+class FakeSDR:
 
-    def __init__(self, address: int = 0, mode: int = c.MODE_WHITE_NOISE,
-                 freq_mhz: int = 2450, bandwidth_mhz: int = 100, power_code: int = 0x00,
-                 output_on: bool = False, silent: bool = False):
-        self.address = address
-        self.mode = mode
-        self.freq_mhz = freq_mhz
-        self.bandwidth_mhz = bandwidth_mhz
-        self.power_code = power_code
-        self.output_on = output_on
-        # Never replies to anything - simulates a dead port (nothing
-        # plugged in, or a module that's stopped answering mid-session)
-        # for testing discovery-timeout and command-timeout handling.
-        self.silent = silent
-        # Makes the NEXT Output Switch / Signal Control reply RESP_FAILED
-        # instead of RESP_SUCCESS, then resets itself - simulates a real
-        # device explicitly rejecting a command, as opposed to just not
-        # answering. Nothing previously exercised this path.
-        self.reject_next = False
-        self._parser = FrameParser()
-        self._rx = bytearray()  # queued module -> app bytes
+    def __init__(self, present: bool = True, send_return_code: int = -2):
+        self.present = present
+        self.send_return_code = send_return_code
+        self.sent_frames: list[bytes] = []
+        self.connect_calls = 0
+        self.send_calls = 0
 
-    def write(self, data: bytes):
-        if self.silent:
-            return
-        for frame in self._parser.feed(data):
-            self._handle(frame)
+    def auto_connect(self):
+        self.connect_calls += 1
+        if self.present:
+            return 4, "Connected", None
+        return -1, "DisConnected", None
 
-    def read(self, size: int = 256) -> bytes:
-        if not self._rx:
-            time.sleep(0.005)  # avoid a hot-spinning read loop like real pyserial's timeout would
-            return b""
-        chunk = bytes(self._rx[:size])
-        del self._rx[:size]
-        return chunk
+    def check_connection(self):
+        if self.present:
+            return 40, "Connected", None
+        return -1, "DisConnected", None
 
-    def _reply(self, frame_type: int, payload: bytes):
-        self._rx.extend(c.HEAD + bytes([frame_type, self.address, len(payload)]) + payload + c.STOP)
+    def disconnect(self):
+        return 1, "", None
 
-    def _handle(self, frame):
-        if frame.type == c.TYPE_ADDR_QUERY:
-            self._reply(c.TYPE_ADDR_QUERY, bytes([self.address]))
-        elif frame.type == c.TYPE_STATUS_QUERY:
-            payload = (
-                bytes([int(self.output_on), self.mode])
-                + struct.pack(">H", self.freq_mhz)
-                + bytes([c.BANDWIDTH_CODES[self.bandwidth_mhz], self.power_code])
-            )
-            self._reply(c.TYPE_STATUS_QUERY, payload)
-        elif frame.type == c.TYPE_OUTPUT_SWITCH and frame.addr == self.address:
-            if self.reject_next:
-                self.reject_next = False
-                self._reply(c.TYPE_OUTPUT_SWITCH, bytes([c.RESP_FAILED]))
-                return
-            self.output_on = frame.buf[0] == c.OUTPUT_ON
-            self._reply(c.TYPE_OUTPUT_SWITCH, bytes([c.RESP_SUCCESS]))
-        elif frame.type == c.TYPE_SIGNAL_CONTROL and frame.addr == self.address:
-            if self.reject_next:
-                self.reject_next = False
-                self._reply(c.TYPE_SIGNAL_CONTROL, bytes([c.RESP_FAILED]))
-                return
-            self.mode = frame.buf[0]
-            self.freq_mhz = struct.unpack(">H", frame.buf[1:3])[0]
-            self.bandwidth_mhz = c.BANDWIDTH_CODES_REV[frame.buf[3]]
-            self.power_code = frame.buf[4]
-            # Deliberately does NOT set self.output_on here - matches real
-            # hardware (confirmed via spectrum analyzer): Signal Control
-            # alone reconfigures parameters but doesn't re-enable the RF
-            # stage once it's been switched off. Only Output Switch ON
-            # does that. Without this, the fake would have hidden the
-            # exact bug that was found on real hardware.
-            self._reply(c.TYPE_SIGNAL_CONTROL, bytes([c.RESP_SUCCESS]))
+    def send_command(self, data: bytes):
+        self.send_calls += 1
+        self.sent_frames.append(bytes(data))
+        return self.send_return_code, None
 
 
-class FakeSharedBusPort:
-    """Simulates the real-world failure mode already confirmed on actual
-    hardware: multiple modules wired onto ONE port (one USB-RS422
-    adapter, many addresses) instead of one module per port. RS422
-    isn't a real multi-drop bus - when more than one module tries to
-    answer the same line at once, their transmitters collide
-    electrically and corrupt everything, which is why real testing saw
-    "no response at all" with two modules on one adapter rather than
-    two clean replies.
-
-    Modeled here as: every write is "heard" by every attached module
-    (matching a real shared line), but the reply that comes back is
-    garbage - never a well-formed frame - standing in for electrical
-    contention rather than politely interleaved responses. Used to
-    verify discovery times out and moves on cleanly instead of hanging,
-    crashing, or building a channel out of corrupted bytes."""
-
-    def __init__(self, modules: list):
-        self.modules = modules
-        self._rx = bytearray()
-
-    def write(self, data: bytes):
-        for module in self.modules:
-            module._parser.feed(data)  # each module "hears" it, same as a real shared line
-        # Bytes actually appear on the wire looking like collision noise,
-        # not any one module's clean, well-formed reply.
-        self._rx.extend(bytes((b + 0x5A) & 0xFF for b in data))
-
-    def read(self, size: int = 256) -> bytes:
-        if not self._rx:
-            time.sleep(0.005)
-            return b""
-        chunk = bytes(self._rx[:size])
-        del self._rx[:size]
-        return chunk
-
-
-class FakeAddressedBusPort:
-    """The OPTIMISTIC counterpart to FakeSharedBusPort - models two
-    modules sharing one physical line where the app's own code (not the
-    electrical layer) is what's under test: does asking one address at a
-    time, reusing one connection, actually route each response to the
-    right channel without cross-talk. Every write is heard by every
-    module (real shared line), but only the module whose own address
-    matches the frame's target address actually replies - this class
-    doesn't claim that's how the real hardware behaves (the electrical
-    collision is already proven separately), it exists purely to verify
-    ChannelManager's own dispatch-by-address logic is correct when a
-    connection is genuinely shared by more than one address."""
-
-    def __init__(self, modules: list):
-        self.modules = modules
-        self._parser = FrameParser()
-        self._rx = bytearray()
-
-    def write(self, data: bytes):
-        for frame in self._parser.feed(data):
-            target = next((m for m in self.modules if m.address == frame.addr), None)
-            if target is None:
-                continue
-            before = len(target._rx)
-            target._handle(frame)
-            self._rx.extend(target._rx[before:])
-            del target._rx[before:]
-
-    def read(self, size: int = 256) -> bytes:
-        if not self._rx:
-            time.sleep(0.005)
-            return b""
-        chunk = bytes(self._rx[:size])
-        del self._rx[:size]
-        return chunk
-
-
-class FakePortRegistry:
-    """What's "plugged in" for a test run - maps fake port names to
-    FakeModulePort instances, the same way real ports map to real
-    modules."""
-
-    def __init__(self):
-        self.modules: dict[str, FakeModulePort] = {}
-
-    def add(self, port_name: str, module: FakeModulePort):
-        self.modules[port_name] = module
-
-    def list_ports(self):
-        return list(self.modules.keys())
-
-
-class FakeSerialManager:
-    """Drop-in replacement for services.serial.serial_manager.SerialManager."""
-
-    def __init__(self, registry: FakePortRegistry):
-        self._registry = registry
-        self._module: FakeModulePort | None = None
-        self._open = False
-
-    def open(self, port_name: str, baud: int = 115200, parity: str = "N", data_bits: int = 8):
-        if port_name not in self._registry.modules:
-            raise RuntimeError(f"no fake module on {port_name!r}")
-        self._module = self._registry.modules[port_name]
-        self._open = True
-
-    def close(self):
-        self._open = False
-        self._module = None
-
-    def is_open(self) -> bool:
-        return self._open
-
-    def write(self, data: bytes):
-        if not self._open:
-            raise RuntimeError("port not open")
-        self._module.write(data)
-
-    def read(self, size: int = 256) -> bytes:
-        if not self._open:
-            return b""
-        return self._module.read(size)
-
-    def reset_input_buffer(self):
-        pass  # no real OS-level buffer to clear against fake hardware
-
-
-def install_fake_hardware(registry: FakePortRegistry):
-    """Reroutes the app's serial layer to the given fake registry. Patches
-    the names as imported into hooks/use_connection.py (Python binds
-    those at import time, so the real module is untouched - only this
-    module's local references change for the life of the test process)."""
+def install_fake_dll(sdr: FakeSDR):
     import hooks.use_connection as uc
 
-    uc.SerialManager = lambda: FakeSerialManager(registry)
-    uc.list_com_ports = registry.list_ports
+    uc.dll_auto_connect = sdr.auto_connect
+    uc.dll_check_connection = sdr.check_connection
+    uc.dll_disconnect = sdr.disconnect
+    uc.dll_send_command = sdr.send_command

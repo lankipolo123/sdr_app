@@ -15,8 +15,6 @@ CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")
 
 
 class ConfigService:
-    """Plain overwrite-on-save JSON - small, infrequent writes, no accounts
-    file and no action log (both removed from scope along with roles)."""
 
     def __init__(self, path: str = CONFIG_PATH):
         self.path = path
@@ -30,7 +28,7 @@ class ConfigService:
                     loaded = json.load(f)
                 self.data.update(loaded)
             except (json.JSONDecodeError, OSError):
-                pass  # fall back to defaults silently; don't crash on a bad config file
+                pass
         return self.data
 
     def save(self):

@@ -1,18 +1,3 @@
-"""Encodes an outgoing command frame into the team's own 3-letter token
-vocabulary - the scheme from the whiteboard/senior, not anything found
-by disassembling Transit.dll. Pure Python, no DLL involved: every
-mapping below is a fixed table the team defined themselves, so this
-works identically on any platform and never fails or falls back.
-
-Only fields that actually HAVE a defined token get one. Two real
-protocol fields - the channel address, and Signal Control's frequency
-(an arbitrary 300-6000 MHz integer, not one of a small fixed set) -
-have no token defined anywhere in the team's vocabulary. Rather than
-invent codes for those (which would be exactly the made-up-value
-problem this whole effort is trying to avoid), they're shown plainly
-in brackets, e.g. "[addr=5]" - a visible gap to fill in once the team
-defines one, not a silent guess standing in for it.
-"""
 import struct
 
 from services.protocol import constants as c
@@ -49,9 +34,6 @@ RESP_TOKENS = {
     c.RESP_SUCCESS: "SS",
 }
 
-# L0 deliberately reuses OUTPUT_OFF's own token (XXX) - matches the
-# team's own notes ("L0 = XXX, matches OUTPUT_OFF - intentional"), not
-# a collision introduced here.
 LEVEL_TOKENS = {
     0: "XXX",
     1: "L1X",
@@ -61,12 +43,6 @@ LEVEL_TOKENS = {
 
 
 def encode_team_tokens(frame: bytes) -> str:
-    """Translates one outgoing TX frame (as built by services/protocol/
-    packet_builder.py) into the team's token vocabulary, space-
-    separated, in wire order: HEAD, TYPE, ADDR, <payload tokens>, STOP.
-    Never raises and never returns None - every field either has a
-    real token or an explicit bracketed placeholder, so there's always
-    something to show."""
     if len(frame) < 5:
         return "[malformed frame]"
 
@@ -77,8 +53,6 @@ def encode_team_tokens(frame: bytes) -> str:
 
     tokens = [HEAD_TOKEN]
     tokens.append(TYPE_TOKENS.get(type_byte, f"[type=0x{type_byte:02X}]"))
-    # No team-defined token for the address itself yet - see module
-    # docstring.
     tokens.append(f"[addr={addr}]")
 
     if type_byte == c.TYPE_OUTPUT_SWITCH and len(buf) == 1:
@@ -88,8 +62,6 @@ def encode_team_tokens(frame: bytes) -> str:
         mode, bw_code, power_code = buf[0], buf[3], buf[4]
         freq = struct.unpack(">H", buf[1:3])[0]
         tokens.append(MODE_TOKENS.get(mode, f"[mode=0x{mode:02X}]"))
-        # No team-defined token for an arbitrary frequency value - see
-        # module docstring.
         tokens.append(f"[freq={freq}MHz]")
         bw_mhz = c.BANDWIDTH_CODES_REV.get(bw_code)
         bw_token = BANDWIDTH_TOKENS.get(bw_mhz) if bw_mhz is not None else None
@@ -99,7 +71,7 @@ def encode_team_tokens(frame: bytes) -> str:
         tokens.append(level_token if level_token else f"[power=0x{power_code:02X}]")
 
     elif type_byte == c.TYPE_STATUS_QUERY:
-        pass  # no payload
+        pass
 
     else:
         tokens.append(f"[payload={buf.hex(' ').upper()}]")

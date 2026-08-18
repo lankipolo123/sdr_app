@@ -3,8 +3,6 @@ from .use_channels import ChannelManager
 
 
 class AppController:
-    """No auto-scan on launch, deliberately - see MainWindow. Scanning
-    only ever happens from an explicit user click now."""
 
     def __init__(self):
         self.config = ConfigService()

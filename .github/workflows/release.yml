@@ -40,17 +40,26 @@ jobs:
       - name: Build .exe
         run: python build_exe.py
 
+      - name: Zip the build
+        # --onedir produces a folder (exe + its Python/Qt runtime), not
+        # a single portable .exe - zip it so there's still one file to
+        # download and hand out, same as before the --onedir switch.
+        shell: bash
+        run: |
+          cd dist
+          7z a "TX Controller.zip" "TX Controller"
+
       - name: Compute SHA256 checksum
-        # Published alongside the .exe so anyone can verify the
+        # Published alongside the zip so anyone can verify the
         # download wasn't corrupted or tampered with after this
-        # workflow built it - the .exe itself is unsigned (no code-
+        # workflow built it - the build itself is unsigned (no code-
         # signing certificate), so this checksum plus "you can read
         # the build script yourself" is the honesty story in place of
         # a paid cert removing the SmartScreen warning outright.
         shell: bash
         run: |
           cd dist
-          sha256sum "TX Controller.exe" > "TX Controller.exe.sha256"
+          sha256sum "TX Controller.zip" > "TX Controller.zip.sha256"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -63,14 +72,14 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: |
-            dist/TX Controller.exe
-            dist/TX Controller.exe.sha256
+            dist/TX Controller.zip
+            dist/TX Controller.zip.sha256
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown
             Publisher" warning the first time you run it. That's
             expected, not a sign anything is wrong - click "More info"
             then "Run anyway". Verify the download against
-            `TX Controller.exe.sha256` if you want to confirm it
+            `TX Controller.zip.sha256` if you want to confirm it
             wasn't corrupted or altered, or build it yourself from
             source with `build_exe.py`.

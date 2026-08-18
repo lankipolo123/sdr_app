@@ -1,27 +1,11 @@
 import struct
-from dataclasses import dataclass, field
-from typing import Optional, List
+from dataclasses import dataclass
 
 from . import constants as c
 from state.level_map import HEX_TO_LEVEL, LEVEL_LABELS
 
 
 def describe_command(frame: bytes) -> str:
-    """Human-readable summary of an OUTGOING command frame - Signal
-    Control's payload here means mode+freq+bandwidth+power to SET, not
-    a 1-byte success/fail response code the way the same type byte
-    means in a reply (see ParsedFrame.describe) - commands and
-    responses need separate decoders even though they share type
-    bytes. Decodes the actual bytes about to go out (re-derives fields
-    the same way packet_builder.py encodes them) rather than trusting
-    the caller's own free-text label, so it can't silently drift out
-    of sync with what the frame actually contains.
-
-    Power shows as the same Low/Med/High/Off vocabulary the slider
-    itself uses (see state/level_map.py) rather than the raw hex code
-    - a log meant to be human-readable shouldn't make the reader
-    mentally reverse a hex-to-level lookup that's already defined
-    once, right there."""
     if len(frame) < 5:
         return "malformed frame"
     type_byte = frame[2]
@@ -34,11 +18,11 @@ def describe_command(frame: bytes) -> str:
     if type_byte == c.TYPE_SIGNAL_CONTROL and len(buf) == 5:
         mode, bw_code, power_code = buf[0], buf[3], buf[4]
         freq = struct.unpack(">H", buf[1:3])[0]
-        mode_name = c.MODE_NAMES.get(mode, f"0x{mode:02X}")
+        mode_name = c.MODE_NAMES.get(mode, "unrecognized mode")
         bandwidth = c.BANDWIDTH_CODES_REV.get(bw_code)
-        bw_str = f"{bandwidth}MHz" if bandwidth is not None else f"0x{bw_code:02X}"
+        bw_str = f"{bandwidth}MHz" if bandwidth is not None else "unrecognized bandwidth"
         level = HEX_TO_LEVEL.get(power_code)
-        power_str = LEVEL_LABELS[level] if level is not None else f"0x{power_code:02X}"
+        power_str = LEVEL_LABELS[level] if level is not None else "unrecognized power level"
         return f"mode={mode_name} freq={freq}MHz bw={bw_str} power={power_str}"
 
     if type_byte == c.TYPE_STATUS_QUERY:
@@ -50,7 +34,7 @@ def describe_command(frame: bytes) -> str:
     if type_byte == c.TYPE_ADDR_SET and len(buf) == 1:
         return f"Address Set: {buf[0]}"
 
-    return f"Unrecognized command type 0x{type_byte:02X}"
+    return "Unrecognized command type"
 
 
 @dataclass
@@ -68,7 +52,7 @@ class ParsedFrame:
             elif code == c.RESP_FAILED:
                 return "Control failed"
             else:
-                return f"Other/unknown response code: 0x{code:02X}"
+                return "Other/unknown response code"
 
         if self.type == c.TYPE_STATUS_QUERY and len(self.buf) >= 6:
             output = self.buf[0]
@@ -76,12 +60,14 @@ class ParsedFrame:
             freq = struct.unpack(">H", self.buf[2:4])[0]
             bw_code = self.buf[4]
             pw_code = self.buf[5]
+            bw_display = c.BANDWIDTH_CODES_REV.get(bw_code)
+            level = HEX_TO_LEVEL.get(pw_code)
             return (
                 f"Status: output={'ON' if output else 'OFF'}, "
-                f"mode={c.MODE_NAMES.get(mode, mode)}, "
+                f"mode={c.MODE_NAMES.get(mode, 'unrecognized mode')}, "
                 f"freq={freq}MHz, "
-                f"bw={c.BANDWIDTH_CODES_REV.get(bw_code, bw_code)}MHz, "
-                f"power_code=0x{pw_code:02X}"
+                f"bw={f'{bw_display}MHz' if bw_display is not None else 'unrecognized bandwidth'}, "
+                f"power={LEVEL_LABELS[level] if level is not None else 'unrecognized power level'}"
             )
 
         if self.type == c.TYPE_ADDR_QUERY and len(self.buf) == 1:
@@ -91,53 +77,4 @@ class ParsedFrame:
             code = self.buf[0]
             return "Address set OK" if code == c.RESP_SUCCESS else "Address set failed"
 
-        return f"Unrecognized/short payload for type 0x{self.type:02X}"
-
-
-class FrameParseError(ValueError):
-    pass
-
-
-class FrameParser:
-    def __init__(self):
-        self._buf = bytearray()
-
-    def feed(self, data: bytes) -> List[ParsedFrame]:
-        self._buf.extend(data)
-        frames = []
-        while True:
-            frame = self._try_extract_one()
-            if frame is None:
-                break
-            frames.append(frame)
-        return frames
-
-    def _try_extract_one(self) -> Optional[ParsedFrame]:
-        head_idx = self._buf.find(c.HEAD)
-        if head_idx == -1:
-            if len(self._buf) > 1:
-                del self._buf[:-1]
-            return None
-        if head_idx > 0:
-            del self._buf[:head_idx]
-
-        if len(self._buf) < 5:
-            return None
-
-        type_byte = self._buf[2]
-        addr = self._buf[3]
-        buf_len = self._buf[4]
-        total_len = 5 + buf_len + 2
-
-        if len(self._buf) < total_len:
-            return None
-
-        candidate = bytes(self._buf[:total_len])
-        stop = candidate[-2:]
-        if stop != c.STOP:
-            del self._buf[:2]
-            return None
-
-        payload = candidate[5:5 + buf_len]
-        del self._buf[:total_len]
-        return ParsedFrame(type=type_byte, addr=addr, buf=payload, raw=candidate)
+        return "Unrecognized/short payload"

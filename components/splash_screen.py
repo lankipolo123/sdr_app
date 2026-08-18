@@ -9,15 +9,6 @@ _RADIUS = 14
 
 
 def build_splash(icon_path: str) -> QSplashScreen:
-    """A static loading screen shown while AppController/MainWindow are
-    being constructed (see app.py's run()) - both happen synchronously
-    on the main thread before the Qt event loop even starts, so nothing
-    can actually animate during that window (a real spinner would need
-    threaded construction, a much bigger change than what showing a
-    loading screen calls for). Matches the app's own NAVY/ACCENT_BLUE
-    frameless-card look instead of Qt's plain default splash rectangle,
-    drawn once onto a QPixmap rather than relying on a static image
-    asset that would need to be kept in sync with the theme by hand."""
     width, height = _SIZE
     pixmap = QPixmap(width, height)
     pixmap.fill(Qt.transparent)

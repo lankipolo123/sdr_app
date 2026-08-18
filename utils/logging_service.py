@@ -8,7 +8,7 @@ def setup_logger(log_folder: str = "logs", name: str = "sdr_controller") -> logg
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
-    if not logger.handlers:  # avoid duplicate handlers on repeated setup calls
+    if not logger.handlers:
         file_handler = RotatingFileHandler(
             os.path.join(log_folder, "sdr_controller.log"),
             maxBytes=1_000_000,
@@ -22,11 +22,6 @@ def setup_logger(log_folder: str = "logs", name: str = "sdr_controller") -> logg
 
 
 def clear_log(logger: logging.Logger):
-    """Truncates the log file in place instead of deleting it, so the
-    handler keeps writing to the same still-open file descriptor rather
-    than a stale/deleted one. Goes through the handler's own lock
-    (acquire/release) since the logger can be written to from other
-    threads (e.g. SerialThread) at any moment."""
     for handler in logger.handlers:
         if isinstance(handler, RotatingFileHandler):
             handler.acquire()

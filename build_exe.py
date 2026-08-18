@@ -1,21 +1,3 @@
-"""Builds the standalone Windows .exe with PyInstaller.
-
-Run this ON WINDOWS (PyInstaller builds for whatever OS it runs on -
-there's no cross-compiling a Windows .exe from Linux/Mac). Needs
-PyInstaller installed first:
-
-    pip install pyinstaller
-
-Then just:
-
-    python build_exe.py
-
-Output lands in dist/TX Controller.exe - a single file, no console
-window, with the app icon and the assets/ folder (icons) bundled
-inside it. dist/, build/, and *.spec are all gitignored, so this
-script (not a checked-in .spec file) is what stays reproducible in
-version control.
-"""
 import os
 import subprocess
 import sys
@@ -24,33 +6,82 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 ICON_ICO = os.path.join(ROOT, "assets", "icons", "app_icon.ico")
 ASSETS_DIR = os.path.join(ROOT, "assets")
 MAIN_SCRIPT = os.path.join(ROOT, "main.py")
+ENCRYPTED_ARCHIVE = os.path.join(ROOT, "app_encrypted.pyz")
 
-# PyInstaller wants SRC<sep>DEST for --add-data, and the separator is
-# platform-specific (';' on Windows, ':' elsewhere) - os.pathsep gets
-# this right without hardcoding a platform.
-ADD_DATA = f"{ASSETS_DIR}{os.pathsep}assets"
+UPX_DIR = os.environ.get("UPX_DIR")
+
+ADD_DATA = [
+    f"{ASSETS_DIR}{os.pathsep}assets",
+    f"{ENCRYPTED_ARCHIVE}{os.pathsep}.",
+]
+
+UNUSED_QT_MODULES = [
+    "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
+    "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuick3D",
+    "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
+    "PySide6.QtNetwork", "PySide6.QtSql", "PySide6.QtPdf", "PySide6.QtPdfWidgets",
+    "PySide6.QtCharts", "PySide6.QtDataVisualization",
+    "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtSerialPort", "PySide6.QtSensors",
+    "PySide6.QtPositioning", "PySide6.QtLocation",
+    "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtUiTools",
+    "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DInput",
+    "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
+    "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtStateMachine",
+    "PySide6.QtSvg", "PySide6.QtSvgWidgets",
+    "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",
+    "PySide6.QtWebChannel", "PySide6.QtWebSockets", "PySide6.QtNetworkAuth", "PySide6.QtHttpServer",
+    "PySide6.QtQuickControls2", "PySide6.QtQuickTest", "PySide6.QtSpatialAudio",
+    "PySide6.QtGraphs", "PySide6.QtGraphsWidgets", "PySide6.QtQuick3DPhysics",
+    "PySide6.QtVirtualKeyboard", "PySide6.QtTextToSpeech",
+    "PySide6.QtTest",
+]
+
+# main.py only ever reaches the rest of the app (app.py, hooks/,
+# components/, pages/, services/, state/, styles/, utils/) through a
+# dynamic importlib.import_module() call - deliberate, so PyInstaller's
+# static analysis never discovers or bundles that code as plain,
+# decompilable bytecode (see crypto_loader.py/build_encrypt.py: it ships
+# AES-encrypted instead, in app_encrypted.pyz). The cost: PyInstaller's
+# usual automatic discovery (which normally finds every real import by
+# walking the module graph from main.py) never runs on any of it either,
+# so every third-party package AND stdlib submodule that code actually
+# uses has to be listed explicitly here - confirmed one at a time against
+# a real built-and-run onedir binary (not guessed): PySide6/qtawesome are
+# genuinely third-party, the rest are stdlib submodules PyInstaller's
+# default bundling doesn't include unless something in the discovered
+# graph really imports them.
+HIDDEN_IMPORTS = [
+    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "qtawesome",
+    "logging.handlers", "configparser", "contextlib", "copy", "ctypes",
+    "collections", "dataclasses", "json", "struct", "enum", "typing",
+]
 
 
 def main():
     if not os.path.exists(ICON_ICO):
         sys.exit(f"Missing icon: {ICON_ICO}")
 
+    print("Encrypting app source ->", ENCRYPTED_ARCHIVE)
+    subprocess.run([sys.executable, os.path.join(ROOT, "build_encrypt.py")], check=True, cwd=ROOT)
+
     args = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable, "-OO", "-m", "PyInstaller",
         MAIN_SCRIPT,
         "--name", "TX Controller",
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--icon", ICON_ICO,
-        "--add-data", ADD_DATA,
-        # qtawesome ships its icon font/data as package resources -
-        # PyInstaller's static import analysis doesn't see those (they're
-        # loaded by qtawesome internally, not import-ed), so without this
-        # they'd silently go missing from the bundle and every icon in
-        # the app would just fail to render at runtime.
-        "--collect-data", "qtawesome",
         "--noconfirm",
     ]
+    for entry in ADD_DATA:
+        args += ["--add-data", entry]
+    args += ["--collect-data", "qtawesome"]
+    for module in HIDDEN_IMPORTS:
+        args += ["--hidden-import", module]
+    for module in UNUSED_QT_MODULES:
+        args += ["--exclude-module", module]
+    if UPX_DIR:
+        args += ["--upx-dir", UPX_DIR]
     print("Running:", " ".join(args))
     subprocess.run(args, check=True, cwd=ROOT)
 

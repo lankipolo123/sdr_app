@@ -8,17 +8,24 @@ RS422 - a simplified, customer-facing rebuild of the original
 
 ## Install (Windows)
 
-1. Click the download badge above (or go to the repo's
-   [Releases](../../releases) page) and download `TX Controller.exe`.
-2. Windows will show an "Unknown Publisher" SmartScreen warning the
-   first time you run it - expected, since the build isn't
-   code-signed, not a sign anything's wrong. Click "More info" then
-   "Run anyway".
-3. That's it. It's a single portable `.exe` - no installer, no Start
-   Menu entry yet. Double-click it to launch any time.
+Two ways to get it:
+
+- **Installer** (recommended): run `TX Controller Setup.exe`
+  (built via `installer.iss` - see "Building it yourself" below) for
+  a real install wizard with a Start Menu entry and uninstaller.
+- **Portable zip**: click the download badge above (or go to the repo's
+  [Releases](../../releases) page), download `TX Controller.zip`,
+  and extract it anywhere. Launch `TX Controller.exe` from inside
+  the extracted folder - no installer, no Start Menu entry, but
+  nothing to install either.
+
+Either way, Windows will show an "Unknown Publisher" SmartScreen
+warning the first time you run it - expected, since the build isn't
+code-signed, not a sign anything's wrong. Click "More info" then "Run
+anyway".
 
 No Python, no terminal, nothing else to install. Each release also
-includes `TX Controller.exe.sha256`, a checksum you can compare
+includes `TX Controller.zip.sha256`, a checksum you can compare
 against if you want to confirm your download matches exactly what was
 built.
 
@@ -111,9 +118,21 @@ pip install -r requirements-build.txt
 python build_exe.py
 ```
 
-Output lands in `dist/TX Controller.exe` - one file, no console
-window, icon and `assets/` bundled inside. To also produce a proper
-installer (Start Menu/Desktop shortcuts, uninstall entry) via
+`build_exe.py` first runs `build_encrypt.py`, which AES-encrypts the
+app's own source (`app.py`, `components/`, `hooks/`, `pages/`,
+`services/`, `state/`, `styles/`, `utils/`) into `app_encrypted.pyz` -
+third-party packages (PySide6, qtawesome) and stdlib aren't touched,
+just this repo's own code. PyInstaller then bundles that archive
+instead of plain `.py`/`.pyc` files; `crypto_loader.py` decrypts it in
+memory at launch (only when frozen - `python main.py` from source
+runs the plain files directly, unaffected). `app_encrypted.pyz` is
+gitignored and regenerated on every build, not something to commit.
+
+Output lands in `dist/TX Controller/` - a folder build (`--onedir`,
+so launch is fast - no self-extraction on every start like
+`--onefile` would need), with `TX Controller.exe`, its icon, and
+`assets/` all alongside each other. To also produce a proper installer
+(Start Menu/Desktop shortcuts, uninstall entry) via
 [Inno Setup](https://jrsoftware.org/isinfo.php):
 
 ```bash
@@ -164,4 +183,10 @@ open items below.
 - **Not code-signed.** Windows SmartScreen will flag the `.exe` as
   from an unknown publisher until a code-signing certificate is
   bought and wired into the build (see Install section above).
-- PyArmor intentionally left out for now, per request.
+- **Source protection is AES encryption of the shipped bytecode
+  (`crypto_loader.py`/`build_encrypt.py`), not real obfuscation.**
+  PyArmor was considered and intentionally skipped - its free tier's
+  terms prohibit commercial use, and this is a real commercial build.
+  The AES key ships inside the binary itself (has to, for the app to
+  decrypt its own code at launch), so this stops casual inspection of
+  the shipped `.exe`, not a determined reverse-engineering effort.

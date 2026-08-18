@@ -5,18 +5,6 @@ from styles.theme_colors import STATUS_OK, STATUS_ERROR, BORDER_SUBTLE, TEXT_MUT
 
 
 class PowerButton(QWidget):
-    """Two explicit buttons, ON and OFF, side by side - not a single
-    checkable toggle whose label used to swap between 'Activate'/'Power
-    Off'. Each click sends exactly one command (Output ON or Output
-    OFF), same simplicity as the standalone Query diagnostic's ON/OFF
-    choice - no bundled slider-resume or guessed Signal Control
-    alongside it. The currently-known state just highlights whichever
-    button matches it.
-
-    Exposes the same isChecked()/setChecked()/toggled() API the old
-    checkable-button version did (plus a click() convenience that flips
-    to the opposite of whatever's currently highlighted), so this drops
-    into ChannelCard's existing bidirectional sync logic unchanged."""
 
     toggled = Signal(bool)
 
@@ -35,9 +23,6 @@ class PowerButton(QWidget):
             btn.setCursor(Qt.PointingHandCursor)
             layout.addWidget(btn)
 
-        # Always fires - a click always sends its command, even if that
-        # state is already the one highlighted (matches Query: it always
-        # sends, it never checks "is this already the state").
         self.on_btn.clicked.connect(lambda: self._set(True))
         self.off_btn.clicked.connect(lambda: self._set(False))
 
@@ -52,16 +37,10 @@ class PowerButton(QWidget):
         return self._checked
 
     def setChecked(self, checked: bool):
-        # Programmatic-only sync (e.g. from a hardware state change) -
-        # never sends anything, same as the old checkable button's
-        # override.
         self._checked = checked
         self._restyle()
 
     def click(self):
-        """Flips to whichever button isn't currently highlighted -
-        matches a single checkable button's click() semantics for
-        callers that don't care which explicit button fired."""
         (self.off_btn if self._checked else self.on_btn).click()
 
     def _restyle(self):

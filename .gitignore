@@ -13,5 +13,6 @@ dist/
 build/
 *.spec
 installer_output/
+app_encrypted.pyz
 
 .DS_Store

@@ -7,7 +7,7 @@ from services.middleware import dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame, describe_command
 from state.channel_state import ChannelState
-from state.level_map import LEVEL_TO_HEX
+from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS_FULL
 from .use_connection import ConnectionController
 
 RESPONSE_TIMEOUT_MS = 300
@@ -69,9 +69,11 @@ class ChannelController(QObject):
         freq = d.frequency_mhz if d.frequency_mhz is not None else c.BLIND_DEFAULT_FREQ_MHZ
         bandwidth = d.bandwidth_mhz if d.bandwidth_mhz is not None else c.BLIND_DEFAULT_BANDWIDTH_MHZ
 
+        level_name = LEVEL_LABELS_FULL.get(HEX_TO_LEVEL.get(power_code), "unknown level")
+
         if blind:
             msg = (
-                f"{self.display_name}: no status baseline yet - sending power_code=0x{power_code:02X} "
+                f"{self.display_name}: no status baseline yet - sending level={level_name} "
                 f"with GUESSED mode/frequency/bandwidth defaults (blind, unconfirmed)."
             )
             if self.logger:
@@ -79,7 +81,7 @@ class ChannelController(QObject):
             self.command_timeout.emit(msg)
 
         frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
-        label = f"Power -> 0x{power_code:02X}" + (" (blind, guessed mode/freq/bw)" if blind else "")
+        label = f"Power -> {level_name}" + (" (blind, guessed mode/freq/bw)" if blind else "")
         self._enqueue(frame, label, {"power_code": power_code})
 
     def set_mode(self, mode: int):

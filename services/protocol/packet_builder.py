@@ -57,7 +57,3 @@ def build_addr_set(new_addr: int) -> bytes:
     if not (c.ADDR_MIN <= new_addr <= c.ADDR_MAX):
         raise ProtocolError(f"Address out of range: {new_addr}")
     return _frame(c.TYPE_ADDR_SET, c.BROADCAST_ADDR, bytes([new_addr]))
-
-
-def to_hex_str(data: bytes) -> str:
-    return " ".join(f"{b:02X}" for b in data)

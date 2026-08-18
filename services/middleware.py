@@ -224,6 +224,43 @@ def dll_command_tokens(data: bytes) -> tuple[str | None, str | None]:
         return None, str(e)
 
 
+def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
+    """Decodes a WHOLE multi-byte command frame through the real DLL,
+    not just the one address byte dll_command_tokens() is normally
+    given. CommandTokens itself was never changed - it still only ever
+    matches ONE whole input against its 2-hex-digit keys (confirmed by
+    disassembly, see dll_command_tokens()'s docstring) - so this drives
+    that same confirmed-working single-byte call once per byte in
+    `frame`, in order, and joins the results. That's the only way to
+    get full-frame coverage out of a function that can't take more
+    than one byte per call; it is not a guess at some different,
+    unconfirmed CommandTokens behavior.
+
+    A byte with no table entry (anything outside 00-10, 7E, FF,
+    D0-D2 - e.g. most bytes of an arbitrary frequency value) still
+    gets a real answer from the DLL, just its documented "??"
+    (unrecognized) response - shown as-is, not hidden or replaced,
+    since that's the real, honest output for that byte.
+
+    Returns (joined_text, None) on success, or (None, reason) the
+    moment the DLL itself is unreachable (not loaded/wrong platform) -
+    same failure shape as dll_command_tokens(), so callers handle it
+    identically. A mid-frame call failure (as opposed to a routine "??"
+    match-miss) also short-circuits this way rather than returning a
+    partial join, since a broken call partway through means the DLL
+    connection itself failed, not that the remaining bytes are safe to
+    skip."""
+    if _get_dll() is None:
+        return None, _dll_load_error
+    tokens = []
+    for byte in frame:
+        value, error = dll_command_tokens(bytes([byte]))
+        if value is None:
+            return None, error
+        tokens.append(decode_dll_text(value))
+    return " ".join(tokens), None
+
+
 def decode_dll_text(hex_value: str) -> str:
     """Turns dll_command_tokens()'s hex string back into the actual
     token text - "58 23 50" -> "X#P" - since every response CommandTokens

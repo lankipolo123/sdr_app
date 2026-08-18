@@ -253,6 +253,26 @@ def _run_addr_as_separate_int_arg(addr: int) -> dict:
     )
 
 
+def _run_addr_as_separate_string_arg(addr: int) -> dict:
+    # Follow-up to _run_addr_as_separate_int_arg: THAT attempt crashed
+    # on real hardware with "access violation reading 0x...05" - the
+    # DLL tried to dereference our literal address int (5) as a
+    # pointer. That's real negative evidence the address parameter (if
+    # it exists at all) isn't a plain c_long in that slot - it has to
+    # be something pointer-shaped, or the DLL would never have tried
+    # to read memory AT the value 5. This tries the address as an
+    # actual string pointer instead (e.g. b"5"), all-pointer args like
+    # CommandTokens' own confirmed-safe 3-arg shape, to avoid repeating
+    # the same crash while still testing "address as its own parameter."
+    frame = query_status(addr)
+    addr_str = str(addr).encode()
+    content = frame[:3] + frame[4:]  # address byte removed, same as the int-arg attempt above
+    return _try_send(
+        [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_long], ctypes.c_long,
+        (addr_str, content, len(content)),
+    )
+
+
 SEND_ATTEMPTS = [
     SendAttempt(
         "raw_bytes_2arg",
@@ -303,8 +323,20 @@ SEND_ATTEMPTS = [
         "addr_as_separate_int_arg",
         "NEW: maybe the address isn't part of the command string at all - a separate (long "
         "address, char* command, long length) signature, content = frame with the addr byte "
-        "removed (HEAD/type/buf_len/payload/STOP intact).",
+        "removed (HEAD/type/buf_len/payload/STOP intact). CONFIRMED CRASHING on real hardware "
+        "(access violation reading 0x...05 - the DLL dereferenced our literal address int as a "
+        "pointer) - real negative evidence, not a wasted attempt: whatever this parameter "
+        "actually is, it isn't a plain c_long in this slot. ctypes/ Python catches this safely "
+        "(see SendAttempt's docstring), it just always reports this exact crash, not -2.",
         _run_addr_as_separate_int_arg,
+    ),
+    SendAttempt(
+        "addr_as_separate_string_arg",
+        "Follow-up to addr_as_separate_int_arg's crash above: same idea (address as its own "
+        "parameter, not embedded in the command), but as a real string pointer (b\"5\") instead "
+        "of a raw int - all-pointer args like CommandTokens' own confirmed-safe 3-arg shape, to "
+        "test the same theory without repeating that crash.",
+        _run_addr_as_separate_string_arg,
     ),
 ]
 

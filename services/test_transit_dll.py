@@ -11,12 +11,19 @@ originally taken from the VB6 Declare statement:
     Private Declare Function AutoConnectSDR Lib "dll\\Transit.dll" _
         (ByVal outBuffer As String, ByVal maxLength As Long) As Long
 
-CommandTokens and SendCommandToSDR are still UNCONFIRMED GUESSES -
-CommandTokens especially, since its real input format (whatever token
-vocabulary ends up finalized) isn't settled yet. test_command_tokens()
-below just probes it with a placeholder string to see if it crashes or
-returns something legible - not a real test of correct behavior until
-the actual token format is confirmed.
+CommandTokens and SendCommandToSDR's real behavior is now CONFIRMED
+- both by disassembling the REAL working 32-bit Transit.dll (pulled
+from an actual installed "Noise Controller" app, not necessarily the
+same file as this repo's dll/Transit.dll - see the conversation) and
+by real hardware actually responding: Output ON/OFF and Signal Control
+(mode/frequency/bandwidth/power) both confirmed physically reaching
+the module, via send_frame_one_token_at_a_time()'s approach - one
+CommandTokens-translated token per byte, hex-text fallback for bytes
+with no alias (see that function's docstring for the exact, traced
+parsing logic this is based on). test_command_tokens()/test_send_command()
+below are the OLD placeholder probes from before any of this was
+confirmed - kept for the -1/nothing-connected path, not because
+they're still the recommended way to test anything.
 
 ctypes.WinDLL (not CDLL) because VB6's plain Declare statement only
 ever works against __stdcall exports - CDLL would get the stack
@@ -33,11 +40,13 @@ if not sys.platform.startswith("win"):
 # project root - needed below for services.protocol.commands.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.protocol.commands import query_status
+from services.protocol.commands import query_status, set_signal
+from services.protocol import constants as c
 from services.team_vocab import (
     HEAD_TOKEN, STOP_TOKEN, TYPE_TOKENS, OUTPUT_TOKENS, MODE_TOKENS,
     BANDWIDTH_TOKENS, RESP_TOKENS, LEVEL_TOKENS,
 )
+from state.level_map import LEVEL_TO_HEX
 
 DLL_PATH = "dll/Transit.dll"  # matches the "dll\Transit.dll" path hardcoded in the original VB6 Declare statement
 
@@ -165,31 +174,25 @@ def translate_frame_via_dll(frame: bytes) -> str:
     return "".join(tokens)
 
 
-def test_send_one_token_at_a_time(addr: int = 5):
-    """NEW theory, from disassembling the REAL working Transit.dll (a
-    32-bit build, pulled from an actual installed "Noise Controller"
-    app - see the conversation, not this repo's dll/Transit.dll, whose
-    bitness/provenance is unconfirmed): SendCommandToSDR builds the
-    EXACT SAME 22-entry token table internally (X#0->00, X#A->01, ...,
-    X#P->10, XME->7E, XOP->FF, X#X/XHT/XGY->D0-D2) that CommandTokens
-    uses - confirmed by reading it directly out of SendCommandToSDR's
-    own disassembled code, not a guess. That means SendCommandToSDR
-    itself validates/parses its input against these SAME short tokens
-    - strongly suggesting it wants ONE BARE TOKEN per call (e.g. just
-    b"X#E" alone, nothing concatenated, nothing embedded in a longer
-    string), the same granularity CommandTokens already works at -
-    not a whole translated frame or a frame with a token spliced in,
-    both of which we already tried and got -2.
+def send_frame_one_token_at_a_time(frame: bytes):
+    """The confirmed-on-real-hardware theory: CommandTokens once per
+    byte (its confirmed one-byte-per-call shape), then SendCommandToSDR
+    with just that one token as its entire content - one call per
+    byte, in order. Bytes with no alias token (CommandTokens returns
+    "??" - true for most of a Signal Control frame's frequency field,
+    a real 300-6000 MHz value, unlike mode/bandwidth/power which are
+    all small enums inside the confirmed 22-entry table) fall back to
+    2-digit UPPERCASE HEX TEXT of the raw byte (e.g. b"92" for 0x92) -
+    CONFIRMED by tracing SendCommandToSDR's actual parsing logic with
+    radare2, not a guess: it hashes/looks up its input against the
+    same 22-entry table first, and if that misses, parses the input
+    STRING as 2-digit hex (radix 16) and uses that value. A raw binary
+    byte (an earlier, wrong attempt) isn't parseable hex text at all.
 
-    This calls CommandTokens once per byte of a real frame (confirmed
-    working, e.g. 0x05 -> "X#E"), then calls SendCommandToSDR with
-    JUST that one token as its entire content, one call per byte, in
-    order - mirroring the disassembly's own token-at-a-time table
-    lookup instead of trying to cram a whole frame into one call.
-    Prints every step so a mid-sequence change in behavior (e.g. the
-    HEAD tokens succeed but the address token fails) is visible, not
-    just a final pass/fail."""
-    frame = query_status(addr)
+    Prints every step so a mid-sequence change in behavior is visible,
+    not just a final pass/fail - this is the actual diagnostic value
+    of testing one byte at a time instead of trusting a single
+    all-or-nothing result."""
     print(f"Sending frame {frame.hex(' ').upper()} as one bare token per byte:")
     dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
     dll.SendCommandToSDR.restype = ctypes.c_long
@@ -198,10 +201,47 @@ def test_send_one_token_at_a_time(addr: int = 5):
         out = ctypes.create_string_buffer(256)
         dll.CommandTokens(bytes([byte]).hex().upper().encode(), out, ctypes.sizeof(out))
         token = out.value
+        fallback = False
+        if token == b"??":
+            token = bytes([byte]).hex().upper().encode()
+            fallback = True
         result = dll.SendCommandToSDR(token, len(token))
-        print(f"  byte 0x{byte:02X} -> token {token!r} -> SendCommandToSDR return={result}")
+        note = " (hex-text fallback, no alias)" if fallback else ""
+        print(f"  byte 0x{byte:02X} -> token {token!r}{note} -> SendCommandToSDR return={result}")
         results.append((byte, token, result))
     return results
+
+
+def test_send_one_token_at_a_time(addr: int = 5):
+    """Status Query version of send_frame_one_token_at_a_time() - see
+    that function's docstring. Kept as its own name since this is the
+    read-only, always-safe-to-run probe (Status Query changes nothing
+    on the module) - see test_send_signal_control_one_token_at_a_time()
+    below for the actuating (Signal Control) version, which needs its
+    own explicit confirmation since it can actually change RF output
+    configuration on real hardware."""
+    return send_frame_one_token_at_a_time(query_status(addr))
+
+
+def test_send_signal_control_one_token_at_a_time(addr: int = 5):
+    """Same one-bare-token-per-byte approach as
+    test_send_one_token_at_a_time(), but for a REAL Signal Control
+    frame instead of a read-only Status Query - this is how modulation
+    (mode/frequency/bandwidth/power) actually gets sent, and unlike
+    Output ON/OFF (whose only possible bytes, 0x00/0x01, are both in
+    the confirmed 22-entry alias table), most of the frequency field's
+    bytes have no alias and go through the hex-text fallback path
+    instead - see send_frame_one_token_at_a_time()'s docstring for
+    exactly how.
+
+    Uses the same BLIND_DEFAULT_MODE/FREQ_MHZ/BANDWIDTH_MHZ the real
+    app falls back to when no confirmed baseline exists (services/
+    protocol/constants.py), and a low (not max) power level - this
+    DOES change real RF output configuration on the module, it is not
+    read-only like Status Query, which is why __main__ gates it behind
+    its own separate confirmation."""
+    frame = set_signal(addr, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1])
+    return send_frame_one_token_at_a_time(frame)
 
 
 class SendAttempt:
@@ -492,14 +532,29 @@ if __name__ == "__main__":
         ).strip().lower()
         if answer == "y":
             print(
-                "\nStep 4a: one bare token per byte (from disassembling the REAL "
-                "working 32-bit Transit.dll - see test_send_one_token_at_a_time()'s "
-                "docstring)"
+                "\nStep 4a: one bare token per byte, Status Query (read-only) - "
+                "see send_frame_one_token_at_a_time()'s docstring"
             )
             test_send_one_token_at_a_time()
-            print("\nStep 4b: the 9-theory battery from before, for comparison")
+
+            print(
+                "\nStep 4b: one bare token per byte, Signal Control (ACTUATING - "
+                "this changes real RF output configuration, not read-only like "
+                "Status Query above) - CONFIRMED reaching real hardware, see "
+                "test_send_signal_control_one_token_at_a_time()'s docstring"
+            )
+            signal_answer = input(
+                "This sends a real Signal Control command (mode/freq/bandwidth/"
+                "power) - continue? [y/N] "
+            ).strip().lower()
+            if signal_answer == "y":
+                test_send_signal_control_one_token_at_a_time()
+            else:
+                print("Skipped.")
+
+            print("\nStep 4c: the 9-theory battery from before, for comparison")
             run_send_attempts()
-            print("\nStep 4c: check status again - compare this buffer to Step 2's by eye")
+            print("\nStep 4d: check status again - compare this buffer to Step 2's by eye")
             test_check_connection()
         else:
             print("Skipped - no real command sent.")

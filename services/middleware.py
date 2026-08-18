@@ -290,15 +290,17 @@ def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
                 # a Signal Control frame's frequency field (a real
                 # 300-6000 MHz value, not a small enum like mode/
                 # bandwidth/power, which DO all fall inside the
-                # confirmed 22-entry table). Sending the literal text
-                # "??" as a stand-in for an arbitrary byte would be
-                # wrong - it isn't a real value, just CommandTokens'
-                # "unrecognized" marker. Falls back to the raw byte
-                # itself instead, same one-unit-per-call pattern,
-                # unconfirmed against real hardware (unlike the
-                # in-table byte case above) but the closest honest
-                # substitute for "there is no token for this value."
-                token = bytes([byte])
+                # confirmed 22-entry table). CONFIRMED by disassembling
+                # SendCommandToSDR itself (not just CommandTokens): it
+                # uppercases its input, hashes it, and looks it up in
+                # this SAME 22-entry table first - if that misses, it
+                # falls back to parsing the input STRING AS 2-DIGIT HEX
+                # TEXT (radix 16, must fit 0-255) and uses that parsed
+                # value. A raw binary byte (an earlier, wrong guess
+                # here) isn't parseable hex text at all - the fallback
+                # needs the hex DIGITS themselves, e.g. b"92" for 0x92,
+                # not the single byte 0x92.
+                token = bytes([byte]).hex().upper().encode()
             result = dll.SendCommandToSDR(token, len(token))
         return result, None
     except Exception as e:

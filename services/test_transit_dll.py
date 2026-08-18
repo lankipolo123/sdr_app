@@ -273,6 +273,8 @@ def _run_addr_as_separate_string_arg(addr: int) -> dict:
     )
 
 
+REPEAT_COUNT = 4  # how many extra times to re-run a non-(-2) result before trusting it - see run_send_attempts()
+
 SEND_ATTEMPTS = [
     SendAttempt(
         "raw_bytes_2arg",
@@ -357,7 +359,15 @@ def run_send_attempts(addr: int = 5):
     own boundary) can't take down every other candidate in the same
     run. Extending this with a new theory later is one new
     SendAttempt(...) entry in SEND_ATTEMPTS above, not a new
-    hand-written function + a new __main__ wiring step."""
+    hand-written function + a new __main__ wiring step.
+
+    Any candidate that returns something OTHER than -2 (the dominant
+    result every other attempt has gotten so far) or a crash gets
+    automatically re-run REPEAT_COUNT more times before this returns -
+    one good result could be a fluke (electrical noise, stale DLL
+    state left over from a PRIOR attempt in the same run), not a
+    confirmed working format. Still just a read-only Status Query each
+    time, same risk profile as the single attempt above."""
     results = []
     for attempt in SEND_ATTEMPTS:
         print(f"\n  {attempt.label}: {attempt.reasoning}")
@@ -372,6 +382,27 @@ def run_send_attempts(addr: int = 5):
     for label, outcome in results:
         shown = outcome["error"] if outcome["error"] is not None else f"return={outcome['return_code']}"
         print(f"    {label}: {shown}")
+
+    BASELINE_CODES = {-2}
+    outcomes_by_label = dict(results)
+    interesting_labels = [
+        label for label, outcome in results
+        if outcome["error"] is None and outcome["return_code"] not in BASELINE_CODES
+    ]
+    if interesting_labels:
+        print("\n  --- Reproducibility check on non-(-2) result(s) ---")
+        attempts_by_label = {a.label: a for a in SEND_ATTEMPTS}
+        for label in interesting_labels:
+            attempt = attempts_by_label[label]
+            first_code = outcomes_by_label[label]["return_code"]
+            repeat_codes = []
+            for _ in range(REPEAT_COUNT):
+                outcome = attempt.run(addr)
+                repeat_codes.append(outcome["error"] if outcome["error"] is not None else outcome["return_code"])
+            consistent = repeat_codes == [first_code] * REPEAT_COUNT
+            print(f"    {label}: first={first_code}, {REPEAT_COUNT} more attempts -> {repeat_codes}")
+            print(f"    {'CONSISTENT - worth trusting' if consistent else 'INCONSISTENT - may have been a fluke, do not trust yet'}")
+
     return results
 
 

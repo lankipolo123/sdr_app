@@ -1,7 +1,6 @@
 NAVY = "#1F2937"
 CONTENT_BG = "#F5F6F8"
 ACCENT_BLUE = "#64AAFF"
-WINDOW_BG = "#DCE9F7"
 
 TEXT_DARK = "#111827"
 TEXT_MUTED = "#6B7280"
@@ -15,7 +14,7 @@ def light_palette():
     from PySide6.QtGui import QPalette, QColor
 
     p = QPalette()
-    p.setColor(QPalette.Window, QColor(WINDOW_BG))
+    p.setColor(QPalette.Window, QColor("#FFFFFF"))
     p.setColor(QPalette.WindowText, QColor(TEXT_DARK))
     p.setColor(QPalette.Base, QColor("#FFFFFF"))
     p.setColor(QPalette.AlternateBase, QColor(CONTENT_BG))

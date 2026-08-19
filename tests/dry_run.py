@@ -7,9 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QEvent, QEventLoop, QTimer, Qt, QPointF
-from PySide6.QtGui import QMouseEvent
-from PySide6.QtTest import QTest
+from PySide6.QtCore import QEventLoop, QTimer
 
 FAILURES = []
 UNCAUGHT = []
@@ -90,36 +88,14 @@ def main():
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
     check("no baseline yet - nothing has ever queried status", controller.channels.states[0].data.mode is None)
-    check("card starts locked - toggle disabled until tapped", not card.toggle.isEnabled())
-    check("card starts locked - slider disabled until tapped", not card.slider.isEnabled())
-
-    print("\n=== Tap-to-arm: locked controls can't send until the card itself is clicked ===")
-    card.toggle.click()
-    pump(100)
-    check("a click on a still-locked toggle does nothing", not sdr.sent_frames)
-    card.arm()
-    check("arming enables the toggle", card.toggle.isEnabled())
-    check("arming enables the slider", card.slider.isEnabled())
-
-    print("\n=== Arming is exclusive - a second card locks the first back down ===")
-    other_card = window._cards[1]
-    other_card.arm()
-    check("arming CH02 locks CH01 back down", not card.toggle.isEnabled())
-    check("CH01's slider is locked too", not card.slider.isEnabled())
-    check("CH02 itself is armed", other_card.toggle.isEnabled())
-    card.arm()
-    check("re-arming CH01 locks CH02 back down", not other_card.toggle.isEnabled())
-
-    print("\n=== Clicking outside every card locks the armed one back down too ===")
-    QTest.mouseClick(window.controls_bar.status_label, Qt.LeftButton)
-    check("clicking outside CH01 locks it back down", not card.toggle.isEnabled())
-    check("no card is armed anymore", window._armed_card is None)
-    card.arm()
+    check("toggle is clickable immediately - no arming step needed", card.toggle.isEnabled())
+    check("slider starts locked - only unlocks once output is on", not card.slider.isEnabled())
 
     print("\n=== ON button (single Output ON command) - no confirmed response path, applies optimistically ===")
     card.toggle.click()
     pump(WORST_CASE_MS)
     check("toggle stayed checked (applied optimistically after the retry cycle exhausted)", card.toggle.isChecked())
+    check("slider unlocked now that output is on", card.slider.isEnabled())
     check("slider visually resumed to default level 1 (Min) - UI-only sync, no command sent for it", card.slider.value() == 1)
     check("the correct Output ON frame was actually sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_on(1))
     check("ON alone doesn't guess Mode/Frequency/Bandwidth - nothing to guess for a bare Output ON", not any("GUESSED" in m for m in messages))
@@ -149,6 +125,7 @@ def main():
     card.slider.setValue(0)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS)
     check("toggle reactively switched off", not card.toggle.isChecked())
+    check("slider re-locks now that output is off again", not card.slider.isEnabled())
     check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
 
     print("\n=== OFF button turned it off - power_code stays whatever the slider last set it to ===")
@@ -184,7 +161,6 @@ def main():
         "restored output_on too - card already shows on before any interaction this run",
         window2._cards[0].toggle.isChecked(),
     )
-    window2._cards[0].arm()
     window2._cards[0].toggle.click()
     pump(WORST_CASE_MS)
     check("second run's OFF click applies optimistically", not window2._cards[0].toggle.isChecked())
@@ -199,7 +175,6 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
-    window3._cards[0].arm()
     window3._cards[0].toggle.click()
     controller3.shutdown()
     window3.close()
@@ -214,7 +189,6 @@ def main():
     window6.show()
     messages6 = []
     controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
-    window6._cards[0].arm()
     window6._cards[0].toggle.click()
     check("toggle flips immediately (optimistic UI, before any confirmation)", window6._cards[0].toggle.isChecked())
     pump(WORST_CASE_MS)
@@ -227,8 +201,10 @@ def main():
     pump(50)
 
     print("\n=== resume_output(): dragging the slider from Off sends Output ON, then Signal Control, in order ===")
-    print("(the ON button itself only sends a single Output ON command now - resume_output()'s")
-    print(" two-command sequence is only reachable through the slider, from Off)")
+    print("(the slider is disabled/locked while output is off, so a real user can no longer")
+    print(" trigger this from the mouse - this calls setValue() directly, which still fires")
+    print(" valueChanged regardless of enabled state, to confirm the underlying logic is")
+    print(" still correct even though it's currently unreachable through the real UI)")
     resume_sdr = FakeSDR(present=True)
     install_fake_dll(resume_sdr)
     controller16 = make_app_controller()
@@ -236,7 +212,6 @@ def main():
     window16.show()
     check("starts off, as configured", not window16._cards[0].toggle.isChecked())
 
-    window16._cards[0].arm()
     window16._cards[0].slider.setValue(2)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_resume_signal = commands.set_signal(
@@ -263,11 +238,9 @@ def main():
     window19 = MainWindow(controller19)
     window19.show()
 
-    window19._cards[0].arm()
     window19._cards[0].toggle.click()
     pump(50)
 
-    window19._cards[1].arm()
     window19._cards[1].toggle.click()
     pump(200)
     check(
@@ -302,7 +275,6 @@ def main():
     window20 = MainWindow(controller20)
     window20.show()
 
-    window20._cards[0].arm()
     window20._cards[0].toggle.click()
     pump(50)
 
@@ -344,7 +316,6 @@ def main():
     window8 = MainWindow(controller8)
     window8.show()
     card8 = window8._cards[0]
-    card8.arm()
 
     card8.toggle.click()
     pump(100)
@@ -425,7 +396,6 @@ def main():
     window_mode.show()
     check("mode dropdown starts on Pseudo Random Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
 
-    window_mode._cards[0].arm()
     window_mode._cards[0].mode_combo.setCurrentIndex(1)
     pump(300)
     check("picking a mode alone does NOT send - Set is required", not mode_sdr.sent_frames)
@@ -442,14 +412,6 @@ def main():
     popup = QApplication.activePopupWidget()
     check("mode dropdown's popup actually opened", popup is not None)
     if popup is not None:
-        click_on_popup = QMouseEvent(
-            QEvent.MouseButtonPress, QPointF(5, 5), QPointF(5, 5), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
-        )
-        window_mode.eventFilter(popup, click_on_popup)
-        check(
-            "clicking the open dropdown's own popup does NOT disarm the card mid-selection",
-            window_mode._cards[0]._armed,
-        )
         popup.close()
 
     controller_mode.shutdown()

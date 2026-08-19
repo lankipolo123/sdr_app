@@ -1,7 +1,7 @@
 import contextlib
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 
 from .card import Card
 from .power_button import PowerButton
@@ -26,8 +26,6 @@ class ChannelCard(Card):
 
     MIN_WIDTH = 200
 
-    armed = Signal()
-
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
         self.setMinimumWidth(self.MIN_WIDTH)
@@ -36,15 +34,10 @@ class ChannelCard(Card):
         self.body_layout.setSpacing(4)
         self.controller = controller
         self.state = state
-        self._armed = False
         self._pending_level = None
         self._send_debounce = QTimer(self)
         self._send_debounce.setSingleShot(True)
         self._send_debounce.timeout.connect(self._send_debounced_level)
-
-        self.arm_hint = QLabel("Tap twice to unlock")
-        self.arm_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-style: italic;")
-        self.header_layout.addWidget(self.arm_hint)
 
         self.status_dot = QLabel()
         self.status_dot.setFixedSize(8, 8)
@@ -122,51 +115,17 @@ class ChannelCard(Card):
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
 
-        self._style_border(armed=False)
+        self._style_border()
         self.slider.setEnabled(False)
-        self.toggle.setEnabled(False)
-        self.mode_combo.setEnabled(False)
-        self.mode_set_btn.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()
 
         self.controller.busy_changed.connect(self._on_busy_changed)
 
-
-    def mousePressEvent(self, event):
-        if not self._armed:
-            self.arm()
-        super().mousePressEvent(event)
-
-    def arm(self):
-        if self._armed:
-            return
-        self._armed = True
-        self.slider.setEnabled(True)
-        self.toggle.setEnabled(True)
-        self.mode_combo.setEnabled(True)
-        self.mode_set_btn.setEnabled(True)
-        self.arm_hint.setVisible(False)
-        self._style_border(armed=True)
-        self.armed.emit()
-
-    def disarm(self):
-        if not self._armed:
-            return
-        self._armed = False
-        self.slider.setEnabled(False)
-        self.toggle.setEnabled(False)
-        self.mode_combo.setEnabled(False)
-        self.mode_set_btn.setEnabled(False)
-        self.arm_hint.setVisible(True)
-        self._style_border(armed=False)
-
-    def _style_border(self, armed: bool):
-        color = ACCENT_BLUE if armed else BORDER_SUBTLE
-        width = 2 if armed else 1
+    def _style_border(self):
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: {width}px solid {color}; border-radius: 10px; }}"
+            f"#Card {{ background: #FFFFFF; border: 1px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
 
@@ -175,6 +134,7 @@ class ChannelCard(Card):
             self.controller.turn_output_on()
         else:
             self.controller.turn_output_off()
+        self.slider.setEnabled(checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
             self.slider.setValue(target_level)
@@ -187,6 +147,7 @@ class ChannelCard(Card):
         if self.toggle.isChecked() != should_be_checked:
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(should_be_checked)
+            self.slider.setEnabled(should_be_checked)
         self._update_status(value)
         self._pending_level = value
         self._send_debounce.start(SLIDER_SEND_DEBOUNCE_MS)
@@ -225,6 +186,8 @@ class ChannelCard(Card):
         if self.toggle.isChecked() != d.output_on:
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(d.output_on)
+
+        self.slider.setEnabled(d.output_on)
 
         if self.slider.value() != level:
             with _signal_lock(self.slider):

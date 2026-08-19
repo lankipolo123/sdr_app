@@ -62,7 +62,7 @@ class ChannelCard(Card):
             f"QComboBox::drop-down {{ border: none; background: transparent; }}"
             f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
             f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
-            f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
+            f"selection-background-color: #FFFFFF; selection-color: {ACCENT_BLUE}; }}"
         )
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_set_btn = QPushButton("Set")

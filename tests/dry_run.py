@@ -33,9 +33,8 @@ def main():
 
     app = QApplication.instance() or QApplication([])
     app.setStyle("Fusion")
-    from styles.theme_colors import light_palette, build_global_qss
+    from styles.theme_colors import light_palette
     app.setPalette(light_palette())
-    app.setStyleSheet(build_global_qss())
 
     from tests.fake_hardware import FakeSDR, install_fake_dll
 

@@ -1,8 +1,6 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton
 from PySide6.QtCore import Qt, Signal
 
-from styles.theme_colors import STATUS_OK, STATUS_ERROR, BORDER_SUBTLE, TEXT_MUTED
-
 
 class PowerButton(QWidget):
 
@@ -21,6 +19,7 @@ class PowerButton(QWidget):
         for btn in (self.on_btn, self.off_btn):
             btn.setFixedHeight(22)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setCheckable(True)
             layout.addWidget(btn)
 
         self.on_btn.clicked.connect(lambda: self._set(True))
@@ -44,17 +43,5 @@ class PowerButton(QWidget):
         (self.off_btn if self._checked else self.on_btn).click()
 
     def _restyle(self):
-        active_on = (
-            f"QPushButton {{ background: {STATUS_OK}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
-        )
-        active_off = (
-            f"QPushButton {{ background: {STATUS_ERROR}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
-        )
-        inactive = (
-            f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
-        )
-        self.on_btn.setStyleSheet(active_on if self._checked else inactive)
-        self.off_btn.setStyleSheet(active_off if not self._checked else inactive)
+        self.on_btn.setChecked(self._checked)
+        self.off_btn.setChecked(not self._checked)

@@ -7,7 +7,6 @@ from .logs_dialog import LogsDialog
 from .logs_panel import LogsPanel
 from .controls_bar import ControlsBar
 from .splash_screen import build_splash
-from .window_chrome import TitleBar, ResizableContainer
 
 __all__ = [
     "Card",
@@ -20,6 +19,4 @@ __all__ = [
     "LogsPanel",
     "ControlsBar",
     "build_splash",
-    "TitleBar",
-    "ResizableContainer",
 ]

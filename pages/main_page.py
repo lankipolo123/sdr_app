@@ -4,13 +4,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from components import (
-    ChannelCard, ConfirmDialog, ControlsBar, LogsPanel,
-    TitleBar, ResizableContainer,
-)
+from components import ChannelCard, ConfirmDialog, ControlsBar, LogsPanel
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
-from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
 
 TOP_ROW_HEIGHT = 90
@@ -26,27 +22,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.app = app_controller
         self.setWindowTitle("TX Controller")
-        self._apply_window_chrome()
-
-        central = ResizableContainer(self)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
-        self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
-        root.addWidget(self.title_bar)
+        self.resize(1040, 780)
+        self.setMinimumSize(1000, 700)
 
         content = QWidget()
         outer = QVBoxLayout(content)
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
-        root.addWidget(content, 1)
-
         outer.addLayout(self._build_top_row())
         outer.addWidget(self._build_channels_scroll(), 1)
 
-        self.setCentralWidget(central)
+        self.setCentralWidget(content)
 
         self._cards = {}
         self.app.channels.raw_tx.connect(self._on_raw_tx)
@@ -54,13 +40,6 @@ class MainWindow(QMainWindow):
 
         for address in range(MAX_CHANNELS):
             self._build_card(address)
-
-    def _apply_window_chrome(self):
-        self.resize(1040, 780)
-        self.setMinimumSize(1000, 700)
-        self.setWindowFlag(Qt.FramelessWindowHint)
-        self.setWindowFlag(Qt.NoDropShadowWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
 
     def _build_top_row(self) -> QHBoxLayout:
         top_row = QHBoxLayout()
@@ -82,34 +61,6 @@ class MainWindow(QMainWindow):
 
     def _build_channels_scroll(self) -> QScrollArea:
         scroll = QScrollArea()
-        scroll.setObjectName("ChannelsScroll")
-        scroll.setStyleSheet(f"""
-            #ChannelsScroll {{ border: none; background: #FFFFFF; }}
-            #ChannelsScroll QScrollBar:vertical {{
-                background: transparent;
-                width: 10px;
-                margin: 0px;
-            }}
-            #ChannelsScroll QScrollBar::handle:vertical {{
-                background: {BORDER_SUBTLE};
-                border-radius: 5px;
-                min-height: 24px;
-            }}
-            #ChannelsScroll QScrollBar::handle:vertical:hover {{
-                background: {ACCENT_BLUE};
-            }}
-            #ChannelsScroll QScrollBar::add-line:vertical,
-            #ChannelsScroll QScrollBar::sub-line:vertical {{
-                height: 0px;
-                background: transparent;
-                border: none;
-            }}
-            #ChannelsScroll QScrollBar::add-page:vertical,
-            #ChannelsScroll QScrollBar::sub-page:vertical {{
-                background: transparent;
-            }}
-        """)
-        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidgetResizable(True)
         self.channels_scroll = scroll
         grid_container = QWidget()
@@ -162,10 +113,6 @@ class MainWindow(QMainWindow):
             self.grid.setColumnStretch(col, 1)
 
     def closeEvent(self, event):
-        self.app.shutdown()
-        event.accept()
-
-    def _on_close_app_clicked(self):
         confirmed = ConfirmDialog.ask(
             self,
             "Close App",
@@ -176,5 +123,7 @@ class MainWindow(QMainWindow):
             danger=True,
         )
         if not confirmed:
+            event.ignore()
             return
-        self.close()
+        self.app.shutdown()
+        event.accept()

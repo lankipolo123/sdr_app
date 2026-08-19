@@ -1,7 +1,5 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget
 
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE
-
 
 class LogsDialog(QDialog):
 
@@ -12,9 +10,6 @@ class LogsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.list = QListWidget()
-        self.list.setStyleSheet(
-            f"QListWidget {{ border: 1px solid {BORDER_SUBTLE}; font-size: 12px; color: {TEXT_DARK}; }}"
-        )
         self.list.addItems(lines)
         self.list.scrollToBottom()
         layout.addWidget(self.list)

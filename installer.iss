@@ -19,7 +19,7 @@
 ; that would leave the old version's registry entry orphaned.
 
 #define MyAppName "TX Controller"
-#define MyAppVersion "3.0.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "TX Controller"
 #define MyAppExeName "TX Controller.exe"
 

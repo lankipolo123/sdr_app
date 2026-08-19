@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QTimer
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE, NAVY, TEXT_DARK
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from services.protocol import constants as c
 
@@ -54,11 +54,26 @@ class ChannelCard(Card):
         self.mode_combo.addItems(list(c.MODE_NAMES.values()))
         self.mode_combo.setToolTip(self.mode_combo.currentText())
         self.mode_combo.currentTextChanged.connect(self.mode_combo.setToolTip)
+        self.mode_combo.setStyleSheet(
+            f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
+            f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
+            f"border: 1px solid {BORDER_SUBTLE}; }}"
+            f"QComboBox::drop-down {{ border: none; background: transparent; }}"
+            f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
+            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
+            f"selection-background-color: {ACCENT_BLUE}; selection-color: #FFFFFF; }}"
+        )
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_set_btn = QPushButton("Set")
         self.mode_set_btn.setFixedHeight(24)
         self.mode_set_btn.setCursor(Qt.PointingHandCursor)
         self.mode_set_btn.setToolTip("Set modulation")
+        self.mode_set_btn.setStyleSheet(
+            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
+            f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
+        )
         self.mode_set_btn.clicked.connect(self._on_mode_set)
         mode_row = QHBoxLayout()
         mode_row.setSpacing(4)
@@ -100,12 +115,19 @@ class ChannelCard(Card):
         self.toggle.toggled.connect(self._on_toggle)
         self.slider.valueChanged.connect(self._on_slider)
 
+        self._style_border()
         self.slider.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
         self._on_hardware_state_changed()
 
         self.controller.busy_changed.connect(self._on_busy_changed)
+
+    def _style_border(self):
+        self.setStyleSheet(
+            f"#Card {{ background: #FFFFFF; border: 1px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+        )
+
 
     def _on_toggle(self, checked: bool):
         if checked:

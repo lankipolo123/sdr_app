@@ -183,7 +183,10 @@ def dll_decode_frame(frame: bytes) -> tuple[str | None, str | None]:
         value, error = dll_command_tokens(bytes([byte]))
         if value is None:
             return None, error
-        tokens.append(decode_dll_text(value))
+        text = decode_dll_text(value)
+        if text == "??":
+            text = bytes([byte]).hex().upper()
+        tokens.append(text)
     return " ".join(tokens), None
 
 

@@ -77,10 +77,10 @@ installer.iss                Inno Setup script that wraps the build into an inst
   never comes, when the blind command usually gets through anyway.
 - **Per channel, exactly two controls:** ON/OFF buttons and a
   4-position Level slider (L0-L3), synced with each other and with
-  the last confirmed (or optimistically applied) hardware state. Each
-  card starts locked until tapped once, and only one card is armed at
-  a time, guarding against an accidental drag/scroll firing a real
-  command.
+  the last confirmed (or optimistically applied) hardware state. The
+  ON/OFF buttons are always live; the slider stays locked until the
+  channel is actually powered on, guarding against an accidental
+  drag/scroll firing a real level change while the channel is off.
 - **A separate "Query" diagnostic** (top Controls bar) looks up a
   specific address and, unlike a card's blind send, waits for and
   verifies a real confirmed response before reporting success or

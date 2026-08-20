@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QScrollArea, QInputDialog, QApplication, QSizePolicy
+    QScrollArea, QInputDialog, QSizePolicy
 )
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt
 
 from components import (
     ChannelCard, ConfirmDialog, ControlsBar, LogsPanel,
@@ -49,14 +49,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._cards = {}
-        self._armed_card = None
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
         for address in range(MAX_CHANNELS):
             self._build_card(address)
-
-        QApplication.instance().installEventFilter(self)
 
     def _apply_window_chrome(self):
         self.resize(1040, 780)
@@ -123,19 +120,6 @@ class MainWindow(QMainWindow):
         scroll.setWidget(grid_container)
         return scroll
 
-    def eventFilter(self, obj, event):
-        if (
-            event.type() == QEvent.MouseButtonPress
-            and self._armed_card is not None
-            and isinstance(obj, QWidget)
-            and QApplication.activePopupWidget() is None
-        ):
-            if not (obj is self._armed_card or self._armed_card.isAncestorOf(obj)):
-                self._armed_card.disarm()
-                self._armed_card = None
-
-        return super().eventFilter(obj, event)
-
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
         if not ok:
@@ -165,14 +149,8 @@ class MainWindow(QMainWindow):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
         card = ChannelCard(controller, state)
-        card.armed.connect(lambda c=card: self._on_card_armed(c))
         self._cards[address] = card
         self._reflow_grid()
-
-    def _on_card_armed(self, card: ChannelCard):
-        if self._armed_card is not None and self._armed_card is not card:
-            self._armed_card.disarm()
-        self._armed_card = card
 
     def _reflow_grid(self):
         if not self._cards:
@@ -184,7 +162,6 @@ class MainWindow(QMainWindow):
             self.grid.setColumnStretch(col, 1)
 
     def closeEvent(self, event):
-        QApplication.instance().removeEventFilter(self)
         self.app.shutdown()
         event.accept()
 

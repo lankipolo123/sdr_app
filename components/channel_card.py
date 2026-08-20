@@ -64,7 +64,7 @@ class ChannelCard(Card):
             lambda i: self.mode_combo.setToolTip(c.MODE_NAMES[self._mode_codes[i]])
         )
         self.mode_combo.setStyleSheet(
-            f"QComboBox {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"QComboBox {{ background: #FFFFFF; color: {ACCENT_BLUE}; border: 1px solid {BORDER_SUBTLE}; "
             f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
             f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
             f"border: 1px solid {BORDER_SUBTLE}; }}"

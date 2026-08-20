@@ -12,13 +12,6 @@ from services.protocol import constants as c
 
 SLIDER_SEND_DEBOUNCE_MS = 250
 
-SHORT_MODE_LABELS = {
-    c.MODE_WHITE_NOISE: "Random Noise",
-    c.MODE_LINEAR_SWEEP: "Linear Sweep",
-    c.MODE_COMB_SPECTRUM: "Multi-tone",
-    c.MODE_SINGLE: "CW",
-}
-
 
 @contextlib.contextmanager
 def _signal_lock(widget):
@@ -58,11 +51,9 @@ class ChannelCard(Card):
 
         self._mode_codes = list(c.MODE_NAMES.keys())
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([SHORT_MODE_LABELS[code] for code in self._mode_codes])
-        self.mode_combo.setToolTip(c.MODE_NAMES[self._mode_codes[0]])
-        self.mode_combo.currentIndexChanged.connect(
-            lambda i: self.mode_combo.setToolTip(c.MODE_NAMES[self._mode_codes[i]])
-        )
+        self.mode_combo.addItems(list(c.MODE_NAMES.values()))
+        self.mode_combo.setToolTip(self.mode_combo.currentText())
+        self.mode_combo.currentTextChanged.connect(self.mode_combo.setToolTip)
         self._style_mode_combo(is_on=False)
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_set_btn = QPushButton("Set")

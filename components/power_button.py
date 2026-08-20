@@ -45,12 +45,12 @@ class PowerButton(QWidget):
 
     def _restyle(self):
         active_on = (
-            f"QPushButton {{ background: {STATUS_OK}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
+            f"QPushButton {{ background: transparent; color: {STATUS_OK}; "
+            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         active_off = (
-            f"QPushButton {{ background: {STATUS_ERROR}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
+            f"QPushButton {{ background: transparent; color: {STATUS_ERROR}; "
+            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         inactive = (
             f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; "

@@ -114,9 +114,10 @@ class ChannelCard(Card):
 
         self.controller.busy_changed.connect(self._on_busy_changed)
 
-    def _style_border(self):
+    def _style_border(self, is_on: bool = False):
+        border_color = ACCENT_BLUE if is_on else BORDER_SUBTLE
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 1px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+            f"#Card {{ background: #FFFFFF; border: 1px solid {border_color}; border-radius: 10px; }}"
         )
 
     def _style_mode_combo(self, is_on: bool):
@@ -137,6 +138,7 @@ class ChannelCard(Card):
             self.controller.turn_output_off()
         self.slider.setEnabled(checked)
         self._style_mode_combo(is_on=checked)
+        self._style_border(is_on=checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
             self.slider.setValue(target_level)
@@ -151,6 +153,7 @@ class ChannelCard(Card):
                 self.toggle.setChecked(should_be_checked)
             self.slider.setEnabled(should_be_checked)
             self._style_mode_combo(is_on=should_be_checked)
+            self._style_border(is_on=should_be_checked)
         self._update_status(value)
         self._pending_level = value
         self._send_debounce.start(SLIDER_SEND_DEBOUNCE_MS)
@@ -192,6 +195,7 @@ class ChannelCard(Card):
 
         self.slider.setEnabled(d.output_on)
         self._style_mode_combo(is_on=d.output_on)
+        self._style_border(is_on=d.output_on)
 
         if self.slider.value() != level:
             with _signal_lock(self.slider):

@@ -63,16 +63,7 @@ class ChannelCard(Card):
         self.mode_combo.currentIndexChanged.connect(
             lambda i: self.mode_combo.setToolTip(c.MODE_NAMES[self._mode_codes[i]])
         )
-        self.mode_combo.setStyleSheet(
-            f"QComboBox {{ background: #FFFFFF; color: {ACCENT_BLUE}; border: 1px solid {BORDER_SUBTLE}; "
-            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
-            f"QComboBox:disabled {{ background: transparent; color: {TEXT_MUTED}; "
-            f"border: 1px solid {BORDER_SUBTLE}; }}"
-            f"QComboBox::drop-down {{ border: none; background: transparent; }}"
-            f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
-            f"selection-background-color: #FFFFFF; selection-color: {ACCENT_BLUE}; }}"
-        )
+        self._style_mode_combo(is_on=False)
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_set_btn = QPushButton("Set")
         self.mode_set_btn.setFixedHeight(24)
@@ -137,6 +128,16 @@ class ChannelCard(Card):
             f"#Card {{ background: #FFFFFF; border: 1px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
+    def _style_mode_combo(self, is_on: bool):
+        text_color = ACCENT_BLUE if is_on else TEXT_MUTED
+        self.mode_combo.setStyleSheet(
+            f"QComboBox {{ background: #FFFFFF; color: {text_color}; border: 1px solid {BORDER_SUBTLE}; "
+            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
+            f"QComboBox::drop-down {{ border: none; background: transparent; }}"
+            f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
+            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
+            f"selection-background-color: #FFFFFF; selection-color: {ACCENT_BLUE}; }}"
+        )
 
     def _on_toggle(self, checked: bool):
         if checked:
@@ -144,6 +145,7 @@ class ChannelCard(Card):
         else:
             self.controller.turn_output_off()
         self.slider.setEnabled(checked)
+        self._style_mode_combo(is_on=checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
             self.slider.setValue(target_level)
@@ -157,6 +159,7 @@ class ChannelCard(Card):
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(should_be_checked)
             self.slider.setEnabled(should_be_checked)
+            self._style_mode_combo(is_on=should_be_checked)
         self._update_status(value)
         self._pending_level = value
         self._send_debounce.start(SLIDER_SEND_DEBOUNCE_MS)
@@ -197,6 +200,7 @@ class ChannelCard(Card):
                 self.toggle.setChecked(d.output_on)
 
         self.slider.setEnabled(d.output_on)
+        self._style_mode_combo(is_on=d.output_on)
 
         if self.slider.value() != level:
             with _signal_lock(self.slider):

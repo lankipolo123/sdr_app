@@ -9,6 +9,13 @@ config/
 venv/
 env/
 
+# Transit.dll (services/middleware.py) is a proprietary vendor DLL, never
+# committed - you supply your own copy locally before running
+# installer.iss. Ignoring the folder plus Windows' own "- Copy" naming
+# for a local backup of it.
+dll/
+dll - Copy/
+
 dist/
 build/
 *.spec

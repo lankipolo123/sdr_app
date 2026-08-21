@@ -2,7 +2,7 @@ import marshal
 import os
 import zipfile
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from Crypto.Cipher import AES
 
 from crypto_loader import _KEY, _ARCHIVE_NAME
 
@@ -10,7 +10,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(ROOT, _ARCHIVE_NAME)
 
 # Our own app code only - never third-party packages (PySide6,
-# cryptography itself), and never main.py/crypto_loader.py/build_*.py,
+# pycryptodome itself), and never main.py/crypto_loader.py/build_*.py,
 # which have to stay as plain, directly-importable bootstrap files for
 # PyInstaller and the interpreter itself to find in the first place.
 SOURCE_PACKAGES = ["app", "components", "hooks", "pages", "services", "state", "styles", "utils"]
@@ -47,8 +47,9 @@ def _encrypt(source: str) -> bytes:
     code = compile(source, "<encrypted>", "exec")
     plaintext = marshal.dumps(code)
     nonce = os.urandom(12)
-    ciphertext = AESGCM(_KEY).encrypt(nonce, plaintext, None)
-    return nonce + ciphertext
+    cipher = AES.new(_KEY, AES.MODE_GCM, nonce=nonce)
+    ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+    return nonce + ciphertext + tag
 
 
 def main():

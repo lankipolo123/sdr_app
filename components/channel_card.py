@@ -27,7 +27,7 @@ class ChannelCard(Card):
     MIN_WIDTH = 200
 
     def __init__(self, controller, state, parent=None):
-        super().__init__(f"CH{state.display_number:02d}", icon="fa5s.broadcast-tower")
+        super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.layout().setContentsMargins(8, 6, 8, 6)

@@ -9,7 +9,7 @@ from crypto_loader import _KEY, _ARCHIVE_NAME
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(ROOT, _ARCHIVE_NAME)
 
-# Our own app code only - never third-party packages (PySide6, qtawesome,
+# Our own app code only - never third-party packages (PySide6,
 # cryptography itself), and never main.py/crypto_loader.py/build_*.py,
 # which have to stay as plain, directly-importable bootstrap files for
 # PyInstaller and the interpreter itself to find in the first place.

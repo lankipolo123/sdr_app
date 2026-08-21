@@ -14,9 +14,6 @@ _ASSET_DIR = resource_path("assets", "icons", "pages")
 def _resolve_icon(icon, tint_color: str):
     if icon is None:
         return None
-    if isinstance(icon, str) and icon.startswith(("fa5s.", "fa5b.", "fa5r.", "mdi.", "mdi6.")):
-        import qtawesome as qta
-        return qta.icon(icon, color=tint_color).pixmap(_ICON_SIZE, _ICON_SIZE)
     if isinstance(icon, str):
         path = os.path.join(_ASSET_DIR, icon)
         if not os.path.exists(path):

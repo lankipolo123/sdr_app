@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         self.controls_bar.clear_log_requested.connect(self._on_clear_log)
         top_row.addWidget(self.controls_bar, 3, alignment=Qt.AlignTop)
 
-        self.logs_panel = LogsPanel("Logs", icon="fa5s.list", min_width=LOGS_MIN_WIDTH)
+        self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=LOGS_MIN_WIDTH)
         self.logs_panel.setFixedHeight(TOP_ROW_HEIGHT)
         self.logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         top_row.addWidget(self.logs_panel, 4, alignment=Qt.AlignTop)

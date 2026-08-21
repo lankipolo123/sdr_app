@@ -37,6 +37,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-build.txt
 
+      - name: Install UPX
+        # Compresses the DLLs/exe PyInstaller collects (build_exe.py picks
+        # it up automatically via UPX_DIR - see its UPX_EXCLUDE list for
+        # the couple of files deliberately left uncompressed). Pinned to a
+        # specific release rather than "latest" so this step doesn't start
+        # silently pulling in an untested new UPX version.
+        shell: bash
+        run: |
+          curl -fL -o upx.zip https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip
+          7z x upx.zip
+          echo "UPX_DIR=$PWD/upx-4.2.4-win64" >> "$GITHUB_ENV"
+
       - name: Build .exe
         run: python build_exe.py
 

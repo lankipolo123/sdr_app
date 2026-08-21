@@ -131,9 +131,73 @@ gitignored and regenerated on every build, not something to commit.
 Output lands in `dist/TX Controller/` - a folder build (`--onedir`,
 so launch is fast - no self-extraction on every start like
 `--onefile` would need), with `TX Controller.exe`, its icon, and
-`assets/` all alongside each other. To also produce a proper installer
-(Start Menu/Desktop shortcuts, uninstall entry) via
-[Inno Setup](https://jrsoftware.org/isinfo.php):
+`assets/` all alongside each other.
+
+`build_exe.py` doesn't pass PyInstaller its options on the command
+line - it hands it `tx_controller.spec` instead, which is what
+actually calls `Analysis()`/`EXE()`/`COLLECT()` (`pyi-makespec` would
+normally generate this file fresh from CLI flags each build, but a
+checked-in one is what lets `prune_qt_extras()` below reach in and
+drop individual files that no CLI flag can target).
+
+#### Shrinking the build further
+
+Two things `build_exe.py` does beyond a plain PyInstaller build,
+both of which only matter/take effect on Windows:
+
+- **`prune_qt_extras()`** (in `build_exe.py`, applied from
+  `tx_controller.spec`) deletes files PyInstaller's PySide6 hooks
+  collect unconditionally but this app never uses: the ANGLE/
+  software-OpenGL DLLs (`libEGL.dll`, `libGLESv2.dll`,
+  `d3dcompiler_*.dll`, `opengl32sw.dll` - pulled in for QtQuick/QML
+  apps, irrelevant to this Fusion-styled QWidgets app, and usually
+  the single largest chunk of a PySide6 build), ICU DLLs if present,
+  a handful of unused Qt plugin folders (`iconengines`,
+  `platforminputcontexts`, `platformthemes`, `generic`, `styles` -
+  see the comment above `_PRUNE_PLUGIN_DIRS` for why each one is
+  safe to drop), and every Qt translation file (the app never loads
+  a `QTranslator`, so `qtbase_*.qm` for 50-odd languages was dead
+  weight). It prints how many files and MiB it dropped on every
+  build. Set `PRUNE_QT_EXTRAS=0` before running `build_exe.py` to
+  turn this off and get PyInstaller's untouched default collection -
+  useful if something in the built app misbehaves and you want to
+  rule this out first.
+- **UPX** (optional, not installed by `requirements-build.txt`)
+  compresses the executable and DLLs PyInstaller collects, on top of
+  the pruning above. Grab a Windows build from
+  [github.com/upx/upx/releases](https://github.com/upx/upx/releases)
+  (a `upx-<version>-win64.zip` - just an `upx.exe`, nothing to
+  install), unzip it anywhere, then point `build_exe.py` at it:
+  ```bash
+  set UPX_DIR=C:\path\to\upx-4.2.4-win64
+  python build_exe.py
+  ```
+  (`$env:UPX_DIR = "..."` in PowerShell, `export UPX_DIR=...` in a
+  bash-like shell). Leave it unset and UPX is skipped entirely - it's
+  a real trade-off, not a free win: it noticeably slows down (a few
+  seconds added to) every launch since each DLL has to decompress
+  into memory first, and compressed executables are a pattern some
+  antivirus/SmartScreen heuristics flag on sight, which this
+  already-unsigned build can't afford more of. `UPX_EXCLUDE` in
+  `build_exe.py` leaves `qwindows.dll` and the Python/MSVC runtime
+  DLLs uncompressed regardless, since UPX has a history of corrupting
+  exactly those and turning it into a silent "app won't start" with
+  no error dialog. The GitHub Actions release workflow installs a
+  pinned UPX version and enables it automatically, so this is only
+  something to set up for a local build.
+
+**After building with either of these on**, actually launch
+`dist/TX Controller/TX Controller.exe` and check the basics before
+trusting the build: the frameless/translucent main window and splash
+screen render normally (no black/blank window - the main risk from
+the ANGLE/plugin pruning above, since this app uses
+`WA_TranslucentBackground`), the channel cards' dropdowns/checkboxes/
+spin-box arrows still show their icons, and log lines still append.
+None of this can be verified from Linux/Mac - PyInstaller only builds
+for the OS it runs on.
+
+To also produce a proper installer (Start Menu/Desktop shortcuts,
+uninstall entry) via [Inno Setup](https://jrsoftware.org/isinfo.php):
 
 ```bash
 python build_exe.py

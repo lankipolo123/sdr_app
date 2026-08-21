@@ -95,27 +95,64 @@ _PRUNE_BINARY_PREFIXES = (
 # compiled directly into QtGui. Only .ico/.jpeg/.gif/.svg/etc need the
 # plugin folder.
 #
-# Deliberately NOT pruned: `platforms` (qwindows.dll - required to start
-# at all).
+# `platforms` keeps only qwindows.dll - the real Windows backend. The
+# other three plugins in that folder are alternate backends selected via
+# the QT_QPA_PLATFORM env var, which nothing in the shipped app sets
+# (only tests/dry_run.py does, for headless dev runs - not part of the
+# frozen build: main.py never imports tests/, so PyInstaller's Analysis
+# never sees it).
 _PRUNE_PLUGIN_DIRS = ("iconengines", "platforminputcontexts", "platformthemes", "generic", "styles", "imageformats")
+_PLATFORMS_KEEP = ("qwindows.dll",)
+
+# Excluding a plugin folder above doesn't clean up shared libraries that
+# ONLY existed to back a plugin in it - PyInstaller's Analysis resolves a
+# plugin's own DLL dependencies before prune_qt_extras ever runs, so
+# removing e.g. imageformats/qpdf.dll doesn't remove what qpdf.dll
+# dragged in with it. Traced each one's real PE import table (pefile,
+# against the actual PySide6 6.11.2 Windows wheel) to confirm every file
+# below is now a genuine orphan - nothing this build actually keeps
+# (Qt6Core/Gui/Widgets, qwindows.dll, the imageformats plugins that
+# survive) imports any of them:
+#   imageformats/qpdf.dll  -> Qt6Pdf.dll -> Qt6Network.dll
+#   imageformats/qsvg.dll  -> Qt6Svg.dll
+#   platforminputcontexts' virtual-keyboard plugin
+#       -> Qt6VirtualKeyboard.dll -> Qt6Quick.dll, Qt6Qml.dll
+#       -> Qt6Quick.dll -> Qt6QmlMeta.dll, Qt6QmlModels.dll, Qt6Network.dll,
+#                          Qt6OpenGL.dll
+#       -> Qt6QmlMeta.dll -> Qt6QmlWorkerScript.dll
+# Together these ran ~23MB in the 6.11.2 wheel - the single biggest chunk
+# pruning has found since the plugin-folder pass itself.
+_PRUNE_ORPHANED_LIBS = (
+    "qt6pdf.dll", "qt6svg.dll", "qt6network.dll", "qt6virtualkeyboard.dll",
+    "qt6qml.dll", "qt6quick.dll", "qt6qmlmeta.dll", "qt6qmlmodels.dll",
+    "qt6qmlworkerscript.dll", "qt6opengl.dll",
+)
 
 
 def prune_qt_extras(binaries, datas):
-    """Drop ANGLE/ICU binaries, the unused Qt plugin folders above, and
-    Qt's own translation files (qtbase_*.qm etc. for every locale Qt
-    ships - dead weight since the app never loads a QTranslator) from a
-    completed PyInstaller Analysis. Returns (binaries, datas) as TOCs."""
+    """Drop ANGLE/ICU binaries, the unused Qt plugin folders above, their
+    now-orphaned shared-library dependencies, and Qt's own translation
+    files (qtbase_*.qm etc. for every locale Qt ships - dead weight since
+    the app never loads a QTranslator) from a completed PyInstaller
+    Analysis. Returns (binaries, datas) as TOCs."""
     from PyInstaller.building.datastruct import TOC
 
     def _keep_binary(entry):
         dest_name, _src, _typecode = entry
         parts = dest_name.replace(os.sep, "/").lower().split("/")
-        if parts[-1].startswith(_PRUNE_BINARY_PREFIXES):
+        basename = parts[-1]
+        if basename.startswith(_PRUNE_BINARY_PREFIXES):
+            return False
+        if basename in _PRUNE_ORPHANED_LIBS:
             return False
         if "plugins" in parts:
             plugin_idx = parts.index("plugins") + 1
-            if plugin_idx < len(parts) and parts[plugin_idx] in _PRUNE_PLUGIN_DIRS:
-                return False
+            if plugin_idx < len(parts):
+                plugin_dir = parts[plugin_idx]
+                if plugin_dir in _PRUNE_PLUGIN_DIRS:
+                    return False
+                if plugin_dir == "platforms" and basename not in _PLATFORMS_KEEP:
+                    return False
         return True
 
     def _keep_data(entry):

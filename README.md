@@ -121,8 +121,8 @@ python build_exe.py
 `build_exe.py` first runs `build_encrypt.py`, which AES-encrypts the
 app's own source (`app.py`, `components/`, `hooks/`, `pages/`,
 `services/`, `state/`, `styles/`, `utils/`) into `app_encrypted.pyz` -
-third-party packages (PySide6, qtawesome) and stdlib aren't touched,
-just this repo's own code. PyInstaller then bundles that archive
+third-party packages (PySide6) and stdlib aren't touched, just this
+repo's own code. PyInstaller then bundles that archive
 instead of plain `.py`/`.pyc` files; `crypto_loader.py` decrypts it in
 memory at launch (only when frozen - `python main.py` from source
 runs the plain files directly, unaffected). `app_encrypted.pyz` is

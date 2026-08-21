@@ -11,7 +11,7 @@ class ControlsBar(Card):
     clear_log_requested = Signal()
 
     def __init__(self, min_width: int, parent=None):
-        super().__init__("Controls", icon="fa5s.sliders-h", parent=parent)
+        super().__init__("Controls", icon="sliders-h.png", parent=parent)
         self.setMinimumWidth(min_width)
 
         status_row = QHBoxLayout()

@@ -37,21 +37,25 @@ QRadioButton::indicator:checked {{
 }}
 """
 
-def _cached_qta_icon_path(icon_name: str, color: str, cache_key: str) -> str:
+def _cached_icon_path(icon_file: str, color: str, cache_key: str) -> str:
     import os
     import tempfile
-    import qtawesome as qta
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QPixmap
+    from components.icon_utils import tint_pixmap
+    from utils.app_paths import resource_path
 
     cache_path = os.path.join(tempfile.gettempdir(), f"sdr_controller_{cache_key}.png")
     if not os.path.exists(cache_path):
-        icon = qta.icon(icon_name, color=color)
-        pixmap = icon.pixmap(12, 12)
+        source_path = resource_path("assets", "icons", "pages", icon_file)
+        pixmap = QPixmap(source_path).scaled(12, 12, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pixmap = tint_pixmap(pixmap, color)
         pixmap.save(cache_path, "PNG")
     return cache_path.replace(os.sep, "/")
 
 
 def checkbox_style() -> str:
-    check_path = _cached_qta_icon_path("fa5s.check", "#FFFFFF", "checkbox_check")
+    check_path = _cached_icon_path("check.png", "#FFFFFF", "checkbox_check")
     return f"""
 QCheckBox {{ color: {TEXT_DARK}; background: transparent; spacing: 8px; }}
 QCheckBox::indicator {{
@@ -69,9 +73,9 @@ QCheckBox::indicator:checked {{
 
 
 def build_global_qss() -> str:
-    arrow_path = _cached_qta_icon_path("fa5s.chevron-down", ACCENT_BLUE, "dropdown_arrow")
-    spin_up_path = _cached_qta_icon_path("fa5s.chevron-up", ACCENT_BLUE, "spin_up_arrow")
-    spin_down_path = _cached_qta_icon_path("fa5s.chevron-down", ACCENT_BLUE, "spin_down_arrow")
+    arrow_path = _cached_icon_path("chevron-down.png", ACCENT_BLUE, "dropdown_arrow")
+    spin_up_path = _cached_icon_path("chevron-up.png", ACCENT_BLUE, "spin_up_arrow")
+    spin_down_path = _cached_icon_path("chevron-down.png", ACCENT_BLUE, "spin_down_arrow")
     return f"""
 QChartView {{
     background: #FFFFFF;

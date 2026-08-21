@@ -46,12 +46,12 @@ UNUSED_QT_MODULES = [
 # walking the module graph from main.py) never runs on any of it either,
 # so every third-party package AND stdlib submodule that code actually
 # uses has to be listed explicitly here - confirmed one at a time against
-# a real built-and-run onedir binary (not guessed): PySide6/qtawesome are
-# genuinely third-party, the rest are stdlib submodules PyInstaller's
-# default bundling doesn't include unless something in the discovered
-# graph really imports them.
+# a real built-and-run onedir binary (not guessed): PySide6 is genuinely
+# third-party, the rest are stdlib submodules PyInstaller's default
+# bundling doesn't include unless something in the discovered graph
+# really imports them.
 HIDDEN_IMPORTS = [
-    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "qtawesome",
+    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets",
     "logging.handlers", "configparser", "contextlib", "copy", "ctypes",
     "collections", "dataclasses", "json", "struct", "enum", "typing",
 ]
@@ -75,7 +75,6 @@ def main():
     ]
     for entry in ADD_DATA:
         args += ["--add-data", entry]
-    args += ["--collect-data", "qtawesome"]
     for module in HIDDEN_IMPORTS:
         args += ["--hidden-import", module]
     for module in UNUSED_QT_MODULES:

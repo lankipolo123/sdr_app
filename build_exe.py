@@ -85,14 +85,19 @@ _PRUNE_BINARY_PREFIXES = (
 # (every file in the folder, no filtering) that this app doesn't use:
 # iconengines is for QtSvg-backed icons (QtSvg is excluded above),
 # platforminputcontexts/platformthemes are Linux input-method/desktop-
-# theme integration, generic is tablet/touch input, and styles only ever
-# held the native "windowsvista" style - the app force-sets Fusion
-# (app.py), which QtWidgets builds in directly, not a plugin.
+# theme integration, generic is tablet/touch input, styles only ever held
+# the native "windowsvista" style (the app force-sets Fusion in app.py,
+# which QtWidgets builds in directly, not a plugin), and imageformats is
+# for formats Qt doesn't handle natively - confirmed with a real
+# QGuiApplication (see PR discussion) that PNG, the only format this app
+# ever loads at runtime (icons, splash - all .png), decodes fine with
+# zero imageformats plugins present: PNG/BMP/PBM/PGM/PPM/XBM/XPM are
+# compiled directly into QtGui. Only .ico/.jpeg/.gif/.svg/etc need the
+# plugin folder.
 #
 # Deliberately NOT pruned: `platforms` (qwindows.dll - required to start
-# at all) and `imageformats` (small folder, and the app does load real
-# .png assets at runtime - not worth the risk to save a couple hundred KB).
-_PRUNE_PLUGIN_DIRS = ("iconengines", "platforminputcontexts", "platformthemes", "generic", "styles")
+# at all).
+_PRUNE_PLUGIN_DIRS = ("iconengines", "platforminputcontexts", "platformthemes", "generic", "styles", "imageformats")
 
 
 def prune_qt_extras(binaries, datas):

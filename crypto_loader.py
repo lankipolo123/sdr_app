@@ -5,7 +5,7 @@ import os
 import sys
 import zipfile
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from Crypto.Cipher import AES
 
 _KEY = bytes.fromhex(
     "55a04fcdf6615e5552689ef2d5ca135edca7299032377680f6fa23d5d84500c2"
@@ -39,8 +39,13 @@ class _EncryptedLoader(importlib.abc.Loader):
 
     def exec_module(self, module):
         blob = self._zf.read(self._entry)
-        nonce, ciphertext = blob[:12], blob[12:]
-        plaintext = AESGCM(_KEY).decrypt(nonce, ciphertext, None)
+        # Layout written by build_encrypt.py: nonce(12) + ciphertext + tag(16)
+        # - pycryptodome keeps the GCM tag separate from the ciphertext
+        # (unlike `cryptography`'s AESGCM, which returns them concatenated),
+        # so it has to be split back off here.
+        nonce, ciphertext, tag = blob[:12], blob[12:-16], blob[-16:]
+        cipher = AES.new(_KEY, AES.MODE_GCM, nonce=nonce)
+        plaintext = cipher.decrypt_and_verify(ciphertext, tag)
         code = marshal.loads(plaintext)
         # Real modules always have __file__ - set a synthetic one so any
         # code touching it (even just for a log message or an early guard

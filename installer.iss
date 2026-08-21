@@ -55,7 +55,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; --onedir build: dist\TX Controller\ is a whole folder (the exe plus
-; its Python/Qt runtime and assets/), not a single file, so this
+; its Python/WebView2 runtime and assets/), not a single file, so this
 ; copies everything in it recursively. Transit.dll below is a real,
 ; separate file though, not something PyInstaller bundles:
 ; services/middleware.py loads it via ctypes.WinDLL from dll\Transit.dll

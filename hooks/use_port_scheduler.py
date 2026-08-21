@@ -1,12 +1,9 @@
 from collections import deque
 
-from PySide6.QtCore import QObject
 
-
-class PortScheduler(QObject):
+class PortScheduler:
 
     def __init__(self):
-        super().__init__()
         self._queue: deque = deque()
         self._holder = None
 

@@ -19,7 +19,6 @@ dll - Copy/
 dist/
 build/
 *.spec
-!tx_controller.spec
 installer_output/
 app_encrypted.pyz
 

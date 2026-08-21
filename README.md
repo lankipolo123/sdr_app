@@ -39,11 +39,17 @@ python main.py
 ## Layout
 
 ```
-main.py / app.py            entry point + bootstrap
-components/                 reusable UI pieces (Card, PowerButton, LevelSlider,
-                             ChannelCard, ConfirmDialog, custom window chrome)
-pages/                       main_page.py — the one screen (MainWindow)
-hooks/                       non-UI reactive logic
+main.py / app.py            entry point + bootstrap + the pywebview <-> Python
+                             bridge (class Api - every method on it is what
+                             the page calls as pywebview.api.*)
+web/                         the UI itself - plain HTML/CSS/JS, no framework
+  index.html / style.css / app.js
+  icons/                       small local copies of assets/icons/* (pywebview's
+                                WebKit backend blocks `../` path traversal out
+                                of web/, so these can't just be referenced in place)
+hooks/                       non-UI reactive logic (Signal/SingleShotTimer from
+                             utils/signal.py stand in for what used to be
+                             QObject/Signal/QTimer - same control flow, no Qt)
   use_connection.py            opens/sends on one serial port at a time
   use_channel.py                per-channel commands: finds its own port fresh
                                  per command, retries, optimistic apply-on-timeout
@@ -54,9 +60,9 @@ state/                       channel_state.py, level_map.py — data models
 services/
   protocol/                    binary RS422 frame format (constants, commands,
                                  packet builder/parser)
-  serial/                       transport (manager, thread)
-utils/                       config_service.py, logging_service.py, app_paths.py
-styles/                       theme_colors.py
+  middleware.py                 ctypes bridge to the vendor Transit.dll
+utils/                       config_service.py, logging_service.py, app_paths.py,
+                             signal.py (the Qt-free Signal/SingleShotTimer above)
 build_exe.py                 PyInstaller build script
 installer.iss                Inno Setup script that wraps the build into an installer
 .github/workflows/           CI that builds the .exe on a real Windows runner
@@ -119,82 +125,34 @@ python build_exe.py
 ```
 
 `build_exe.py` first runs `build_encrypt.py`, which AES-encrypts the
-app's own source (`app.py`, `components/`, `hooks/`, `pages/`,
-`services/`, `state/`, `styles/`, `utils/`) into `app_encrypted.pyz` -
-third-party packages (PySide6) and stdlib aren't touched, just this
-repo's own code. PyInstaller then bundles that archive
-instead of plain `.py`/`.pyc` files; `crypto_loader.py` decrypts it in
-memory at launch (only when frozen - `python main.py` from source
+app's own source (`app.py`, `hooks/`, `services/`, `state/`,
+`utils/`) into `app_encrypted.pyz` - third-party packages (pywebview,
+pycryptodome), stdlib, and `web/` (plain HTML/CSS/JS, not Python) aren't
+touched, just this repo's own `.py` code. PyInstaller then bundles that
+archive instead of plain `.py`/`.pyc` files; `crypto_loader.py` decrypts
+it in memory at launch (only when frozen - `python main.py` from source
 runs the plain files directly, unaffected). `app_encrypted.pyz` is
 gitignored and regenerated on every build, not something to commit.
 
 Output lands in `dist/TX Controller/` - a folder build (`--onedir`,
 so launch is fast - no self-extraction on every start like
-`--onefile` would need), with `TX Controller.exe`, its icon, and
-`assets/` all alongside each other.
+`--onefile` would need), with `TX Controller.exe`, its icon, `assets/`,
+and `web/` all alongside each other.
 
-`build_exe.py` doesn't pass PyInstaller its options on the command
-line - it hands it `tx_controller.spec` instead, which is what
-actually calls `Analysis()`/`EXE()`/`COLLECT()` (`pyi-makespec` would
-normally generate this file fresh from CLI flags each build, but a
-checked-in one is what lets `prune_qt_extras()` below reach in and
-drop individual files that no CLI flag can target).
+On Windows, the UI runs inside the OS's own WebView2 runtime (already
+present on Windows 10 1809+/11 - not something this build ships), hosted
+through `pythonnet`/`clr` (.NET interop) - both are real dependencies
+pywebview needs there, not optional extras, so they're already in
+`requirements.txt`.
 
-#### Shrinking the build further
-
-Two things `build_exe.py` does beyond a plain PyInstaller build,
-both of which only matter/take effect on Windows:
-
-- **`prune_qt_extras()`** (in `build_exe.py`, applied from
-  `tx_controller.spec`) deletes files PyInstaller's PySide6 hooks
-  collect unconditionally but this app never uses: the ANGLE/
-  software-OpenGL DLLs (`libEGL.dll`, `libGLESv2.dll`,
-  `d3dcompiler_*.dll`, `opengl32sw.dll` - pulled in for QtQuick/QML
-  apps, irrelevant to this Fusion-styled QWidgets app, and usually
-  the single largest chunk of a PySide6 build), ICU DLLs if present,
-  a handful of unused Qt plugin folders (`iconengines`,
-  `platforminputcontexts`, `platformthemes`, `generic`, `styles` -
-  see the comment above `_PRUNE_PLUGIN_DIRS` for why each one is
-  safe to drop), and every Qt translation file (the app never loads
-  a `QTranslator`, so `qtbase_*.qm` for 50-odd languages was dead
-  weight). It prints how many files and MiB it dropped on every
-  build. Set `PRUNE_QT_EXTRAS=0` before running `build_exe.py` to
-  turn this off and get PyInstaller's untouched default collection -
-  useful if something in the built app misbehaves and you want to
-  rule this out first.
-- **UPX** (optional, not installed by `requirements-build.txt`)
-  compresses the executable and DLLs PyInstaller collects, on top of
-  the pruning above. Grab a Windows build from
-  [github.com/upx/upx/releases](https://github.com/upx/upx/releases)
-  (a `upx-<version>-win64.zip` - just an `upx.exe`, nothing to
-  install), unzip it anywhere, then point `build_exe.py` at it:
-  ```bash
-  set UPX_DIR=C:\path\to\upx-4.2.4-win64
-  python build_exe.py
-  ```
-  (`$env:UPX_DIR = "..."` in PowerShell, `export UPX_DIR=...` in a
-  bash-like shell). Leave it unset and UPX is skipped entirely - it's
-  a real trade-off, not a free win: it noticeably slows down (a few
-  seconds added to) every launch since each DLL has to decompress
-  into memory first, and compressed executables are a pattern some
-  antivirus/SmartScreen heuristics flag on sight, which this
-  already-unsigned build can't afford more of. `UPX_EXCLUDE` in
-  `build_exe.py` leaves `qwindows.dll` and the Python/MSVC runtime
-  DLLs uncompressed regardless, since UPX has a history of corrupting
-  exactly those and turning it into a silent "app won't start" with
-  no error dialog. The GitHub Actions release workflow installs a
-  pinned UPX version and enables it automatically, so this is only
-  something to set up for a local build.
-
-**After building with either of these on**, actually launch
-`dist/TX Controller/TX Controller.exe` and check the basics before
-trusting the build: the frameless/translucent main window and splash
-screen render normally (no black/blank window - the main risk from
-the ANGLE/plugin pruning above, since this app uses
-`WA_TranslucentBackground`), the channel cards' dropdowns/checkboxes/
-spin-box arrows still show their icons, and log lines still append.
-None of this can be verified from Linux/Mac - PyInstaller only builds
-for the OS it runs on.
+**Actually launch `dist/TX Controller/TX Controller.exe` after every
+build** and check the basics before trusting it: the frameless/
+translucent window renders with rounded corners (not a plain rectangle
+or a blank/black window), every channel card's icon shows up, dragging
+the titlebar moves the window, and a channel's ON/OFF/slider actually
+changes its status text. None of this can be verified from Linux/Mac -
+PyInstaller only builds for the OS it runs on, and WebView2 is a
+Windows-only runtime.
 
 To also produce a proper installer (Start Menu/Desktop shortcuts,
 uninstall entry) via [Inno Setup](https://jrsoftware.org/isinfo.php):
@@ -247,6 +205,22 @@ open items below.
 - **Not code-signed.** Windows SmartScreen will flag the `.exe` as
   from an unknown publisher until a code-signing certificate is
   bought and wired into the build (see Install section above).
+- **UI runs on pywebview + WebView2, not yet verified on a real Windows
+  machine.** The whole `components/`/`pages/`/`styles/` (PySide6) layer
+  was replaced with `web/` (HTML/CSS/JS) to get the installed size down
+  from ~59MB to something realistically single-to-low-double-digit MB -
+  Qt itself was the floor no amount of pruning could get under. Verified
+  thoroughly under Linux's GTK+WebKit2 backend (real screenshots, real
+  click/drag/slider interaction, the full Python<->JS round trip through
+  `hooks/`'s actual queuing/retry/timeout logic - not a mockup), but
+  Windows uses a different backend (WebView2 via pythonnet) that only a
+  real Windows build can confirm. Needs the same launch-and-click-through
+  pass described in "Building it yourself" before trusting a release.
+- **Frameless window drag-to-move is hand-rolled** (`web/app.js`'s
+  titlebar `mousedown`/`mousemove` -> `Api.move_window()`), since
+  pywebview's built-in `easy_drag` starts a window drag on any mouse-down
+  anywhere on the page with no exclusion for buttons/sliders - unusable
+  for a UI this interactive. Works under GTK; unverified under WebView2.
 - **Source protection is AES encryption of the shipped bytecode
   (`crypto_loader.py`/`build_encrypt.py`), not real obfuscation.**
   PyArmor was considered and intentionally skipped - its free tier's

@@ -9,11 +9,13 @@ from crypto_loader import _KEY, _ARCHIVE_NAME
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(ROOT, _ARCHIVE_NAME)
 
-# Our own app code only - never third-party packages (PySide6,
-# pycryptodome itself), and never main.py/crypto_loader.py/build_*.py,
-# which have to stay as plain, directly-importable bootstrap files for
-# PyInstaller and the interpreter itself to find in the first place.
-SOURCE_PACKAGES = ["app", "components", "hooks", "pages", "services", "state", "styles", "utils"]
+# Our own app code only - never third-party packages (pywebview,
+# pycryptodome itself), never web/ (static HTML/CSS/JS, not Python - it
+# ships plain via ADD_DATA in build_exe.py), and never main.py/
+# crypto_loader.py/build_*.py, which have to stay as plain, directly-
+# importable bootstrap files for PyInstaller and the interpreter itself
+# to find in the first place.
+SOURCE_PACKAGES = ["app", "hooks", "services", "state", "utils"]
 
 # Standalone manual test/dev harnesses that live inside an otherwise-real
 # package (services/) but are never imported by the shipped app itself -

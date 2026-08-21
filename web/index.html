@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TX Controller</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-frame">
+    <div id="titlebar">
+      <img class="title-icon" src="icons/app_icon.png" alt="">
+      <span class="title-text">TX Controller</span>
+      <div class="titlebar-spacer"></div>
+      <button class="caption-btn" id="btn-minimize" title="Minimize">
+        <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
+      </button>
+      <button class="caption-btn" id="btn-maximize" title="Full Screen">
+        <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+      </button>
+      <button class="caption-btn close-btn" id="btn-close" title="Close App">
+        <svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.3"/></svg>
+      </button>
+    </div>
+
+    <div id="content">
+      <div class="top-row">
+        <div class="card" id="controls-card">
+          <div class="card-header">
+            <img src="icons/sliders-h.png" alt="">
+            <span class="card-title">Controls</span>
+          </div>
+          <div class="card-body">
+            <div class="status-row">
+              <span id="status-label">Ready.</span>
+              <button class="btn" id="btn-query" title="Diagnostic: ask one specific address directly, brute-force finding the port, and actually wait for and verify a real confirmed response (or report failure) - separate from the cards, which still send blind">Query</button>
+              <button class="btn btn-navy" id="btn-clear-log" title="Erase the app's log file and the TX/RX list above">Clear Log</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="logs-card">
+          <div class="card-header">
+            <img src="icons/list.png" alt="">
+            <span class="card-title">Logs</span>
+            <button id="logs-maximize" title="Open full scrollable logs">
+              <img src="icons/expand-alt.png" alt="">
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="logs-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="channels-scroll">
+        <div id="channels-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-overlay">
+    <div id="confirm-panel">
+      <p id="confirm-title"></p>
+      <p id="confirm-message"></p>
+      <div id="confirm-buttons">
+        <button class="confirm-cancel-btn" id="confirm-cancel"></button>
+        <button class="confirm-ok-btn" id="confirm-ok"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

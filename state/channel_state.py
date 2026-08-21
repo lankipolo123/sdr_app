@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from PySide6.QtCore import QObject, Signal
+
+from utils.signal import Signal
 
 from .level_map import DEFAULT_RESUME_LEVEL
 
@@ -15,12 +16,10 @@ class ChannelStateData:
     last_level: int = DEFAULT_RESUME_LEVEL
 
 
-class ChannelState(QObject):
-
-    changed = Signal()
+class ChannelState:
 
     def __init__(self, address: int):
-        super().__init__()
+        self.changed = Signal()
         self.data = ChannelStateData(address=address)
 
     @property

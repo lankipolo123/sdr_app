@@ -1,30 +1,27 @@
 import struct
 from collections import deque
 
-from PySide6.QtCore import QObject, QTimer, Signal
-
 from services.middleware import dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame, describe_command
 from state.channel_state import ChannelState
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS_FULL
+from utils.signal import Signal, SingleShotTimer
 from .use_connection import ConnectionController
 
 RESPONSE_TIMEOUT_MS = 300
 RETRY_MAX_ATTEMPTS = 1
 
 
-class ChannelController(QObject):
-
-    command_timeout = Signal(str)
-    busy_changed = Signal(bool)
-    raw_tx = Signal(bytes)
-    raw_rx = Signal(bytes)
+class ChannelController:
 
     def __init__(self, state: ChannelState, baud: int = 115200, parity: str = "N",
                  data_bits: int = 8, logger=None, preferred_port: str | None = None,
                  port_scheduler=None):
-        super().__init__()
+        self.command_timeout = Signal()
+        self.busy_changed = Signal()
+        self.raw_tx = Signal()
+        self.raw_rx = Signal()
         self.state = state
         self.baud = baud
         self.parity = parity
@@ -34,7 +31,7 @@ class ChannelController(QObject):
         self.port_scheduler = port_scheduler
         self._awaiting_port = False
         self._temp_conn: ConnectionController | None = None
-        self._pending_timer: QTimer | None = None
+        self._pending_timer: SingleShotTimer | None = None
         self._pending_label = None
         self._pending_state_update: dict | None = None
         self._pending_frame: bytes | None = None
@@ -199,8 +196,7 @@ class ChannelController(QObject):
         self._pending_frame = frame
         self._pending_label = label
         self._pending_state_update = state_update
-        self._pending_timer = QTimer()
-        self._pending_timer.setSingleShot(True)
+        self._pending_timer = SingleShotTimer()
         self._pending_timer.timeout.connect(self._on_response_timeout)
         self._pending_timer.start(RESPONSE_TIMEOUT_MS)
 

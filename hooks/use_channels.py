@@ -1,12 +1,11 @@
 import os
 
-from PySide6.QtCore import QObject, QTimer, Signal
-
 from services.middleware import Token, dispatch_token, dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame
 from state.channel_state import ChannelState
 from utils.channel_store import load_channel_states, save_channel_states
+from utils.signal import Signal, SingleShotTimer
 from .use_channel import ChannelController
 from .use_connection import ConnectionController
 from .use_port_scheduler import PortScheduler
@@ -17,14 +16,12 @@ QUERY_TIMEOUT_MS = 300
 QUERY_MAX_ATTEMPTS = 4
 
 
-class ChannelManager(QObject):
-
-    command_timeout = Signal(str)
-    raw_tx = Signal(int, bytes)
-    raw_rx = Signal(int, bytes)
+class ChannelManager:
 
     def __init__(self, config_service, logger=None):
-        super().__init__()
+        self.command_timeout = Signal()
+        self.raw_tx = Signal()
+        self.raw_rx = Signal()
         self.config = config_service
         self.logger = logger
         baud = self.config.get("baud_rate", 115200)
@@ -39,6 +36,13 @@ class ChannelManager(QObject):
 
         self.states: dict[int, ChannelState] = {}
         self.controllers: dict[int, ChannelController] = {}
+        # Without Qt's parent-child ownership (previously `parent=manager`),
+        # a fire-and-forget _QueryAttempt has no other guaranteed owner
+        # across its async lifetime (port_scheduler only holds a reference
+        # while genuinely queued, not while e.g. a request is in flight) -
+        # keep it alive explicitly here instead of relying on incidental
+        # reference chains through its own timer/callbacks.
+        self._active_queries: set["_QueryAttempt"] = set()
         for address in range(MAX_CHANNELS):
             state = self._make_state(address, saved_states.get(address))
             controller = ChannelController(
@@ -80,7 +84,9 @@ class ChannelManager(QObject):
         baud = self.config.get("baud_rate", 115200)
         parity = self.config.get("parity", "N")
         data_bits = self.config.get("data_bits", 8)
-        _QueryAttempt(self, address, on, ports, baud, parity, data_bits).start()
+        query = _QueryAttempt(self, address, on, ports, baud, parity, data_bits)
+        self._active_queries.add(query)
+        query.start()
 
     def save_all(self):
         save_channel_states(self.states, self._channels_path)
@@ -90,11 +96,10 @@ class ChannelManager(QObject):
             controller.cancel_pending()
 
 
-class _QueryAttempt(QObject):
+class _QueryAttempt:
 
     def __init__(self, manager: "ChannelManager", address: int, on: bool,
                  ports: list[str], baud: int, parity: str, data_bits: int):
-        super().__init__(parent=manager)
         self.manager = manager
         self.address = address
         self.ports = ports
@@ -109,8 +114,7 @@ class _QueryAttempt(QObject):
         self.attempts = 0
         self.raw_seen = False
 
-        self.timer = QTimer(self)
-        self.timer.setSingleShot(True)
+        self.timer = SingleShotTimer()
         self.timer.timeout.connect(self._on_timeout)
 
     def start(self):
@@ -148,6 +152,7 @@ class _QueryAttempt(QObject):
             f"{'confirmed' if success else 'device rejected it'} "
             f"(attempt {self.attempts}/{QUERY_MAX_ATTEMPTS})."
         )
+        self.manager._active_queries.discard(self)
 
     def _request_attempt(self):
         self.manager.port_scheduler.acquire(self, self._on_port_granted)
@@ -187,6 +192,7 @@ class _QueryAttempt(QObject):
             if self.manager.logger:
                 self.manager.logger.warning(msg)
             self.manager.command_timeout.emit(msg)
+            self.manager._active_queries.discard(self)
             return
         self._request_attempt()
 

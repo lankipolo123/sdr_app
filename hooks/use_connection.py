@@ -1,18 +1,15 @@
-from PySide6.QtCore import QObject, Signal
-
 from services.middleware import dll_auto_connect, dll_check_connection, dll_disconnect, dll_send_command
+from utils.signal import Signal
 
 
-class ConnectionController(QObject):
-
-    connected_changed = Signal(bool)
-    frame_received = Signal(object)
-    raw_rx = Signal(bytes)
-    raw_tx = Signal(bytes)
-    error = Signal(str)
+class ConnectionController:
 
     def __init__(self):
-        super().__init__()
+        self.connected_changed = Signal()
+        self.frame_received = Signal()
+        self.raw_rx = Signal()
+        self.raw_tx = Signal()
+        self.error = Signal()
         self._connected = False
 
     @staticmethod

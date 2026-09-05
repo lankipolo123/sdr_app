@@ -50,6 +50,32 @@
             <div id="logs-list"></div>
           </div>
         </div>
+
+        <div class="card" id="sensor-card">
+          <div class="card-header">
+            <svg class="thermo-icon" viewBox="0 0 24 24"><path d="M14 14.76V4a2 2 0 0 0-4 0v10.76a4 4 0 1 0 4 0Z"/></svg>
+            <span class="card-title">Amplifier Temperature</span>
+          </div>
+          <div class="card-body">
+            <div class="sensor-controls-row">
+              <select id="sensor-port-select"></select>
+              <button class="btn" id="sensor-refresh-btn" title="Refresh the port list">Refresh</button>
+              <button class="btn" id="sensor-connect-btn">Connect</button>
+            </div>
+            <div class="sensor-readout-row">
+              <div class="sensor-gauge-wrap">
+                <div class="sensor-gauge-track"></div>
+                <div class="sensor-gauge-marker" id="sensor-gauge-marker" hidden></div>
+              </div>
+              <span id="sensor-temp-label">-</span>
+              <span id="sensor-humidity-label">Humidity: -</span>
+            </div>
+            <div class="kill-switch-row" id="kill-switch-row" hidden>
+              <span id="kill-switch-label">KILL SWITCH TRIPPED - all channels OFF</span>
+              <button class="btn btn-navy" id="kill-switch-reset-btn">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="channels-scroll">

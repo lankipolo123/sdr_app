@@ -53,12 +53,19 @@ class Api:
             "levelLabels": [LEVEL_LABELS[i] for i in range(4)],
             "levelLabelsFull": [LEVEL_LABELS_FULL[i] for i in range(4)],
             "channels": [_channel_payload(a, channels.get_state(a)) for a in range(MAX_CHANNELS)],
+            "sensor": self.app.sensor.get_state(),
+            "sensorSavedPort": self.app.config.get("sensor_port"),
+            "killSwitchTripped": self.app.safety.tripped,
         }
 
     def turn_on(self, address: int):
+        if not self.app.safety.allow_power_on():
+            return
         self.app.channels.get_controller(address).turn_output_on()
 
     def turn_off(self, address: int):
+        # Never gated - OFF must always go through, kill-switch-tripped
+        # or not.
         self.app.channels.get_controller(address).turn_output_off()
 
     def set_level(self, address: int, level: int):
@@ -66,13 +73,34 @@ class Api:
         code = LEVEL_TO_HEX[level]
         if code is None:
             controller.turn_output_off()
-        elif self.app.channels.get_state(address).data.output_on:
+            return
+        if not self.app.safety.allow_power_on():
+            return
+        if self.app.channels.get_state(address).data.output_on:
             controller.set_power(code)
         else:
             controller.resume_output(code)
 
     def set_mode(self, address: int, mode: int):
         self.app.channels.get_controller(address).set_mode(mode)
+
+    # ---- amplifier temperature sensor ----
+
+    def sensor_list_ports(self):
+        return self.app.sensor.list_ports()
+
+    def sensor_connect(self, port_name: str) -> bool:
+        ok = self.app.sensor.connect(port_name)
+        if ok:
+            self.app.config.set("sensor_port", port_name)
+            self.app.config.save()
+        return ok
+
+    def sensor_disconnect(self):
+        self.app.sensor.disconnect()
+
+    def kill_switch_reset(self):
+        self.app.safety.reset()
 
     def query(self, address: int, on: bool):
         self.app.channels.brute_force_query(address, on)
@@ -140,6 +168,9 @@ def run():
         controller = channels.get_controller(address)
         state.changed.connect(lambda a=address, s=state: _push(window, "onChannelChanged", _channel_payload(a, s)))
         controller.busy_changed.connect(lambda busy, a=address: _push(window, "onBusyChanged", a, busy))
+
+    app_controller.sensor.changed.connect(lambda state: _push(window, "onSensorChanged", state))
+    app_controller.safety.tripped_changed.connect(lambda tripped: _push(window, "onKillSwitchChanged", tripped))
 
     window.events.closed += app_controller.shutdown
 

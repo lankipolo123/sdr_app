@@ -9,6 +9,10 @@ DEFAULT_CONFIG = {
     "parity": "N",
     "data_bits": 8,
     "log_folder": default_log_folder(),
+    # Remembers which port the amplifier temperature sensor was last
+    # connected to (a separate physical adapter from the RS-422 bus) -
+    # never auto-connects on startup, just pre-selects it in the combo.
+    "sensor_port": None,
 }
 
 CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")

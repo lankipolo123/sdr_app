@@ -100,11 +100,12 @@ input, select { font-family: inherit; }
   flex: none;
   display: flex;
   gap: 16px;
-  height: 90px;
+  height: 132px;
 }
-.top-row > .card { flex: 1; height: 90px; }
+.top-row > .card { flex: 1; height: 132px; }
 #controls-card { flex-grow: 3; min-width: 260px; }
 #logs-card { flex-grow: 4; min-width: 260px; }
+#sensor-card { flex-grow: 4; min-width: 280px; }
 
 /* ---------- generic card ---------- */
 
@@ -121,6 +122,7 @@ input, select { font-family: inherit; }
 .card-header { display: flex; align-items: center; gap: 7px; }
 .card-header img { width: 15px; height: 15px; }
 .card-header .card-title { color: var(--text-dark); font-weight: 700; font-size: 12px; }
+.card-header .thermo-icon { width: 14px; height: 14px; fill: none; stroke: var(--text-dark); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .card-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
 
 /* ---------- controls bar ---------- */
@@ -292,6 +294,69 @@ input, select { font-family: inherit; }
   border-radius: 5px;
 }
 #channels-scroll::-webkit-scrollbar-thumb:hover, #logs-list::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ---------- amplifier temperature sensor ---------- */
+
+.sensor-controls-row { display: flex; gap: 4px; align-items: center; }
+#sensor-port-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  color: var(--text-dark);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 3px 4px;
+  font-size: 11px;
+  height: 24px;
+}
+.sensor-readout-row { display: flex; align-items: center; gap: 8px; }
+
+/* Bands confirmed with the user: 0-19 white/freezing, 20-39 green/low,
+   40-55 blue, 56-65 orange, 66+ red. The gradient itself uses a few
+   smoother interpolation stops (0/20/48/61/80 C over an 0-80 C scale)
+   for a nicer visual blend - tempBandColor() in app.js applies the
+   exact confirmed thresholds separately, to the numeric reading's
+   text color, so the precise band boundaries are still represented
+   even though the bar itself blends smoothly between them. */
+.sensor-gauge-wrap {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  min-width: 80px;
+}
+.sensor-gauge-track {
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(to right,
+    #FFFFFF 0%, #22C55E 25%, #3B82F6 60%, #F59E0B 76.25%, #DC2626 100%);
+}
+.sensor-gauge-marker {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 18px;
+  background: #14161A;
+  transform: translateX(-1px);
+}
+#sensor-temp-label { font-size: 13px; font-weight: 700; color: var(--text-dark); min-width: 46px; }
+#sensor-humidity-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.kill-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+/* Same specificity as `.kill-switch-row { display: flex }` above, so
+   without this the [hidden] attribute the JS toggles would lose to it
+   in source order and the row would never actually hide. */
+.kill-switch-row[hidden] { display: none; }
+#kill-switch-label { flex: 1; font-size: 11px; font-weight: 700; color: var(--warning-text); }
 
 /* ---------- confirm dialog ---------- */
 

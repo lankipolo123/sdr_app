@@ -55,12 +55,20 @@ hooks/                       non-UI reactive logic (Signal/SingleShotTimer from
                                  per command, retries, optimistic apply-on-timeout
   use_channels.py               owns one live ChannelController per address
                                  from launch — no discovery step
+  use_sensor.py                  amplifier temperature/humidity sensor - a real,
+                                 separate raw-serial Modbus RTU connection (its
+                                 own USB-RS485 adapter), unrelated to the RS-422/
+                                 Transit.dll bus above
+  use_safety.py                  kill-switch interlock: forces every channel off
+                                 at 60C, manual-reset-only
   use_app.py                    top-level wiring
 state/                       channel_state.py, level_map.py — data models
 services/
   protocol/                    binary RS422 frame format (constants, commands,
                                  packet builder/parser)
   middleware.py                 ctypes bridge to the vendor Transit.dll
+  modbus.py                     Modbus RTU framing (CRC16, request/response) for
+                                 the temperature sensor - pure logic, no I/O
 utils/                       config_service.py, logging_service.py, app_paths.py,
                              signal.py (the Qt-free Signal/SingleShotTimer above)
 build_exe.py                 PyInstaller build script
@@ -102,7 +110,16 @@ installer.iss                Inno Setup script that wraps the build into an inst
   (`services/protocol/constants.py`) rather than refusing to send -
   an accepted risk, since a wrong frequency/bandwidth is a real RF
   behavior change unlike an unconfirmed Output ON/OFF.
-- **No temperature/heat monitoring** - no sensor exists on the hardware.
+- **Amplifier temperature/humidity monitoring**, via a real XY-MD02
+  Modbus RTU sensor on its own USB-RS485 adapter - a separate raw
+  serial connection, unrelated to the RS-422/Transit.dll channel bus.
+  Confirmed against real hardware: slave address 1, function 0x04,
+  register 1, count 2, both values raw/10 (see the C rewrite's
+  `PLAN_temp_sensor.md` for how this was worked out). A gradient gauge
+  shows 0-19 C white/freezing, 20-39 green, 40-55 blue, 56-65 orange,
+  66+ red. At >=60 C a kill switch forces every channel off and blocks
+  powering any of them back on until a human clicks Reset - it never
+  self-clears just because the reading dips back under the line.
 
 ## What changed vs. the original `sdr_controller` repo
 

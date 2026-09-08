@@ -17,3 +17,6 @@ installer_output/
 app_encrypted.pyz
 
 .DS_Store
+
+# Transit.dll is a proprietary vendor DLL, never committed.
+dll/

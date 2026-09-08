@@ -23,10 +23,10 @@ _GROOVE_BACKGROUNDS = {
 
 _HANDLE_STYLE = f"""
     QSlider::handle:vertical {{
-        width: 16px;
-        height: 16px;
-        margin: 0 -4px;
-        border-radius: 8px;
+        width: 20px;
+        height: 20px;
+        margin: 0 -5px;
+        border-radius: 10px;
         background: #FFFFFF;
         border: 2px solid {ACCENT_BLUE};
     }}
@@ -46,8 +46,8 @@ class LevelSlider(QSlider):
         self.setPageStep(1)
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
-        self.setFixedWidth(24)
-        self.setFixedHeight(66)
+        self.setFixedWidth(30)
+        self.setFixedHeight(82)
         self.valueChanged.connect(self._update_groove)
         self._update_groove(self.value())
 
@@ -59,8 +59,8 @@ class LevelSlider(QSlider):
         groove_bg = _GROOVE_BACKGROUNDS[value]
         self.setStyleSheet(f"""
             QSlider::groove:vertical {{
-                width: 8px;
-                border-radius: 4px;
+                width: 10px;
+                border-radius: 5px;
                 {groove_bg}
             }}
             {_HANDLE_STYLE}

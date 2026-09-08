@@ -14,12 +14,12 @@ class PowerButton(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         self.on_btn = QPushButton("ON")
         self.off_btn = QPushButton("OFF")
         for btn in (self.on_btn, self.off_btn):
-            btn.setFixedHeight(18)
+            btn.setFixedHeight(22)
             btn.setCursor(Qt.PointingHandCursor)
             layout.addWidget(btn)
 
@@ -46,15 +46,15 @@ class PowerButton(QWidget):
     def _restyle(self):
         active_on = (
             f"QPushButton {{ background: {STATUS_OK}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 2px 0; font-size: 11px; }}"
+            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         active_off = (
             f"QPushButton {{ background: {STATUS_ERROR}; color: #FFFFFF; "
-            f"border: none; border-radius: 5px; font-weight: 600; padding: 2px 0; font-size: 11px; }}"
+            f"border: none; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         inactive = (
             f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 2px 0; font-size: 11px; }}"
+            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; font-weight: 600; padding: 4px 0; }}"
         )
         self.on_btn.setStyleSheet(active_on if self._checked else inactive)
         self.off_btn.setStyleSheet(active_off if not self._checked else inactive)

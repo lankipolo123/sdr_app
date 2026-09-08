@@ -24,14 +24,14 @@ def _signal_lock(widget):
 
 class ChannelCard(Card):
 
-    MIN_WIDTH = 200
+    MIN_WIDTH = 168
 
     def __init__(self, controller, state, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.layout().setContentsMargins(8, 6, 8, 6)
-        self.body_layout.setSpacing(4)
+        self.layout().setContentsMargins(6, 5, 6, 5)
+        self.body_layout.setSpacing(3)
         self.controller = controller
         self.state = state
         self._pending_level = None
@@ -40,14 +40,14 @@ class ChannelCard(Card):
         self._send_debounce.timeout.connect(self._send_debounced_level)
 
         self.status_dot = QLabel()
-        self.status_dot.setFixedSize(8, 8)
+        self.status_dot.setFixedSize(7, 7)
         self.status_text = QLabel("STANDBY")
 
         main_row = QHBoxLayout()
-        main_row.setSpacing(6)
+        main_row.setSpacing(4)
 
         left_col = QVBoxLayout()
-        left_col.setSpacing(4)
+        left_col.setSpacing(3)
 
         self._mode_codes = list(c.MODE_NAMES.keys())
         self.mode_combo = QComboBox()
@@ -57,17 +57,17 @@ class ChannelCard(Card):
         self._style_mode_combo(is_on=False)
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_set_btn = QPushButton("Set")
-        self.mode_set_btn.setFixedHeight(24)
+        self.mode_set_btn.setFixedHeight(20)
         self.mode_set_btn.setCursor(Qt.PointingHandCursor)
         self.mode_set_btn.setToolTip("Set modulation")
         self.mode_set_btn.setStyleSheet(
             f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
+            f"border-radius: 6px; padding: 1px 5px; font-weight: 600; font-size: 10px; }}"
             f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
         )
         self.mode_set_btn.clicked.connect(self._on_mode_set)
         mode_row = QHBoxLayout()
-        mode_row.setSpacing(4)
+        mode_row.setSpacing(3)
         mode_row.addWidget(self.mode_combo, 1)
         mode_row.addWidget(self.mode_set_btn)
         left_col.addLayout(mode_row)
@@ -84,7 +84,7 @@ class ChannelCard(Card):
         main_row.addLayout(left_col, 1)
 
         slider_row = QHBoxLayout()
-        slider_row.setSpacing(4)
+        slider_row.setSpacing(3)
         self.slider = LevelSlider()
         slider_row.addWidget(self.slider)
 

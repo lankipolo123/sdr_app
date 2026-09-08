@@ -6,6 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from services.protocol import constants as c
+from services.protocol.transit_commands import channel_select_tokens
 from state.level_map import LEVEL_TO_HEX
 
 if TYPE_CHECKING:
@@ -158,6 +159,20 @@ def dll_send_command(data: bytes) -> tuple[int | None, str | None]:
             if token == b"??":
                 token = bytes([byte]).hex().upper().encode()
             result = dll.SendCommandToSDR(token, len(token))
+        return result, None
+    except Exception as e:
+        return None, str(e)
+
+
+def dll_send_channel_select(channel_id: int, ch_module: str, ch_attn: str) -> tuple[int | None, str | None]:
+    dll = _get_dll()
+    if dll is None:
+        return None, _dll_load_error
+    dll.SendCommandToSDR.argtypes = [ctypes.c_char_p, ctypes.c_long]
+    dll.SendCommandToSDR.restype = ctypes.c_long
+    try:
+        tokens = channel_select_tokens(channel_id, ch_module, ch_attn).encode()
+        result = dll.SendCommandToSDR(tokens, len(tokens))
         return result, None
     except Exception as e:
         return None, str(e)

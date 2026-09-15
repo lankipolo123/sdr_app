@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
+from .password_dialog import PasswordDialog
 from styles.theme_colors import TEXT_MUTED, STATUS_OK, ACCENT_BLUE, BORDER_SUBTLE, NAVY, TEXT_DARK
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from services.protocol import constants as c
@@ -26,7 +27,7 @@ class ChannelCard(Card):
 
     MIN_WIDTH = 200
 
-    def __init__(self, controller, state, parent=None):
+    def __init__(self, controller, state, cw_auth, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -34,6 +35,7 @@ class ChannelCard(Card):
         self.body_layout.setSpacing(4)
         self.controller = controller
         self.state = state
+        self.cw_auth = cw_auth
         self._pending_level = None
         self._send_debounce = QTimer(self)
         self._send_debounce.setSingleShot(True)
@@ -164,7 +166,49 @@ class ChannelCard(Card):
             self._pending_level = None
 
     def _on_mode_set(self):
-        self.controller.set_mode(self._mode_codes[self.mode_combo.currentIndex()])
+        mode = self._mode_codes[self.mode_combo.currentIndex()]
+        if mode == c.MODE_SINGLE and not self._unlock_cw():
+            self._revert_mode_combo()
+            return
+        self.controller.set_mode(mode)
+
+    def _revert_mode_combo(self):
+        current_mode = self.state.data.mode if self.state.data.mode is not None else c.BLIND_DEFAULT_MODE
+        index = self._mode_codes.index(current_mode)
+        with _signal_lock(self.mode_combo):
+            self.mode_combo.setCurrentIndex(index)
+
+    def _unlock_cw(self) -> bool:
+        """Continuous Wave is a fixed, undithered carrier - the one mode
+        this app gates behind a password (see CwAuth). Shared across every
+        card: unlocking once (or setting the password the first time)
+        covers the rest of the session, so this doesn't re-prompt per
+        channel or per click."""
+        if self.cw_auth.authorized:
+            return True
+
+        if not self.cw_auth.is_set():
+            password = PasswordDialog.set_new(
+                self, "Set Continuous Wave Password",
+                "Continuous Wave (CW) mode needs a password before it can "
+                "be armed. Set one now - you won't be asked again this "
+                "session.",
+            )
+            if not password:
+                return False
+            self.cw_auth.set_password(password)
+            return True
+
+        def _verify(password):
+            ok = self.cw_auth.verify(password)
+            return ok, None if ok else "Wrong password - CW was not armed."
+
+        password = PasswordDialog.ask(
+            self, "Continuous Wave Password",
+            "Enter the Continuous Wave password to arm CW mode.",
+            on_submit=_verify,
+        )
+        return password is not None
 
     def _send_level(self, level: int):
         code = LEVEL_TO_HEX[level]

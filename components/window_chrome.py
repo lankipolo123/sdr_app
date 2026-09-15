@@ -93,6 +93,12 @@ class TitleBar(QWidget):
 
         layout.addStretch()
 
+        # Live cumulative uptime readout - see AppController.uptime_changed
+        # (hooks/use_app.py) and MainWindow._on_uptime_changed.
+        self.uptime_label = QLabel("")
+        self.uptime_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(self.uptime_label)
+
         self.min_btn = _CaptionButton("minimize")
         self.max_btn = _CaptionButton("maximize")
         self.close_btn = _CaptionButton("close_app")
@@ -106,6 +112,9 @@ class TitleBar(QWidget):
             layout.addWidget(btn)
 
         outer.addWidget(row, 1)
+
+    def set_uptime(self, text: str):
+        self.uptime_label.setText(text)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

@@ -41,7 +41,7 @@ def main():
 
     from utils.config_service import ConfigService
     from utils.logging_service import setup_logger
-    from hooks.use_channels import ChannelManager, MAX_CHANNELS, QUERY_TIMEOUT_MS, QUERY_MAX_ATTEMPTS
+    from hooks.use_channels import MAX_CHANNELS, QUERY_TIMEOUT_MS, QUERY_MAX_ATTEMPTS
     from hooks.use_channel import RESPONSE_TIMEOUT_MS, RETRY_MAX_ATTEMPTS
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
@@ -59,11 +59,10 @@ def main():
 
     def make_app_controller(work_dir: str | None = None):
         work_dir = work_dir or tempfile.mkdtemp(prefix="sdr_dry_run_")
-        controller = AppController.__new__(AppController)
-        controller.config = ConfigService(path=os.path.join(work_dir, "config.json"))
-        controller.logger = setup_logger(os.path.join(work_dir, "logs"))
-        controller.channels = ChannelManager(controller.config, controller.logger)
-        return controller
+        return AppController(
+            config=ConfigService(path=os.path.join(work_dir, "config.json")),
+            logger=setup_logger(os.path.join(work_dir, "logs")),
+        )
 
     print("=== Run 1: every channel already live at launch, no discovery step ===")
     sdr = FakeSDR(present=True)

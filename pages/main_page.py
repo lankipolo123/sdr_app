@@ -12,6 +12,7 @@ from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE
 from utils.logging_service import clear_log
+from utils.time_format import format_uptime
 
 TOP_ROW_HEIGHT = 90
 CONTROLS_MIN_WIDTH = 260
@@ -36,6 +37,9 @@ class MainWindow(QMainWindow):
         self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
         self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
         root.addWidget(self.title_bar)
+
+        self.app.uptime_changed.connect(self._on_uptime_changed)
+        self._on_uptime_changed(self.app.current_uptime_seconds())
 
         content = QWidget()
         outer = QVBoxLayout(content)
@@ -120,6 +124,9 @@ class MainWindow(QMainWindow):
         scroll.setWidget(grid_container)
         return scroll
 
+    def _on_uptime_changed(self, seconds: int):
+        self.title_bar.set_uptime(f"Uptime {format_uptime(seconds)}")
+
     def _on_query(self):
         address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
         if not ok:
@@ -148,7 +155,7 @@ class MainWindow(QMainWindow):
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
-        card = ChannelCard(controller, state)
+        card = ChannelCard(controller, state, self.app.cw_auth)
         self._cards[address] = card
         self._reflow_grid()
 

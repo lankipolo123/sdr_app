@@ -20,3 +20,7 @@ app_encrypted.pyz
 
 # Transit.dll is a proprietary vendor DLL, never committed.
 dll/
+
+# Per-install runtime icon override (see branding/README.md) - never a
+# default to ship, same as dll/Transit.dll.
+branding/icon.png

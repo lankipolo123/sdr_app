@@ -5,6 +5,9 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from utils import ConfigService, setup_logger
 from .use_channels import ChannelManager
 from .cw_auth import CwAuth
+from .use_sensor import SensorController
+from .use_safety import SafetyController
+from .use_selection import SelectionManager
 
 UPTIME_TICK_MS = 1000
 # How many 1s ticks between persisting uptime to config.json while the app
@@ -28,6 +31,16 @@ class AppController(QObject):
         self.channels = ChannelManager(self.config, self.logger)
         self.cw_auth = CwAuth(self.config)
 
+        # Amplifier temperature/humidity sensors - a real, separate raw
+        # serial (Modbus RTU) connection, unrelated to the RS-422/
+        # Transit.dll bus above. The kill switch listens to it directly
+        # and forces every channel off the moment the rack-wide average
+        # reading crosses KILL_SWITCH_THRESHOLD_C (use_safety.py).
+        self.sensor = SensorController()
+        self.safety = SafetyController(self.channels)
+        self.sensor.changed.connect(self._on_sensor_changed)
+        self.selection = SelectionManager()
+
         self._uptime_base = self.config.get("total_uptime_seconds", 0) or 0
         self._session_start = time.monotonic()
         self._uptime_ticks_since_save = 0
@@ -37,6 +50,9 @@ class AppController(QObject):
 
     def current_uptime_seconds(self) -> int:
         return int(self._uptime_base + (time.monotonic() - self._session_start))
+
+    def _on_sensor_changed(self):
+        self.safety.on_sensor_reading(self.sensor.average_temperature())
 
     def _on_uptime_tick(self):
         seconds = self.current_uptime_seconds()
@@ -54,6 +70,7 @@ class AppController(QObject):
 
     def shutdown(self):
         self._uptime_timer.stop()
+        self.sensor.disconnect()
         self.channels.save_all()
         self.channels.shutdown()
         self._save_uptime()

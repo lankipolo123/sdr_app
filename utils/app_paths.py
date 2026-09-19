@@ -26,3 +26,18 @@ def resource_path(*parts: str) -> str:
     else:
         base = os.path.join(os.path.dirname(__file__), "..")
     return os.path.join(base, *parts)
+
+
+def branding_icon_path() -> str:
+    """User-swappable override, same convention as the C rewrite's
+    branding/icon.ico: a branding/icon.png dropped next to the
+    installed app (or set live via the in-app Change Logo action)
+    overrides the app/window/taskbar icon. The --onedir install
+    directory (see installer.iss's PrivilegesRequired=lowest per-user
+    install) is writable without elevation, so this works the same way
+    post-install as it does in dev."""
+    if is_frozen():
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.join(os.path.dirname(__file__), "..")
+    return os.path.join(base, "branding", "icon.png")

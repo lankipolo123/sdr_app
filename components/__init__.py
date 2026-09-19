@@ -9,6 +9,10 @@ from .logs_panel import LogsPanel
 from .controls_bar import ControlsBar
 from .splash_screen import build_splash
 from .window_chrome import TitleBar, ResizableContainer
+from .sensor_card import SensorCard
+from .sensor_heatmap import SensorHeatmap
+from .bulk_actions_bar import BulkActionsBar
+from .kill_switch_banner import KillSwitchBanner
 
 __all__ = [
     "Card",
@@ -24,4 +28,8 @@ __all__ = [
     "build_splash",
     "TitleBar",
     "ResizableContainer",
+    "SensorCard",
+    "SensorHeatmap",
+    "BulkActionsBar",
+    "KillSwitchBanner",
 ]

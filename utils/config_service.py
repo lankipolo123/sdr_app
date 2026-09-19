@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
     # sha256 hex digest of the Continuous Wave password, or absent until
     # one is set - see hooks/cw_auth.py. Never the plaintext password.
     "cw_password_hash": None,
+    # Last port successfully connected to for the amplifier temperature/
+    # humidity sensors (hooks/use_sensor.py) - never auto-connected on
+    # startup, just pre-selected in the port list.
+    "sensor_port": None,
 }
 
 CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")

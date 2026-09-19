@@ -61,6 +61,15 @@ HIDDEN_IMPORTS = [
     "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets",
     "logging.handlers", "configparser", "contextlib", "copy", "ctypes",
     "collections", "dataclasses", "json", "struct", "enum", "typing",
+    # pyserial - used by hooks/use_sensor.py for the amplifier temperature/
+    # humidity sensors' raw Modbus RTU connection, completely separate
+    # from the RS-422/Transit.dll bus (services/middleware.py). Only
+    # reached through the encrypted archive's dynamic import (same as
+    # everything else above), so PyInstaller's static analysis never
+    # finds it on its own. pyinstaller-hooks-contrib ships a real hook
+    # for "serial" that pulls in the right platform backend
+    # (serial.tools.list_ports_windows etc.) once it's hidden-imported.
+    "serial", "serial.tools.list_ports",
 ]
 
 # Set PRUNE_QT_EXTRAS=0 to skip prune_qt_extras() below entirely and get

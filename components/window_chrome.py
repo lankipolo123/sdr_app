@@ -82,16 +82,28 @@ class TitleBar(QWidget):
         layout.setContentsMargins(10, 0, 0, 0)
         layout.setSpacing(8)
 
+        self.icon_label = QLabel()
         if icon is not None and not icon.isNull():
-            icon_label = QLabel()
-            icon_label.setPixmap(icon.pixmap(16, 16))
-            layout.addWidget(icon_label)
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
+        layout.addWidget(self.icon_label)
 
         title_label = QLabel(title)
         title_label.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
         layout.addWidget(title_label)
 
         layout.addStretch()
+
+        # Extra action buttons (Force Trip, Change Logo) get inserted
+        # here, before the uptime label - see add_action_widget().
+        self._action_layout = QHBoxLayout()
+        self._action_layout.setSpacing(6)
+        layout.addLayout(self._action_layout)
+
+        # Live cumulative uptime readout - see AppController.uptime_changed
+        # (hooks/use_app.py) and MainWindow._on_uptime_changed.
+        self.uptime_label = QLabel("")
+        self.uptime_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(self.uptime_label)
 
         self.min_btn = _CaptionButton("minimize")
         self.max_btn = _CaptionButton("maximize")
@@ -106,6 +118,16 @@ class TitleBar(QWidget):
             layout.addWidget(btn)
 
         outer.addWidget(row, 1)
+
+    def set_uptime(self, text: str):
+        self.uptime_label.setText(text)
+
+    def set_icon(self, icon: QIcon):
+        if icon is not None and not icon.isNull():
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
+
+    def add_action_widget(self, widget: QWidget):
+        self._action_layout.addWidget(widget)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None

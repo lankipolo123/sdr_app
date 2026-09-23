@@ -9,6 +9,17 @@ DEFAULT_CONFIG = {
     "parity": "N",
     "data_bits": 8,
     "log_folder": default_log_folder(),
+    # Cumulative seconds the app has been running, across every session -
+    # see AppController's uptime timer in hooks/use_app.py. 0 until the
+    # first save.
+    "total_uptime_seconds": 0,
+    # sha256 hex digest of the Continuous Wave password, or absent until
+    # one is set - see hooks/cw_auth.py. Never the plaintext password.
+    "cw_password_hash": None,
+    # Last port successfully connected to for the amplifier temperature/
+    # humidity sensors (hooks/use_sensor.py) - never auto-connected on
+    # startup, just pre-selected in the port list.
+    "sensor_port": None,
 }
 
 CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")

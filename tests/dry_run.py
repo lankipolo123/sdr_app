@@ -394,10 +394,7 @@ def main():
     window_mode = MainWindow(controller_mode)
     window_mode.show()
     check("card has no mode_combo (dropdown fully removed)", not hasattr(window_mode._cards[0], "mode_combo"))
-    check(
-        "card shows a fixed Pseudo Random Noise label instead",
-        window_mode._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
-    )
+    check("card has no mode_label either (redundant now the app itself is named for it)", not hasattr(window_mode._cards[0], "mode_label"))
 
     window_mode._cards[0].slider.setValue(1)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
@@ -428,10 +425,6 @@ def main():
     window_mode2 = MainWindow(controller_mode2)
     window_mode2.show()
     pump(100)
-    check(
-        "card still shows Pseudo Random Noise despite the stale ini entry",
-        window_mode2._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
-    )
 
     window_mode2._cards[0].slider.setValue(1)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)

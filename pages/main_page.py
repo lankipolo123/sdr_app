@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
     def __init__(self, app_controller):
         super().__init__()
         self.app = app_controller
-        self.setWindowTitle("TX Controller")
+        self.setWindowTitle("Pseudo Random Noise Controller")
         self._apply_window_chrome()
 
         central = ResizableContainer(self)
@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self.title_bar = TitleBar(self, "TX Controller", icon=self.windowIcon())
+        self.title_bar = TitleBar(self, "Pseudo Random Noise Controller", icon=self.windowIcon())
         self.title_bar.close_app_requested.connect(self._on_close_app_clicked)
         self._build_title_bar_actions()
         root.addWidget(self.title_bar)

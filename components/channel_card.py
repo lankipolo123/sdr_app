@@ -8,7 +8,6 @@ from .power_button import PowerButton
 from .level_slider import LevelSlider
 from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, SURFACE, checkbox_style
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
-from services.protocol import constants as c
 from utils.time_format import format_uptime
 
 SLIDER_SEND_DEBOUNCE_MS = 250
@@ -81,18 +80,6 @@ class ChannelCard(Card):
         left_col = QVBoxLayout()
         left_col.setSpacing(4)
 
-        # Fixed mode indicator - every channel is Pseudo Random Noise
-        # only now (direct decision, removing the Mode combo + Set
-        # button entirely, matching the C rewrite's own card). This
-        # also retires the Continuous Wave password gate (CwAuth/
-        # PasswordDialog) that used to live behind _on_mode_set() - CW
-        # was the one mode it gated, and with mode selection gone
-        # entirely there's nothing left for it to gate.
-        self.mode_label = QLabel(c.MODE_NAMES[c.MODE_WHITE_NOISE])
-        self.mode_label.setFixedHeight(20)
-        self._style_mode_label(is_on=False)
-        left_col.addWidget(self.mode_label)
-
         self.toggle = PowerButton()
         left_col.addWidget(self.toggle)
 
@@ -157,13 +144,6 @@ class ChannelCard(Card):
             f"#Card {{ background: {SURFACE}; border: 1px solid {border_color}; border-radius: 10px; }}"
         )
 
-    def _style_mode_label(self, is_on: bool):
-        text_color = ACCENT_BLUE if is_on else TEXT_MUTED
-        self.mode_label.setStyleSheet(
-            f"QLabel {{ background: transparent; color: {text_color}; "
-            f"padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
-        )
-
     def _on_toggle(self, checked: bool):
         if checked and not self.safety.allow_power_on(self.address):
             with _signal_lock(self.toggle):
@@ -174,7 +154,6 @@ class ChannelCard(Card):
         else:
             self.controller.turn_output_off()
         self.slider.setEnabled(checked)
-        self._style_mode_label(is_on=checked)
         self._style_border(is_on=checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
@@ -189,7 +168,6 @@ class ChannelCard(Card):
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(should_be_checked)
             self.slider.setEnabled(should_be_checked)
-            self._style_mode_label(is_on=should_be_checked)
             self._style_border(is_on=should_be_checked)
         self._update_status(value)
         self._pending_level = value
@@ -207,7 +185,6 @@ class ChannelCard(Card):
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(False)
             self.slider.setEnabled(False)
-            self._style_mode_label(is_on=False)
             self._style_border(is_on=False)
             self._update_status(0)
             return
@@ -238,7 +215,6 @@ class ChannelCard(Card):
                 self.toggle.setChecked(d.output_on)
 
         self.slider.setEnabled(d.output_on)
-        self._style_mode_label(is_on=d.output_on)
         self._style_border(is_on=d.output_on)
 
         if self.slider.value() != level:

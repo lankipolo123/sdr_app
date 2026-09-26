@@ -46,8 +46,8 @@ class LevelSlider(QSlider):
         self.setPageStep(1)
         self.setTickInterval(1)
         self.setTickPosition(QSlider.NoTicks)
-        self.setFixedWidth(30)
-        self.setFixedHeight(82)
+        self.setFixedWidth(26)
+        self.setFixedHeight(68)
         self.valueChanged.connect(self._update_groove)
         self._update_groove(self.value())
 

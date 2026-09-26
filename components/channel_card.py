@@ -40,14 +40,16 @@ def _signal_lock(widget):
 
 class ChannelCard(Card):
 
-    MIN_WIDTH = 200
+    MIN_WIDTH = 180
+    MAX_WIDTH = 240
 
     def __init__(self, controller, state, safety, selection, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.layout().setContentsMargins(8, 6, 8, 6)
-        self.body_layout.setSpacing(4)
+        self.setMaximumWidth(self.MAX_WIDTH)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.layout().setContentsMargins(6, 5, 6, 5)
+        self.body_layout.setSpacing(3)
         self.controller = controller
         self.state = state
         self.safety = safety
@@ -87,7 +89,7 @@ class ChannelCard(Card):
         # was the one mode it gated, and with mode selection gone
         # entirely there's nothing left for it to gate.
         self.mode_label = QLabel(c.MODE_NAMES[c.MODE_WHITE_NOISE])
-        self.mode_label.setFixedHeight(24)
+        self.mode_label.setFixedHeight(20)
         self._style_mode_label(is_on=False)
         left_col.addWidget(self.mode_label)
 

@@ -309,7 +309,7 @@ class MainWindow(QMainWindow):
             return
         for index, address in enumerate(sorted(self._cards)):
             row, col = divmod(index, CHANNELS_PER_ROW)
-            self.grid.addWidget(self._cards[address], row, col)
+            self.grid.addWidget(self._cards[address], row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
         for col in range(CHANNELS_PER_ROW):
             self.grid.setColumnStretch(col, 1)
 

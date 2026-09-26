@@ -14,7 +14,7 @@ from components import (
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
-from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE, NAVY, STATUS_ERROR, STATUS_ERROR_DARK, PAGE_BG
+from styles import theme_colors
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resource_path
 
@@ -40,7 +40,30 @@ class MainWindow(QMainWindow):
         self.app = app_controller
         self.setWindowTitle("Pseudo Random Noise Controller")
         self._apply_window_chrome()
+        self._cards = {}
 
+        # Connected once here, not inside _build_ui(): these target
+        # MainWindow's own methods, which stay alive across a theme
+        # toggle's rebuild - reconnecting them there would stack a
+        # duplicate connection on every toggle. Each handler looks up
+        # its target child widget (self.logs_panel, self.sensor_card, …)
+        # fresh at call time, so it keeps working once _build_ui()
+        # repoints those attributes at freshly built widgets.
+        self.app.uptime_changed.connect(self._on_uptime_changed)
+        self.app.channels.raw_tx.connect(self._on_raw_tx)
+        self.app.channels.raw_rx.connect(self._on_raw_rx)
+        self.app.sensor.changed.connect(self._on_sensor_changed)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Builds (or, on a theme toggle, rebuilds) everything below the
+        window chrome. Direct port of the rebuild sdr_c itself does in
+        on_theme_toggle_clicked() (main.c) - it rebuilds every themed
+        GDI object and repaints, rather than patching colors in place.
+        Safe to call again later: the old central widget (and every
+        child widget under it - cards, panels, the old title bar) is
+        torn down and a fresh one takes its place."""
         central = ResizableContainer(self)
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -54,7 +77,6 @@ class MainWindow(QMainWindow):
         self.kill_switch_banner = KillSwitchBanner(self.app)
         root.addWidget(self.kill_switch_banner)
 
-        self.app.uptime_changed.connect(self._on_uptime_changed)
         self._on_uptime_changed(self.app.current_uptime_seconds())
 
         content = QWidget()
@@ -67,20 +89,28 @@ class MainWindow(QMainWindow):
         outer.addLayout(self._build_body_row(), 1)
 
         self.summary_panel = SummaryPanel(self.app)
+        self.summary_panel.theme_toggle_requested.connect(self._on_theme_toggle_requested)
         outer.addWidget(self.summary_panel)
 
+        old_central = self.centralWidget()
         self.setCentralWidget(central)
+        if old_central is not None:
+            old_central.deleteLater()
 
-        self._cards = {}
-        self.app.channels.raw_tx.connect(self._on_raw_tx)
-        self.app.channels.raw_rx.connect(self._on_raw_rx)
-
+        self._cards.clear()
         for address in range(MAX_CHANNELS):
             self._build_card(address)
 
         self._refresh_sensor_ports()
-        self.app.sensor.changed.connect(self._on_sensor_changed)
         self._on_sensor_changed()
+
+    def _on_theme_toggle_requested(self):
+        from PySide6.QtWidgets import QApplication
+        theme_colors.set_light_mode(not theme_colors.is_light_mode())
+        qt_app = QApplication.instance()
+        qt_app.setPalette(theme_colors.app_palette())
+        qt_app.setStyleSheet(theme_colors.build_global_qss())
+        self._build_ui()
 
     def _apply_window_chrome(self):
         self.resize(1300, 960)
@@ -147,9 +177,9 @@ class MainWindow(QMainWindow):
         change_logo_btn.setCursor(Qt.PointingHandCursor)
         change_logo_btn.setToolTip("Pick a custom window/taskbar icon - applies immediately, no restart")
         change_logo_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {ACCENT_BLUE}; border: 1px solid {ACCENT_BLUE}; "
+            f"QPushButton {{ background: transparent; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.ACCENT_BLUE}; "
             f"border-radius: 4px; font-size: 10px; padding: 3px 8px; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: {theme_colors.NAVY}; }}"
         )
         change_logo_btn.clicked.connect(self._on_change_logo_clicked)
         self.title_bar.add_action_widget(change_logo_btn)
@@ -158,9 +188,9 @@ class MainWindow(QMainWindow):
         reset_logo_btn.setCursor(Qt.PointingHandCursor)
         reset_logo_btn.setToolTip("Restore the default icon")
         reset_logo_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {ACCENT_BLUE}; border: 1px solid {ACCENT_BLUE}; "
+            f"QPushButton {{ background: transparent; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.ACCENT_BLUE}; "
             f"border-radius: 4px; font-size: 10px; padding: 3px 8px; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: {theme_colors.NAVY}; }}"
         )
         reset_logo_btn.clicked.connect(self._on_reset_logo_clicked)
         self.title_bar.add_action_widget(reset_logo_btn)
@@ -172,9 +202,9 @@ class MainWindow(QMainWindow):
         force_trip_btn.setCursor(Qt.PointingHandCursor)
         force_trip_btn.setToolTip("Manually trip the kill switch - forces every channel off")
         force_trip_btn.setStyleSheet(
-            f"QPushButton {{ background: {STATUS_ERROR}; color: white; border: 1px solid {STATUS_ERROR}; "
+            f"QPushButton {{ background: {theme_colors.STATUS_ERROR}; color: white; border: 1px solid {theme_colors.STATUS_ERROR}; "
             f"border-radius: 4px; font-size: 10px; font-weight: 600; padding: 3px 8px; }}"
-            f"QPushButton:hover {{ background: {STATUS_ERROR_DARK}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.STATUS_ERROR_DARK}; }}"
         )
         force_trip_btn.clicked.connect(self._on_force_trip_clicked)
         self.title_bar.add_action_widget(force_trip_btn)
@@ -183,19 +213,19 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
         scroll.setStyleSheet(f"""
-            #ChannelsScroll {{ border: none; background: {PAGE_BG}; }}
+            #ChannelsScroll {{ border: none; background: {theme_colors.PAGE_BG}; }}
             #ChannelsScroll QScrollBar:vertical {{
                 background: transparent;
                 width: 10px;
                 margin: 0px;
             }}
             #ChannelsScroll QScrollBar::handle:vertical {{
-                background: {BORDER_SUBTLE};
+                background: {theme_colors.BORDER_SUBTLE};
                 border-radius: 5px;
                 min-height: 24px;
             }}
             #ChannelsScroll QScrollBar::handle:vertical:hover {{
-                background: {ACCENT_BLUE};
+                background: {theme_colors.ACCENT_BLUE};
             }}
             #ChannelsScroll QScrollBar::add-line:vertical,
             #ChannelsScroll QScrollBar::sub-line:vertical {{

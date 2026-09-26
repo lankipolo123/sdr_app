@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QSize
 from PySide6.QtCore import Qt, Signal
 
 from .card import Card
-from styles.theme_colors import TEXT_MUTED, NAVY, ACCENT_BLUE
+from styles import theme_colors
 from styles.thermal_color import temp_band_color
 
 
@@ -36,16 +36,16 @@ class SensorCard(Card):
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setCursor(Qt.PointingHandCursor)
         self.connect_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
-            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+            f"QPushButton {{ background: {theme_colors.NAVY}; border: 1px solid {theme_colors.NAVY}; "
+            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {theme_colors.ACCENT_BLUE}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: {theme_colors.NAVY}; }}"
         )
         self.connect_btn.clicked.connect(self._on_connect_clicked)
         row.addWidget(self.connect_btn)
         self.body_layout.addLayout(row)
 
         self.avg_label = QLabel("Avg: -")
-        self.avg_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; font-weight: 600;")
+        self.avg_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 12px; font-weight: 600;")
         self.body_layout.addWidget(self.avg_label)
 
         self._connected = False
@@ -66,7 +66,7 @@ class SensorCard(Card):
     def set_average_temperature(self, avg_c: float | None, bay_count: int, reading_count: int):
         if avg_c is None:
             self.avg_label.setText("Avg: -")
-            self.avg_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; font-weight: 600;")
+            self.avg_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 12px; font-weight: 600;")
             return
         r, g, b = temp_band_color(avg_c)
         self.avg_label.setText(f"Avg: {avg_c:.1f}°C  ({reading_count}/{bay_count} bays)")

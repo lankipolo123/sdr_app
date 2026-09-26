@@ -2,10 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QColor, QPainter
 
-from styles.theme_colors import (
-    DIALOG_BG, TEXT_DARK, TEXT_MUTED, ACCENT_BLUE, ACCENT_BLUE_DARK,
-    STATUS_ERROR, STATUS_ERROR_DARK, BORDER_SUBTLE,
-)
+from styles import theme_colors
 
 _OVERLAY_COLOR = QColor(31, 41, 55, 90)
 
@@ -31,8 +28,8 @@ class ConfirmDialog(QWidget):
         panel.setMinimumWidth(340)
         panel.setMaximumWidth(340)
         panel.setStyleSheet(
-            f"#ConfirmPanel {{ background: {DIALOG_BG}; border-radius: 12px; "
-            f"border: 1px solid {BORDER_SUBTLE}; }}"
+            f"#ConfirmPanel {{ background: {theme_colors.SURFACE}; border-radius: 12px; "
+            f"border: 1px solid {theme_colors.BORDER_SUBTLE}; }}"
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -41,7 +38,7 @@ class ConfirmDialog(QWidget):
 
         title_label = QLabel(title)
         title_label.setStyleSheet(
-            f"color: {TEXT_DARK}; font-size: 17px; font-weight: 700; background: transparent;"
+            f"color: {theme_colors.TEXT_DARK}; font-size: 17px; font-weight: 700; background: transparent;"
         )
         panel_layout.addWidget(title_label)
 
@@ -49,7 +46,7 @@ class ConfirmDialog(QWidget):
         message_label.setWordWrap(True)
         message_label.setMinimumWidth(292)
         message_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent;"
+            f"color: {theme_colors.TEXT_MUTED}; font-size: 13px; background: transparent;"
         )
         panel_layout.addWidget(message_label)
 
@@ -60,15 +57,15 @@ class ConfirmDialog(QWidget):
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setMinimumSize(90, 32)
         cancel_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {TEXT_DARK}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
-            f"QPushButton:hover {{ border-color: {TEXT_DARK}; }}"
+            f"QPushButton {{ background: transparent; color: {theme_colors.TEXT_DARK}; "
+            f"border: 1px solid {theme_colors.BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
+            f"QPushButton:hover {{ border-color: {theme_colors.TEXT_DARK}; }}"
         )
         cancel_btn.clicked.connect(self._on_cancel)
         btn_row.addWidget(cancel_btn)
 
-        confirm_color = STATUS_ERROR if danger else ACCENT_BLUE
-        confirm_hover_color = STATUS_ERROR_DARK if danger else ACCENT_BLUE_DARK
+        confirm_color = theme_colors.STATUS_ERROR if danger else theme_colors.ACCENT_BLUE
+        confirm_hover_color = theme_colors.STATUS_ERROR_DARK if danger else theme_colors.ACCENT_BLUE_DARK
         confirm_btn = QPushButton(confirm_text)
         confirm_btn.setCursor(Qt.PointingHandCursor)
         confirm_btn.setMinimumSize(90, 32)

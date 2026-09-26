@@ -2,16 +2,17 @@ from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPu
 from PySide6.QtCore import Qt, Signal
 
 from .card import Card
-from styles.theme_colors import TEXT_DARK, TEXT_MUTED, BORDER_SUBTLE, NAVY, ACCENT_BLUE, STATUS_OK, STATUS_ERROR, FIELD_BG
+from styles import theme_colors
 from styles.thermal_color import temp_band_color
 from utils.channel_store import load_channel_states, save_channel_states
 from state.level_map import LEVEL_TO_HEX
 
-_CMD_BTN_STYLE = (
-    f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-    f"border-radius: 5px; font-size: 11px; font-weight: 600; padding: 8px 4px; }}"
-    f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
-)
+def _cmd_btn_style() -> str:
+    return (
+        f"QPushButton {{ background: {theme_colors.NAVY}; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.NAVY}; "
+        f"border-radius: 5px; font-size: 11px; font-weight: 600; padding: 8px 4px; }}"
+        f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: {theme_colors.NAVY}; }}"
+    )
 
 
 def _colored_btn(text: str, bg: str) -> QPushButton:
@@ -30,7 +31,7 @@ def _pill() -> QLabel:
     pill.setAlignment(Qt.AlignCenter)
     pill.setFixedHeight(30)
     pill.setStyleSheet(
-        f"QLabel {{ background: {FIELD_BG}; color: {TEXT_MUTED}; border-radius: 6px; "
+        f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
         f"font-size: 13px; font-weight: 700; }}"
     )
     return pill
@@ -39,13 +40,13 @@ def _pill() -> QLabel:
 class SummaryPanel(Card):
     """The big wide card sdr_c puts below its channel grid, not above
     it: Commands (rack-wide actions - not gated by Bulk Actions'
-    checkbox selection, these always hit every channel) plus the
-    rack's AVG TEMP and Highest Temp Today readings. Direct port of
-    main.c's g_summary_panel - minus "Open Csv Logs" (this app has no
-    CSV log) and "Icon" (already reachable from the title bar's Change
-    Logo), and minus the Mode block's Light/Dark toggle (this app is
-    dark-only right now, no light palette to switch to - a separate
-    feature on its own)."""
+    checkbox selection, these always hit every channel), the rack's
+    AVG TEMP and Highest Temp Today readings, and a Mode block with
+    the Light/Dark toggle. Direct port of main.c's g_summary_panel -
+    minus "Open Csv Logs" (this app has no CSV log) and "Icon" (already
+    reachable from the title bar's Change Logo)."""
+
+    theme_toggle_requested = Signal()
 
     def __init__(self, app_controller, parent=None):
         super().__init__("Summary", icon="sliders-h.png", parent=parent)
@@ -62,36 +63,36 @@ class SummaryPanel(Card):
         grid = QGridLayout()
         grid.setSpacing(6)
 
-        shutdown_btn = _colored_btn("Emergency Shutdown", STATUS_ERROR)
+        shutdown_btn = _colored_btn("Emergency Shutdown", theme_colors.STATUS_ERROR)
         shutdown_btn.clicked.connect(self._on_emergency_shutdown)
         grid.addWidget(shutdown_btn, 0, 0)
 
-        activate_btn = _colored_btn("Global Activate", STATUS_OK)
+        activate_btn = _colored_btn("Global Activate", theme_colors.STATUS_OK)
         activate_btn.clicked.connect(self._on_global_activate)
         grid.addWidget(activate_btn, 0, 1)
 
         load_btn = QPushButton("Load Config")
         load_btn.setCursor(Qt.PointingHandCursor)
-        load_btn.setStyleSheet(_CMD_BTN_STYLE)
+        load_btn.setStyleSheet(_cmd_btn_style())
         load_btn.clicked.connect(self._on_load_config_clicked)
         grid.addWidget(load_btn, 1, 0)
 
         save_btn = QPushButton("Save Config")
         save_btn.setCursor(Qt.PointingHandCursor)
-        save_btn.setStyleSheet(_CMD_BTN_STYLE)
+        save_btn.setStyleSheet(_cmd_btn_style())
         save_btn.clicked.connect(self._on_save_config_clicked)
         grid.addWidget(save_btn, 1, 1)
 
         reset_btn = QPushButton("Reset to Default")
         reset_btn.setCursor(Qt.PointingHandCursor)
-        reset_btn.setStyleSheet(_CMD_BTN_STYLE)
+        reset_btn.setStyleSheet(_cmd_btn_style())
         reset_btn.clicked.connect(self._on_reset_to_default)
         grid.addWidget(reset_btn, 2, 0, 1, 2)
 
         commands_col.addLayout(grid)
 
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.status_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px;")
         self.status_label.setWordWrap(True)
         commands_col.addWidget(self.status_label)
         commands_col.addStretch(1)
@@ -119,24 +120,48 @@ class SummaryPanel(Card):
         highest_col.addStretch(1)
         row.addLayout(highest_col, 1)
 
+        row.addWidget(_divider())
+
+        # ---- Mode ----
+        mode_col = QVBoxLayout()
+        mode_col.setSpacing(6)
+        mode_col.addWidget(_section_label("Mode"))
+        self.mode_btn = QPushButton()
+        self.mode_btn.setCursor(Qt.PointingHandCursor)
+        self.mode_btn.setStyleSheet(_cmd_btn_style())
+        self.mode_btn.clicked.connect(self._on_mode_toggle_clicked)
+        mode_col.addWidget(self.mode_btn)
+        mode_col.addStretch(1)
+        row.addLayout(mode_col, 1)
+
         self.body_layout.addLayout(row)
 
         self.app.sensor.changed.connect(self.refresh_temps)
         self.refresh_temps()
+        self._refresh_mode_btn()
+
+    def _refresh_mode_btn(self):
+        # Shows the mode you'd SWITCH TO, same label convention as
+        # sdr_c's own g_mode_toggle_btn (main.c): "Dark Mode" while
+        # light, "Light Mode" while dark.
+        self.mode_btn.setText("Light Mode" if not theme_colors.is_light_mode() else "Dark Mode")
+
+    def _on_mode_toggle_clicked(self):
+        self.theme_toggle_requested.emit()
 
     def refresh_temps(self):
         avg = self.app.sensor.average_temperature()
         if avg is None:
             self.avg_pill.setText("-")
             self.avg_pill.setStyleSheet(
-                f"QLabel {{ background: {FIELD_BG}; color: {TEXT_MUTED}; border-radius: 6px; "
+                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
                 f"font-size: 13px; font-weight: 700; }}"
             )
         else:
             r, g, b = temp_band_color(avg)
             self.avg_pill.setText(f"{avg:.1f}°C")
             self.avg_pill.setStyleSheet(
-                f"QLabel {{ background: {FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
+                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
                 f"font-size: 13px; font-weight: 700; }}"
             )
 
@@ -144,14 +169,14 @@ class SummaryPanel(Card):
         if highest is None:
             self.highest_pill.setText("-")
             self.highest_pill.setStyleSheet(
-                f"QLabel {{ background: {FIELD_BG}; color: {TEXT_MUTED}; border-radius: 6px; "
+                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
                 f"font-size: 13px; font-weight: 700; }}"
             )
         else:
             r, g, b = temp_band_color(highest)
             self.highest_pill.setText(f"{highest:.1f}°C")
             self.highest_pill.setStyleSheet(
-                f"QLabel {{ background: {FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
+                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
                 f"font-size: 13px; font-weight: 700; }}"
             )
 
@@ -227,12 +252,12 @@ class SummaryPanel(Card):
 
 def _section_label(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet(f"color: {TEXT_DARK}; font-size: 11px; font-weight: 700;")
+    lbl.setStyleSheet(f"color: {theme_colors.TEXT_DARK}; font-size: 11px; font-weight: 700;")
     return lbl
 
 
 def _divider() -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.VLine)
-    line.setStyleSheet(f"color: {BORDER_SUBTLE};")
+    line.setStyleSheet(f"color: {theme_colors.BORDER_SUBTLE};")
     return line

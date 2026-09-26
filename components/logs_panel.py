@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from .card import Card
 from .icon_utils import tint_pixmap
 from .logs_dialog import LogsDialog
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE
+from styles import theme_colors
 from utils.app_paths import resource_path
 
 _MAXIMIZE_ICON_PATH = resource_path("assets", "icons", "pages", "expand-alt.png")
@@ -24,20 +24,20 @@ class LogsPanel(Card):
         self._dialog: LogsDialog | None = None
 
         maximize_btn = QPushButton()
-        maximize_btn.setIcon(QIcon(tint_pixmap(QPixmap(_MAXIMIZE_ICON_PATH), ACCENT_BLUE)))
+        maximize_btn.setIcon(QIcon(tint_pixmap(QPixmap(_MAXIMIZE_ICON_PATH), theme_colors.ACCENT_BLUE)))
         maximize_btn.setFixedSize(20, 20)
         maximize_btn.setCursor(Qt.PointingHandCursor)
         maximize_btn.setToolTip(f"Open full scrollable {title.lower()}")
         maximize_btn.setStyleSheet(
             "QPushButton { border: none; background: transparent; }"
-            f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
+            f"QPushButton:hover {{ background: {theme_colors.BORDER_SUBTLE}; border-radius: 4px; }}"
         )
         maximize_btn.clicked.connect(self.open_dialog)
         self.header_layout.addWidget(maximize_btn)
 
         self.list = QListWidget()
         self.list.setStyleSheet(
-            f"QListWidget {{ border: none; font-size: 11px; color: {TEXT_DARK}; }}"
+            f"QListWidget {{ border: none; font-size: 11px; color: {theme_colors.TEXT_DARK}; }}"
         )
         self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

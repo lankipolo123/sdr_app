@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QPainter, QColor, QRadialGradient, QLinearGradient, QBrush, QPixmap, QFont
 
-from styles.theme_colors import CONTENT_BG, TEXT_MUTED
+from styles import theme_colors
 from styles.thermal_color import vivid_thermal_color, heatmap_scale
 from utils.app_paths import resource_path
 
@@ -44,7 +44,7 @@ class SensorHeatmap(QWidget):
         panel_rect = rect.adjusted(0, 0, 0, -LEGEND_H)
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor(CONTENT_BG)))
+        painter.setBrush(QBrush(QColor(theme_colors.CONTENT_BG)))
         painter.drawRoundedRect(panel_rect, PANEL_RADIUS, PANEL_RADIUS)
         painter.setClipRect(panel_rect)
 
@@ -109,10 +109,10 @@ class SensorHeatmap(QWidget):
         ]
         for unit, color, (box, align) in zip(units, colors, label_boxes):
             painter.setFont(label_font)
-            painter.setPen(QColor(TEXT_MUTED))
+            painter.setPen(QColor(theme_colors.TEXT_MUTED))
             painter.drawText(box, align, f"BAY {unit.address}")
             painter.setFont(reading_font)
-            painter.setPen(color if unit.has_reading else QColor(TEXT_MUTED))
+            painter.setPen(color if unit.has_reading else QColor(theme_colors.TEXT_MUTED))
             reading_box = QRectF(box.x(), box.y() + 12, box.width(), box.height() - 12)
             if unit.has_reading:
                 text = f"{unit.temperature_c:.1f}°C"
@@ -139,7 +139,7 @@ class SensorHeatmap(QWidget):
         painter.drawRoundedRect(bar_rect, 3, 3)
 
         painter.setFont(label_font)
-        painter.setPen(QColor(TEXT_MUTED))
+        painter.setPen(QColor(theme_colors.TEXT_MUTED))
         lo_text = f"{scale[0]:.1f}°C" if scale else "-"
         hi_text = f"{scale[1]:.1f}°C" if scale else "-"
         painter.drawText(QRectF(rect.left(), legend_rect.top() - 3, 34, 14), Qt.AlignLeft | Qt.AlignVCenter, lo_text)

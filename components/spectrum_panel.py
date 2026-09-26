@@ -5,10 +5,7 @@ from PySide6.QtCore import Qt, QTimer, QRect
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
 
 from .card import Card
-from styles.theme_colors import (
-    FIELD_BG, BORDER_SUBTLE, TEXT_DARK, TEXT_MUTED, ACCENT_BLUE, ACCENT_BLUE_DARK,
-    STATUS_OK, STATUS_ERROR, WARNING_BORDER, NAVY,
-)
+from styles import theme_colors
 from state.level_map import HEX_TO_LEVEL
 from services.protocol import constants as c
 from hooks.use_channels import MAX_CHANNELS
@@ -17,7 +14,15 @@ AXIS_H = 14
 REDRAW_MS = 1000  # same cadence as sdr_c's own spectrum redraw (tied to its 1s uptime tick)
 
 _LEVEL_PEAK_PCT = {0: 0, 1: 40, 2: 70, 3: 100}
-_LEVEL_TRACE_COLOR = {0: TEXT_MUTED, 1: STATUS_OK, 2: WARNING_BORDER, 3: STATUS_ERROR}
+
+
+def _level_trace_color(level: int) -> str:
+    # Not a module-level dict - theme_colors' values would be frozen
+    # in at import time and go stale after a theme toggle.
+    return {
+        0: theme_colors.TEXT_MUTED, 1: theme_colors.STATUS_OK,
+        2: theme_colors.WARNING_BORDER, 3: theme_colors.STATUS_ERROR,
+    }.get(level, theme_colors.TEXT_MUTED)
 
 # sdr_c's real, fixed per-channel operating bands (channels.c) - used
 # here purely for the spectrum plot's caption/frequency axis, exactly
@@ -88,7 +93,7 @@ class SpectrumPlot(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         rect = self.rect()
-        painter.fillRect(rect, QColor(FIELD_BG))
+        painter.fillRect(rect, QColor(theme_colors.FIELD_BG))
 
         grid_rect = QRect(rect)
         if not self.show_all:
@@ -104,7 +109,7 @@ class SpectrumPlot(QWidget):
         # COLOR_APP_MUTED, not the panel border color - sdr_c's own fix
         # for the border shade being too close to the field background
         # to actually see.
-        painter.setPen(QPen(QColor(TEXT_MUTED), 1))
+        painter.setPen(QPen(QColor(theme_colors.TEXT_MUTED), 1))
         w, h = rect.width(), rect.height()
         for i in range(1, 4):
             y = rect.top() + h * i // 4
@@ -137,7 +142,7 @@ class SpectrumPlot(QWidget):
         freq = CHANNEL_FREQ_MHZ[self.unit_index]
         half_bw = CHANNEL_BANDWIDTH_MHZ[self.unit_index] // 2
         painter.setFont(self._label_font)
-        painter.setPen(QColor(TEXT_MUTED))
+        painter.setPen(QColor(theme_colors.TEXT_MUTED))
         lo_rect = QRect(grid_rect.left(), axis_rect.top(), 60, axis_rect.height())
         hi_rect = QRect(grid_rect.right() - 60, axis_rect.top(), 60, axis_rect.height())
         painter.drawText(lo_rect, Qt.AlignLeft | Qt.AlignVCenter, str(freq - half_bw))
@@ -148,7 +153,7 @@ class SpectrumPlot(QWidget):
         w, h = rect.width(), rect.height()
         floor_y = rect.bottom() - 2
 
-        painter.setPen(QPen(QColor(BORDER_SUBTLE), 1))
+        painter.setPen(QPen(QColor(theme_colors.BORDER_SUBTLE), 1))
         painter.drawLine(rect.left(), floor_y, rect.right(), floor_y)
 
         d = state.data
@@ -156,10 +161,10 @@ class SpectrumPlot(QWidget):
 
         painter.setFont(self._label_font)
         if label is not None:
-            painter.setPen(QColor(TEXT_DARK if on else TEXT_MUTED))
+            painter.setPen(QColor(theme_colors.TEXT_DARK if on else theme_colors.TEXT_MUTED))
             painter.drawText(rect.left(), rect.top() + 10, label)
         if caption is not None:
-            painter.setPen(QColor(TEXT_MUTED))
+            painter.setPen(QColor(theme_colors.TEXT_MUTED))
             painter.drawText(rect.left(), rect.top() + 12, caption)
 
         # Only draws while actually on - this app's own remembered
@@ -172,7 +177,7 @@ class SpectrumPlot(QWidget):
 
         level = HEX_TO_LEVEL.get(d.power_code, d.last_level)
         peak_pct = _LEVEL_PEAK_PCT.get(level, 0)
-        painter.setPen(QPen(QColor(_LEVEL_TRACE_COLOR.get(level, TEXT_MUTED)), 1))
+        painter.setPen(QPen(QColor(_level_trace_color(level)), 1))
 
         n = min(w, 360)
         prev_x, prev_y = rect.left(), floor_y
@@ -203,9 +208,9 @@ class SpectrumPanel(Card):
         self.all_btn.setCursor(Qt.PointingHandCursor)
         self.all_btn.setFixedWidth(48)
         self.all_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"QPushButton {{ background: {theme_colors.NAVY}; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.NAVY}; "
             f"border-radius: 5px; font-size: 11px; padding: 3px 0; }}"
-            f"QPushButton:hover {{ background: {ACCENT_BLUE_DARK}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE_DARK}; }}"
         )
         self.all_btn.clicked.connect(self._on_all_clicked)
         self.header_layout.addWidget(self.all_btn)

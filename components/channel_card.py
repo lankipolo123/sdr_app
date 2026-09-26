@@ -6,7 +6,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, SURFACE, checkbox_style
+from styles import theme_colors
+from styles.theme_colors import checkbox_style
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from utils.time_format import format_uptime
 
@@ -116,7 +117,7 @@ class ChannelCard(Card):
         # hardware, independent of connection status, same as the C
         # rewrite's per-channel uptime.
         self.uptime_label = QLabel()
-        self.uptime_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        self.uptime_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 10px;")
         self.body_layout.addWidget(self.uptime_label)
         self._uptime_timer = QTimer(self)
         self._uptime_timer.timeout.connect(self._refresh_uptime)
@@ -137,11 +138,11 @@ class ChannelCard(Card):
 
     def _style_border(self, is_on: bool = False):
         if self.safety.is_tripped(self.address):
-            border_color = STATUS_ERROR
+            border_color = theme_colors.STATUS_ERROR
         else:
-            border_color = ACCENT_BLUE if is_on else BORDER_SUBTLE
+            border_color = theme_colors.ACCENT_BLUE if is_on else theme_colors.BORDER_SUBTLE
         self.setStyleSheet(
-            f"#Card {{ background: {SURFACE}; border: 1px solid {border_color}; border-radius: 10px; }}"
+            f"#Card {{ background: {theme_colors.SURFACE}; border: 1px solid {border_color}; border-radius: 10px; }}"
         )
 
     def _on_toggle(self, checked: bool):
@@ -200,8 +201,8 @@ class ChannelCard(Card):
     def _on_busy_changed(self, busy: bool):
         if busy:
             self.status_text.setText("SENDING...")
-            self.status_text.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
-            self.status_dot.setStyleSheet(f"background: {ACCENT_BLUE}; border-radius: 4px;")
+            self.status_text.setStyleSheet(f"color: {theme_colors.ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
+            self.status_dot.setStyleSheet(f"background: {theme_colors.ACCENT_BLUE}; border-radius: 4px;")
         else:
             self._update_status(self.slider.value())
 
@@ -231,10 +232,10 @@ class ChannelCard(Card):
         is_on = level > 0
         if tripped:
             self.status_text.setText("TRIPPED")
-            color = STATUS_ERROR
+            color = theme_colors.STATUS_ERROR
         else:
             self.status_text.setText(LEVEL_LABELS[level].upper() if is_on else "STANDBY")
-            color = STATUS_OK if is_on else TEXT_MUTED
+            color = theme_colors.STATUS_OK if is_on else theme_colors.TEXT_MUTED
         self.status_text.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
         cursor = Qt.PointingHandCursor if tripped else Qt.ArrowCursor
@@ -245,7 +246,7 @@ class ChannelCard(Card):
         for i, lbl in enumerate(self.level_labels):
             active = i == level
             lbl.setStyleSheet(
-                f"color: {ACCENT_BLUE if active else TEXT_MUTED}; "
+                f"color: {theme_colors.ACCENT_BLUE if active else theme_colors.TEXT_MUTED}; "
                 f"font-weight: {'700' if active else '400'}; font-size: 11px;"
             )
 

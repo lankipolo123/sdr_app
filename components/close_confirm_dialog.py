@@ -2,10 +2,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QColor, QPainter
 
-from styles.theme_colors import (
-    DIALOG_BG, TEXT_DARK, TEXT_MUTED, ACCENT_BLUE, ACCENT_BLUE_DARK,
-    STATUS_ERROR, STATUS_ERROR_DARK, BORDER_SUBTLE,
-)
+from styles import theme_colors
 
 _OVERLAY_COLOR = QColor(31, 41, 55, 90)
 
@@ -36,8 +33,8 @@ class CloseConfirmDialog(QWidget):
         panel.setMinimumWidth(340)
         panel.setMaximumWidth(340)
         panel.setStyleSheet(
-            f"#CloseConfirmPanel {{ background: {DIALOG_BG}; border-radius: 12px; "
-            f"border: 1px solid {BORDER_SUBTLE}; }}"
+            f"#CloseConfirmPanel {{ background: {theme_colors.SURFACE}; border-radius: 12px; "
+            f"border: 1px solid {theme_colors.BORDER_SUBTLE}; }}"
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -46,7 +43,7 @@ class CloseConfirmDialog(QWidget):
 
         title_label = QLabel("Close the app?")
         title_label.setStyleSheet(
-            f"color: {TEXT_DARK}; font-size: 17px; font-weight: 700; background: transparent;"
+            f"color: {theme_colors.TEXT_DARK}; font-size: 17px; font-weight: 700; background: transparent;"
         )
         panel_layout.addWidget(title_label)
 
@@ -57,7 +54,7 @@ class CloseConfirmDialog(QWidget):
         message_label.setWordWrap(True)
         message_label.setMinimumWidth(292)
         message_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent;"
+            f"color: {theme_colors.TEXT_MUTED}; font-size: 13px; background: transparent;"
         )
         panel_layout.addWidget(message_label)
 
@@ -68,10 +65,10 @@ class CloseConfirmDialog(QWidget):
         turn_off_btn.setCursor(Qt.PointingHandCursor)
         turn_off_btn.setMinimumHeight(32)
         turn_off_btn.setStyleSheet(
-            f"QPushButton {{ background: {STATUS_ERROR}; color: white; "
+            f"QPushButton {{ background: {theme_colors.STATUS_ERROR}; color: white; "
             f"border: none; border-radius: 4px; padding: 6px 16px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {STATUS_ERROR_DARK}; }}"
-            f"QPushButton:pressed {{ background: {STATUS_ERROR_DARK}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.STATUS_ERROR_DARK}; }}"
+            f"QPushButton:pressed {{ background: {theme_colors.STATUS_ERROR_DARK}; }}"
         )
         turn_off_btn.clicked.connect(self._on_turn_off)
         btn_col.addWidget(turn_off_btn)
@@ -80,9 +77,9 @@ class CloseConfirmDialog(QWidget):
         keep_running_btn.setCursor(Qt.PointingHandCursor)
         keep_running_btn.setMinimumHeight(32)
         keep_running_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {TEXT_DARK}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
-            f"QPushButton:hover {{ border-color: {ACCENT_BLUE}; color: {ACCENT_BLUE_DARK}; }}"
+            f"QPushButton {{ background: transparent; color: {theme_colors.TEXT_DARK}; "
+            f"border: 1px solid {theme_colors.BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
+            f"QPushButton:hover {{ border-color: {theme_colors.ACCENT_BLUE}; color: {theme_colors.ACCENT_BLUE_DARK}; }}"
         )
         keep_running_btn.clicked.connect(self._on_keep_running)
         btn_col.addWidget(keep_running_btn)
@@ -91,9 +88,9 @@ class CloseConfirmDialog(QWidget):
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setMinimumHeight(32)
         cancel_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
-            f"QPushButton:hover {{ border-color: {TEXT_DARK}; color: {TEXT_DARK}; }}"
+            f"QPushButton {{ background: transparent; color: {theme_colors.TEXT_MUTED}; "
+            f"border: 1px solid {theme_colors.BORDER_SUBTLE}; border-radius: 4px; padding: 6px 16px; }}"
+            f"QPushButton:hover {{ border-color: {theme_colors.TEXT_DARK}; color: {theme_colors.TEXT_DARK}; }}"
         )
         cancel_btn.clicked.connect(self._on_cancel)
         btn_col.addWidget(cancel_btn)

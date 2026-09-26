@@ -1,10 +1,14 @@
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, STATUS_OK, STATUS_ERROR, SURFACE
+from styles import theme_colors
 from state.level_map import LEVEL_LABELS
 
-_BTN_STYLE = f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; padding: 3px 8px; font-size: 11px; }}"
+def _btn_style() -> str:
+    # A function, not a module-level string - theme_colors.BORDER_SUBTLE
+    # would otherwise be frozen in at import time and go stale after a
+    # theme toggle.
+    return f"QPushButton {{ border: 1px solid {theme_colors.BORDER_SUBTLE}; border-radius: 5px; padding: 3px 8px; font-size: 11px; }}"
 
 
 def _colored_btn(text: str, bg: str) -> QPushButton:
@@ -35,7 +39,7 @@ class BulkActionsBar(QFrame):
         self.setObjectName("BulkActionsBar")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"#BulkActionsBar {{ background: {SURFACE}; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+            f"#BulkActionsBar {{ background: {theme_colors.SURFACE}; border: 2px solid {theme_colors.BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
         outer = QVBoxLayout(self)
@@ -43,7 +47,7 @@ class BulkActionsBar(QFrame):
         outer.setSpacing(8)
 
         self.title_label = QLabel("Bulk Actions")
-        self.title_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
+        self.title_label.setStyleSheet(f"color: {theme_colors.TEXT_DARK}; font-weight: 700; font-size: 12px;")
         outer.addWidget(self.title_label)
 
         columns = QHBoxLayout()
@@ -54,10 +58,10 @@ class BulkActionsBar(QFrame):
 
         on_off_row = QHBoxLayout()
         on_off_row.setSpacing(6)
-        on_btn = _colored_btn("ON", STATUS_OK)
+        on_btn = _colored_btn("ON", theme_colors.STATUS_OK)
         on_btn.clicked.connect(self._on_bulk_on)
         on_off_row.addWidget(on_btn)
-        off_btn = _colored_btn("OFF", STATUS_ERROR)
+        off_btn = _colored_btn("OFF", theme_colors.STATUS_ERROR)
         off_btn.clicked.connect(self._on_bulk_off)
         on_off_row.addWidget(off_btn)
         left_col.addLayout(on_off_row)
@@ -66,12 +70,12 @@ class BulkActionsBar(QFrame):
         select_row.setSpacing(6)
         select_all_btn = QPushButton("Select All")
         select_all_btn.setCursor(Qt.PointingHandCursor)
-        select_all_btn.setStyleSheet(_BTN_STYLE)
+        select_all_btn.setStyleSheet(_btn_style())
         select_all_btn.clicked.connect(self._on_select_all)
         select_row.addWidget(select_all_btn)
         clear_btn = QPushButton("Clear")
         clear_btn.setCursor(Qt.PointingHandCursor)
-        clear_btn.setStyleSheet(_BTN_STYLE)
+        clear_btn.setStyleSheet(_btn_style())
         clear_btn.clicked.connect(self.app.selection.clear)
         select_row.addWidget(clear_btn)
         left_col.addLayout(select_row)
@@ -86,7 +90,7 @@ class BulkActionsBar(QFrame):
         for level in reversed((0, 1, 2, 3)):
             btn = QPushButton(LEVEL_LABELS[level])
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(_BTN_STYLE)
+            btn.setStyleSheet(_btn_style())
             btn.clicked.connect(lambda _checked=False, lvl=level: self._on_bulk_level(lvl))
             right_col.addWidget(btn)
         columns.addLayout(right_col)
@@ -101,7 +105,7 @@ class BulkActionsBar(QFrame):
     def _divider() -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.VLine)
-        line.setStyleSheet(f"color: {BORDER_SUBTLE};")
+        line.setStyleSheet(f"color: {theme_colors.BORDER_SUBTLE};")
         return line
 
     def _refresh_title(self):

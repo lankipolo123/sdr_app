@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import WARNING_BG, WARNING_BORDER, WARNING_TEXT, NAVY, ACCENT_BLUE
+from styles import theme_colors
 
 
 class KillSwitchBanner(QWidget):
@@ -15,20 +15,20 @@ class KillSwitchBanner(QWidget):
         self.setObjectName("KillSwitchBanner")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"#KillSwitchBanner {{ background: {WARNING_BG}; border-bottom: 1px solid {WARNING_BORDER}; }}"
+            f"#KillSwitchBanner {{ background: {theme_colors.WARNING_BG}; border-bottom: 1px solid {theme_colors.WARNING_BORDER}; }}"
         )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 6, 14, 6)
 
         self.message_label = QLabel()
-        self.message_label.setStyleSheet(f"color: {WARNING_TEXT}; font-size: 12px; font-weight: 600;")
+        self.message_label.setStyleSheet(f"color: {theme_colors.WARNING_TEXT}; font-size: 12px; font-weight: 600;")
         layout.addWidget(self.message_label, 1)
 
         reset_btn = QPushButton("Reset All")
         reset_btn.setCursor(Qt.PointingHandCursor)
         reset_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
+            f"QPushButton {{ background: {theme_colors.NAVY}; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.NAVY}; "
             f"border-radius: 5px; font-size: 11px; font-weight: 600; padding: 4px 10px; }}"
         )
         reset_btn.clicked.connect(self.app.safety.reset_all)

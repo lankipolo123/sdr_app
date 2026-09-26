@@ -1,24 +1,39 @@
 import contextlib
 
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QCheckBox, QSizePolicy
+from PySide6.QtWidgets import QWidget, QFrame, QHBoxLayout, QLabel, QCheckBox, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
-from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, checkbox_style
-from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
+from styles.theme_colors import (
+    TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK,
+    CONTENT_BG, checkbox_style,
+)
+from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS
 from services.protocol import constants as c
 from utils.time_format import format_uptime
 
 SLIDER_SEND_DEBOUNCE_MS = 250
 UPTIME_TICK_MS = 1000
 
+# Fixed column widths shared between ChannelRow and ChannelTableHeader so
+# header labels line up with the actual row content below them - a real
+# table, not cards pretending to be one.
+COL_CHECKBOX_W = 22
+COL_CHANNEL_W = 46
+COL_STATUS_W = 90
+COL_MODE_W = 150
+COL_POWER_W = 90
+COL_LEVEL_W = 130
+COL_UPTIME_W = 90
+ROW_SPACING = 10
+ROW_MARGINS = (12, 0, 12, 0)
+
 
 class _ClickableLabel(QLabel):
     """Plain QLabel with a click signal - used for the status text/dot so
     it can double as the per-channel kill-switch reset control (click a
-    tripped card's status to reset just that one), same idiom the C
+    tripped row's status to reset just that one), same idiom the C
     rewrite's status line uses."""
 
     clicked = Signal()
@@ -38,97 +53,126 @@ def _signal_lock(widget):
         widget.blockSignals(False)
 
 
-class ChannelCard(Card):
+class ChannelTableHeader(QFrame):
+    """Column titles for the channel table below - widths mirror
+    ChannelRow's exactly so everything lines up."""
 
-    MIN_WIDTH = 200
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ChannelTableHeader")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedHeight(28)
+        self.setStyleSheet(
+            f"#ChannelTableHeader {{ background: {CONTENT_BG}; "
+            f"border-bottom: 2px solid {BORDER_SUBTLE}; }}"
+        )
 
-    def __init__(self, controller, state, safety, selection, parent=None):
-        super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
-        self.setMinimumWidth(self.MIN_WIDTH)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.layout().setContentsMargins(8, 6, 8, 6)
-        self.body_layout.setSpacing(4)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(*ROW_MARGINS)
+        row.setSpacing(ROW_SPACING)
+
+        def _col(text: str, width: int, align=Qt.AlignLeft):
+            lbl = QLabel(text)
+            lbl.setFixedWidth(width)
+            lbl.setAlignment(align | Qt.AlignVCenter)
+            lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700; "
+                f"letter-spacing: 0.5px; background: transparent;"
+            )
+            return lbl
+
+        row.addWidget(_col("", COL_CHECKBOX_W))
+        row.addWidget(_col("CH", COL_CHANNEL_W))
+        row.addWidget(_col("STATUS", COL_STATUS_W))
+        row.addWidget(_col("MODE", COL_MODE_W))
+        row.addWidget(_col("POWER", COL_POWER_W))
+        row.addWidget(_col("LEVEL", COL_LEVEL_W))
+        row.addStretch(1)
+        row.addWidget(_col("UPTIME", COL_UPTIME_W, align=Qt.AlignRight))
+
+
+class ChannelRow(QFrame):
+    """One channel per row, not one channel per card - a dense,
+    mixing-console-style table so all 16 channels are visible on screen
+    at once without scrolling. Same controller/state/safety wiring as
+    the card this replaces, just laid out horizontally."""
+
+    ROW_HEIGHT = 40
+
+    def __init__(self, controller, state, safety, selection, row_index: int = 0, parent=None):
+        super().__init__(parent)
         self.controller = controller
         self.state = state
         self.safety = safety
         self.selection = selection
         self.address = state.data.address
+        self._alt = row_index % 2 == 1
         self._pending_level = None
         self._send_debounce = QTimer(self)
         self._send_debounce.setSingleShot(True)
         self._send_debounce.timeout.connect(self._send_debounced_level)
 
-        # Bulk Actions selection - inserted at the front of the card's
-        # own header row (title/icon), which Card already built.
+        self.setObjectName("ChannelRow")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedHeight(self.ROW_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(*ROW_MARGINS)
+        row.setSpacing(ROW_SPACING)
+
         self.select_checkbox = QCheckBox()
+        self.select_checkbox.setFixedWidth(COL_CHECKBOX_W)
         self.select_checkbox.setStyleSheet(checkbox_style())
         self.select_checkbox.setToolTip(f"Select {self.controller.display_name} for bulk actions")
         self.select_checkbox.toggled.connect(lambda: self.selection.toggle(self.address))
-        self.header_layout.insertWidget(0, self.select_checkbox)
         self.selection.changed.connect(self._on_selection_changed)
+        row.addWidget(self.select_checkbox)
 
+        self.channel_label = QLabel(f"CH{state.display_number:02d}")
+        self.channel_label.setFixedWidth(COL_CHANNEL_W)
+        self.channel_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
+        row.addWidget(self.channel_label)
+
+        status_box = QWidget()
+        status_box.setFixedWidth(COL_STATUS_W)
+        status_row = QHBoxLayout(status_box)
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(6)
         self.status_dot = _ClickableLabel()
         self.status_dot.setFixedSize(8, 8)
         self.status_text = _ClickableLabel("STANDBY")
         self.status_dot.clicked.connect(self._on_status_clicked)
         self.status_text.clicked.connect(self._on_status_clicked)
-
-        main_row = QHBoxLayout()
-        main_row.setSpacing(6)
-
-        left_col = QVBoxLayout()
-        left_col.setSpacing(4)
-
-        # Fixed mode indicator - every channel is Pseudo Random Noise
-        # only now (direct decision, removing the Mode combo + Set
-        # button entirely, matching the C rewrite's own card). This
-        # also retires the Continuous Wave password gate (CwAuth/
-        # PasswordDialog) that used to live behind _on_mode_set() - CW
-        # was the one mode it gated, and with mode selection gone
-        # entirely there's nothing left for it to gate.
-        self.mode_label = QLabel(c.MODE_NAMES[c.MODE_WHITE_NOISE])
-        self.mode_label.setFixedHeight(24)
-        self._style_mode_label(is_on=False)
-        left_col.addWidget(self.mode_label)
-
-        self.toggle = PowerButton()
-        left_col.addWidget(self.toggle)
-
-        status_row = QHBoxLayout()
         status_row.addWidget(self.status_dot)
         status_row.addWidget(self.status_text)
-        status_row.addStretch()
-        left_col.addLayout(status_row)
-        left_col.addStretch()
-        main_row.addLayout(left_col, 1)
+        status_row.addStretch(1)
+        row.addWidget(status_box)
 
-        slider_row = QHBoxLayout()
-        slider_row.setSpacing(4)
+        # Fixed mode indicator - every channel is Pseudo Random Noise only
+        # now (see the removed channel_card.py in git history for why: the
+        # old Mode combo/Set button and the Continuous Wave password gate
+        # it used to gate were both removed entirely).
+        self.mode_label = QLabel(c.MODE_NAMES[c.MODE_WHITE_NOISE])
+        self.mode_label.setFixedWidth(COL_MODE_W)
+        row.addWidget(self.mode_label)
+
+        self.toggle = PowerButton()
+        self.toggle.setFixedWidth(COL_POWER_W)
+        row.addWidget(self.toggle)
+
         self.slider = LevelSlider()
-        slider_row.addWidget(self.slider)
+        self.slider.setFixedWidth(COL_LEVEL_W)
+        row.addWidget(self.slider)
 
-        labels_col = QVBoxLayout()
-        labels_col.setContentsMargins(0, 0, 0, 0)
-        labels_col.setSpacing(0)
-        self.level_labels = [None] * 4
-        for level in reversed(range(4)):
-            lbl = QLabel(LEVEL_LABELS[level])
-            lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-            lbl.setToolTip(f"L{level} - {LEVEL_LABELS_FULL[level]}")
-            labels_col.addWidget(lbl, 1)
-            self.level_labels[level] = lbl
-        slider_row.addLayout(labels_col)
-        main_row.addLayout(slider_row)
+        row.addStretch(1)
 
-        self.body_layout.addLayout(main_row)
-
-        # Live-ticking "Up HH:MM:SS" odometer (see ChannelState's
-        # current_uptime_seconds()) - an odometer fact about the
-        # hardware, independent of connection status, same as the C
-        # rewrite's per-channel uptime.
         self.uptime_label = QLabel()
+        self.uptime_label.setFixedWidth(COL_UPTIME_W)
+        self.uptime_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.uptime_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
-        self.body_layout.addWidget(self.uptime_label)
+        row.addWidget(self.uptime_label)
+
         self._uptime_timer = QTimer(self)
         self._uptime_timer.timeout.connect(self._refresh_uptime)
         self._uptime_timer.start(UPTIME_TICK_MS)
@@ -138,7 +182,8 @@ class ChannelCard(Card):
         self.slider.valueChanged.connect(self._on_slider)
         self.safety.changed.connect(self._on_safety_changed)
 
-        self._style_border()
+        self._style_row()
+        self._style_mode_label(is_on=False)
         self.slider.setEnabled(False)
 
         state.changed.connect(self._on_hardware_state_changed)
@@ -146,20 +191,22 @@ class ChannelCard(Card):
 
         self.controller.busy_changed.connect(self._on_busy_changed)
 
-    def _style_border(self, is_on: bool = False):
+    def _style_row(self, is_on: bool = False):
         if self.safety.is_tripped(self.address):
-            border_color = STATUS_ERROR
+            edge_color = STATUS_ERROR
         else:
-            border_color = ACCENT_BLUE if is_on else BORDER_SUBTLE
+            edge_color = ACCENT_BLUE if is_on else "transparent"
+        bg = CONTENT_BG if self._alt else "#FFFFFF"
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 1px solid {border_color}; border-radius: 10px; }}"
+            f"#ChannelRow {{ background: {bg}; border: none; "
+            f"border-bottom: 1px solid {BORDER_SUBTLE}; border-left: 3px solid {edge_color}; }}"
         )
 
     def _style_mode_label(self, is_on: bool):
         text_color = ACCENT_BLUE if is_on else TEXT_MUTED
         self.mode_label.setStyleSheet(
             f"QLabel {{ background: transparent; color: {text_color}; "
-            f"padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
+            f"font-weight: 600; font-size: 10px; }}"
         )
 
     def _on_toggle(self, checked: bool):
@@ -173,7 +220,7 @@ class ChannelCard(Card):
             self.controller.turn_output_off()
         self.slider.setEnabled(checked)
         self._style_mode_label(is_on=checked)
-        self._style_border(is_on=checked)
+        self._style_row(is_on=checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
             self.slider.setValue(target_level)
@@ -188,7 +235,7 @@ class ChannelCard(Card):
                 self.toggle.setChecked(should_be_checked)
             self.slider.setEnabled(should_be_checked)
             self._style_mode_label(is_on=should_be_checked)
-            self._style_border(is_on=should_be_checked)
+            self._style_row(is_on=should_be_checked)
         self._update_status(value)
         self._pending_level = value
         self._send_debounce.start(SLIDER_SEND_DEBOUNCE_MS)
@@ -206,7 +253,7 @@ class ChannelCard(Card):
                 self.toggle.setChecked(False)
             self.slider.setEnabled(False)
             self._style_mode_label(is_on=False)
-            self._style_border(is_on=False)
+            self._style_row(is_on=False)
             self._update_status(0)
             return
         code = LEVEL_TO_HEX[level]
@@ -217,15 +264,13 @@ class ChannelCard(Card):
         else:
             self.controller.resume_output(code)
 
-
     def _on_busy_changed(self, busy: bool):
         if busy:
             self.status_text.setText("SENDING...")
-            self.status_text.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
+            self.status_text.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 11px; font-weight: 600;")
             self.status_dot.setStyleSheet(f"background: {ACCENT_BLUE}; border-radius: 4px;")
         else:
             self._update_status(self.slider.value())
-
 
     def _on_hardware_state_changed(self):
         d = self.state.data
@@ -237,7 +282,7 @@ class ChannelCard(Card):
 
         self.slider.setEnabled(d.output_on)
         self._style_mode_label(is_on=d.output_on)
-        self._style_border(is_on=d.output_on)
+        self._style_row(is_on=d.output_on)
 
         if self.slider.value() != level:
             with _signal_lock(self.slider):
@@ -257,26 +302,19 @@ class ChannelCard(Card):
         else:
             self.status_text.setText(LEVEL_LABELS[level].upper() if is_on else "STANDBY")
             color = STATUS_OK if is_on else TEXT_MUTED
-        self.status_text.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
+        self.status_text.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 600;")
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
         cursor = Qt.PointingHandCursor if tripped else Qt.ArrowCursor
         self.status_text.setCursor(cursor)
         self.status_dot.setCursor(cursor)
         self.status_text.setToolTip("Click to reset this channel's kill switch trip" if tripped else "")
 
-        for i, lbl in enumerate(self.level_labels):
-            active = i == level
-            lbl.setStyleSheet(
-                f"color: {ACCENT_BLUE if active else TEXT_MUTED}; "
-                f"font-weight: {'700' if active else '400'}; font-size: 11px;"
-            )
-
     def _on_status_clicked(self):
         if self.safety.is_tripped(self.address):
             self.safety.reset_one(self.address)
 
     def _on_safety_changed(self):
-        self._style_border(is_on=self.toggle.isChecked())
+        self._style_row(is_on=self.toggle.isChecked())
         self._update_status(self.slider.value())
 
     def _refresh_uptime(self):

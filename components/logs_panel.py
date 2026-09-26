@@ -32,7 +32,7 @@ class LogsPanel(Card):
             "QPushButton { border: none; background: transparent; }"
             f"QPushButton:hover {{ background: {BORDER_SUBTLE}; border-radius: 4px; }}"
         )
-        maximize_btn.clicked.connect(self._open_dialog)
+        maximize_btn.clicked.connect(self.open_dialog)
         self.header_layout.addWidget(maximize_btn)
 
         self.list = QListWidget()
@@ -56,7 +56,7 @@ class LogsPanel(Card):
         if self._dialog is not None:
             self._dialog.list.clear()
 
-    def _open_dialog(self):
+    def open_dialog(self):
         lines = [self.list.item(i).text() for i in range(self.list.count())]
         self._dialog = LogsDialog(self, lines, title=self._title)
         self._dialog.show()

@@ -20,7 +20,7 @@ def _colored_btn(text: str, bg: str) -> QPushButton:
 
 class BulkActionsBar(QFrame):
     """Direct port of the C rewrite's Bulk Actions bar: check a card's
-    checkbox to select it (see ChannelCard/SelectionManager), then apply
+    checkbox to select it (see ChannelRow/SelectionManager), then apply
     ON/OFF/Set-mode/Set-level to every selected channel at once. Loops
     the same per-channel controller calls a single card already uses -
     no new subsystem needed, this is purely a convenience over the

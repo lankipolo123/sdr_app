@@ -46,7 +46,7 @@ def main():
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
     from components.confirm_dialog import ConfirmDialog
-    from components.channel_card import SLIDER_SEND_DEBOUNCE_MS
+    from components.channel_row import SLIDER_SEND_DEBOUNCE_MS
     from services.protocol import commands, constants as c
     from services.protocol.packet_parser import ParsedFrame
     from state.level_map import LEVEL_LABELS, LEVEL_TO_HEX
@@ -80,9 +80,9 @@ def main():
         "all 16 controllers live immediately",
         all(controller.channels.controllers.get(a) is not None for a in range(MAX_CHANNELS)),
     )
-    check("all 16 channel cards built", len(window._cards) == MAX_CHANNELS)
+    check("all 16 channel cards built", len(window._rows) == MAX_CHANNELS)
 
-    card = window._cards[0]
+    card = window._rows[0]
     check("card's display number is address+1 (CH01 for address 0)", card.state.display_number == 1)
     check("initial state: toggle unchecked", not card.toggle.isChecked())
     check("initial state: slider at 0 (Off)", card.slider.value() == 0)
@@ -158,11 +158,11 @@ def main():
     )
     check(
         "restored output_on too - card already shows on before any interaction this run",
-        window2._cards[0].toggle.isChecked(),
+        window2._rows[0].toggle.isChecked(),
     )
-    window2._cards[0].toggle.click()
+    window2._rows[0].toggle.click()
     pump(WORST_CASE_MS)
-    check("second run's OFF click applies optimistically", not window2._cards[0].toggle.isChecked())
+    check("second run's OFF click applies optimistically", not window2._rows[0].toggle.isChecked())
     check("the correct Output OFF frame was sent", sdr.sent_frames and sdr.sent_frames[-1] == commands.output_off(1))
     controller2.shutdown()
     window2.close()
@@ -174,7 +174,7 @@ def main():
     controller3 = make_app_controller()
     window3 = MainWindow(controller3)
     window3.show()
-    window3._cards[0].toggle.click()
+    window3._rows[0].toggle.click()
     controller3.shutdown()
     window3.close()
     pump(50)
@@ -188,12 +188,12 @@ def main():
     window6.show()
     messages6 = []
     controller6.channels.command_timeout.connect(lambda msg: messages6.append(msg))
-    window6._cards[0].toggle.click()
-    check("toggle flips immediately (optimistic UI, before any confirmation)", window6._cards[0].toggle.isChecked())
+    window6._rows[0].toggle.click()
+    check("toggle flips immediately (optimistic UI, before any confirmation)", window6._rows[0].toggle.isChecked())
     pump(WORST_CASE_MS)
     check("command_timeout fires (no UI banner, but still logged/emitted)", bool(messages6))
     check("timeout message says UNCONFIRMED, not a false confirm", any("UNCONFIRMED" in m for m in messages6))
-    check("toggle stays as clicked - applied optimistically", window6._cards[0].toggle.isChecked())
+    check("toggle stays as clicked - applied optimistically", window6._rows[0].toggle.isChecked())
     check("the command was actually sent, even though nothing can confirm it landed", timeout_sdr.sent_frames and timeout_sdr.sent_frames[-1] == commands.output_on(1))
     controller6.shutdown()
     window6.close()
@@ -209,9 +209,9 @@ def main():
     controller16 = make_app_controller()
     window16 = MainWindow(controller16)
     window16.show()
-    check("starts off, as configured", not window16._cards[0].toggle.isChecked())
+    check("starts off, as configured", not window16._rows[0].toggle.isChecked())
 
-    window16._cards[0].slider.setValue(2)
+    window16._rows[0].slider.setValue(2)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_resume_signal = commands.set_signal(
         1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[2],
@@ -222,7 +222,7 @@ def main():
         and expected_resume_signal in resume_sdr.sent_frames
         and resume_sdr.sent_frames.index(commands.output_on(1)) < resume_sdr.sent_frames.index(expected_resume_signal),
     )
-    check("card ends up showing on (optimistic apply of both commands)", window16._cards[0].toggle.isChecked())
+    check("card ends up showing on (optimistic apply of both commands)", window16._rows[0].toggle.isChecked())
 
     controller16.shutdown()
     window16.close()
@@ -237,10 +237,10 @@ def main():
     window19 = MainWindow(controller19)
     window19.show()
 
-    window19._cards[0].toggle.click()
+    window19._rows[0].toggle.click()
     pump(50)
 
-    window19._cards[1].toggle.click()
+    window19._rows[1].toggle.click()
     pump(200)
     check(
         "channel B hasn't sent anything yet - A's 1st attempt hasn't timed out yet",
@@ -260,7 +260,7 @@ def main():
     pump(WORST_CASE_MS + 500)
     check(
         "channel A's own UI still shows optimistically applied (unconfirmed) once its cycle finally exhausts",
-        window19._cards[0].toggle.isChecked(),
+        window19._rows[0].toggle.isChecked(),
     )
 
     controller19.shutdown()
@@ -274,7 +274,7 @@ def main():
     window20 = MainWindow(controller20)
     window20.show()
 
-    window20._cards[0].toggle.click()
+    window20._rows[0].toggle.click()
     pump(50)
 
     query_wait_results = []
@@ -314,7 +314,7 @@ def main():
     controller8 = make_app_controller()
     window8 = MainWindow(controller8)
     window8.show()
-    card8 = window8._cards[0]
+    card8 = window8._rows[0]
 
     card8.toggle.click()
     pump(100)
@@ -374,7 +374,7 @@ def main():
     )
     check(
         "card 9's toggle stayed put - a standalone query doesn't touch it",
-        not window17._cards[9].toggle.isChecked(),
+        not window17._rows[9].toggle.isChecked(),
     )
     check(
         "a standalone query doesn't replace any card's controller",
@@ -393,13 +393,13 @@ def main():
     controller_mode = make_app_controller(mode_work_dir)
     window_mode = MainWindow(controller_mode)
     window_mode.show()
-    check("card has no mode_combo (dropdown fully removed)", not hasattr(window_mode._cards[0], "mode_combo"))
+    check("card has no mode_combo (dropdown fully removed)", not hasattr(window_mode._rows[0], "mode_combo"))
     check(
         "card shows a fixed Pseudo Random Noise label instead",
-        window_mode._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
+        window_mode._rows[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
     )
 
-    window_mode._cards[0].slider.setValue(1)
+    window_mode._rows[0].slider.setValue(1)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_mode_frame = commands.set_signal(
         1, c.MODE_WHITE_NOISE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
@@ -430,10 +430,10 @@ def main():
     pump(100)
     check(
         "card still shows Pseudo Random Noise despite the stale ini entry",
-        window_mode2._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
+        window_mode2._rows[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
     )
 
-    window_mode2._cards[0].slider.setValue(1)
+    window_mode2._rows[0].slider.setValue(1)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     check(
         "sending after restore still uses Pseudo Random Noise, not the stale Linear Sweep",

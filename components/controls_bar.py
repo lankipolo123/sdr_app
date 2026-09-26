@@ -11,16 +11,18 @@ class ControlsBar(Card):
     clear_log_requested = Signal()
     load_config_requested = Signal()
     save_config_requested = Signal()
+    view_logs_requested = Signal()
 
     def __init__(self, min_width: int, parent=None):
         super().__init__("Controls", icon="sliders-h.png", parent=parent)
         self.setMinimumWidth(min_width)
 
-        status_row = QHBoxLayout()
         self.status_label = QLabel("Ready.")
         self.status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        status_row.addWidget(self.status_label)
-        status_row.addStretch()
+        self.body_layout.addWidget(self.status_label)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
 
         query_btn = QPushButton("Query")
         query_btn.setToolTip(
@@ -72,6 +74,14 @@ class ControlsBar(Card):
         save_config_btn.clicked.connect(self.save_config_requested.emit)
         status_row.addWidget(save_config_btn)
 
+        view_logs_btn = QPushButton("View Logs")
+        view_logs_btn.setToolTip("Open the full scrollable TX/RX log")
+        view_logs_btn.setCursor(Qt.PointingHandCursor)
+        view_logs_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; }}")
+        view_logs_btn.clicked.connect(self.view_logs_requested.emit)
+        status_row.addWidget(view_logs_btn)
+
+        status_row.addStretch(1)
         self.body_layout.addLayout(status_row)
 
     def set_status(self, text: str):

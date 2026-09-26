@@ -2,24 +2,21 @@ import os
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QScrollArea, QInputDialog, QSizePolicy, QPushButton, QFileDialog
+    QScrollArea, QSizePolicy, QPushButton, QFileDialog
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
 
 from components import (
-    ChannelCard, ConfirmDialog, CloseConfirmDialog, ControlsBar, LogsPanel,
+    ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE, NAVY, STATUS_ERROR, STATUS_ERROR_DARK
-from utils.logging_service import clear_log
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resource_path
-from utils.channel_store import load_channel_states, save_channel_states
-from state.level_map import LEVEL_TO_HEX
 
 # Layout mirrors sdr_c's actual window (Connection/Sensors + heatmap +
 # Bulk Actions in one header band; a narrow sidebar - Activity Log there
@@ -68,13 +65,6 @@ class MainWindow(QMainWindow):
 
         outer.addLayout(self._build_header_row())
         outer.addLayout(self._build_body_row(), 1)
-
-        self.controls_bar = ControlsBar(min_width=0)
-        self.controls_bar.query_requested.connect(self._on_query)
-        self.controls_bar.clear_log_requested.connect(self._on_clear_log)
-        self.controls_bar.load_config_requested.connect(self._on_load_config_clicked)
-        self.controls_bar.save_config_requested.connect(self._on_save_config_clicked)
-        outer.addWidget(self.controls_bar)
 
         self.setCentralWidget(central)
 
@@ -219,60 +209,6 @@ class MainWindow(QMainWindow):
 
     def _on_uptime_changed(self, seconds: int):
         self.title_bar.set_uptime(f"Uptime {format_uptime(seconds)}")
-
-    def _on_query(self):
-        address, ok = QInputDialog.getInt(self, "Query", "Address to send to:", 1, 0, 199)
-        if not ok:
-            return
-        choice, ok = QInputDialog.getItem(self, "Query", "Output:", ["ON", "OFF"], editable=False)
-        if not ok:
-            return
-        self.controls_bar.set_status(f"Querying {choice} to address {address}…")
-        self.app.channels.brute_force_query(address, on=(choice == "ON"))
-
-    def _on_clear_log(self):
-        clear_log(self.app.logger)
-        self.logs_panel.clear()
-        self.controls_bar.set_status("Log cleared.")
-
-    def _on_save_config_clicked(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Config", "channels.ini", "Config files (*.ini)"
-        )
-        if not path:
-            return
-        save_channel_states(self.app.channels.states, path)
-        self.controls_bar.set_status("Config saved.")
-
-    def _on_load_config_clicked(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Config", "", "Config files (*.ini)"
-        )
-        if not path:
-            return
-        saved_states = load_channel_states(path)
-        applied = 0
-        skipped = 0
-        for address, entry in saved_states.items():
-            controller = self.app.channels.controllers.get(address)
-            if controller is None:
-                continue
-            output_on = entry.get("output_on", False)
-            level = entry.get("last_level", 0) if output_on else 0
-            code = LEVEL_TO_HEX[level]
-            if code is not None and not self.app.safety.allow_power_on(address):
-                skipped += 1
-                continue
-            if code is None:
-                controller.turn_output_off()
-            elif controller.state.data.output_on:
-                controller.set_power(code)
-            else:
-                controller.resume_output(code)
-            applied += 1
-        status = f"Config loaded: {applied} applied"
-        status += f", {skipped} skipped (kill switch tripped)." if skipped else "."
-        self.controls_bar.set_status(status)
 
     def _refresh_sensor_ports(self):
         from hooks.use_sensor import SensorController

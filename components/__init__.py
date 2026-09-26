@@ -13,6 +13,7 @@ from .sensor_heatmap import SensorHeatmap
 from .bulk_actions_bar import BulkActionsBar
 from .kill_switch_banner import KillSwitchBanner
 from .spectrum_panel import SpectrumPanel
+from .summary_panel import SummaryPanel
 
 __all__ = [
     "Card",
@@ -32,4 +33,5 @@ __all__ = [
     "BulkActionsBar",
     "KillSwitchBanner",
     "SpectrumPanel",
+    "SummaryPanel",
 ]

@@ -10,7 +10,7 @@ from PySide6.QtGui import QIcon, QPixmap
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
-    BulkActionsBar, KillSwitchBanner, SpectrumPanel,
+    BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
@@ -27,7 +27,7 @@ from utils.app_paths import branding_icon_path, resource_path
 HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
-SIDEBAR_WIDTH = 260
+SIDEBAR_WIDTH = 340
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
@@ -66,6 +66,9 @@ class MainWindow(QMainWindow):
         outer.addLayout(self._build_header_row())
         outer.addLayout(self._build_body_row(), 1)
 
+        self.summary_panel = SummaryPanel(self.app)
+        outer.addWidget(self.summary_panel)
+
         self.setCentralWidget(central)
 
         self._cards = {}
@@ -80,8 +83,8 @@ class MainWindow(QMainWindow):
         self._on_sensor_changed()
 
     def _apply_window_chrome(self):
-        self.resize(1300, 860)
-        self.setMinimumSize(1100, 760)
+        self.resize(1300, 960)
+        self.setMinimumSize(1100, 820)
         self.setWindowFlag(Qt.FramelessWindowHint)
         self.setWindowFlag(Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -131,7 +134,7 @@ class MainWindow(QMainWindow):
 
         self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=SIDEBAR_WIDTH)
         self.logs_panel.setFixedWidth(SIDEBAR_WIDTH)
-        self.logs_panel.setFixedHeight(180)
+        self.logs_panel.setFixedHeight(150)
         sidebar.addWidget(self.logs_panel, 0)
 
         body_row.addLayout(sidebar, 0)

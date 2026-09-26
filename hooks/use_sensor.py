@@ -1,3 +1,4 @@
+import datetime
 import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -65,6 +66,12 @@ class SensorController(QObject):
         self._next_poll_at = 0.0
         self._response_deadline = 0.0
 
+        # Highest single-bay reading seen today - direct port of the C
+        # rewrite's update_highest_temp_today(), including its real
+        # calendar-day reset (not just "since the app started").
+        self.highest_temp_today_c = None
+        self._highest_temp_today_date = None
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
 
@@ -83,6 +90,17 @@ class SensorController(QObject):
         if not readings:
             return None
         return sum(readings) / len(readings)
+
+    def _update_highest_temp_today(self):
+        today = datetime.date.today()
+        if self._highest_temp_today_date != today:
+            self._highest_temp_today_date = today
+            self.highest_temp_today_c = None
+        for unit in self.units:
+            if not unit.has_reading:
+                continue
+            if self.highest_temp_today_c is None or unit.temperature_c > self.highest_temp_today_c:
+                self.highest_temp_today_c = unit.temperature_c
 
     def connect(self, port_name: str) -> bool:
         if serial is None:
@@ -161,6 +179,7 @@ class SensorController(QObject):
         self._waiting = False
         self._current_unit = (self._current_unit + 1) % SENSOR_MAX_UNITS
         self._next_poll_at = time.monotonic() + PER_UNIT_GAP_MS / 1000
+        self._update_highest_temp_today()
         self.changed.emit()
 
     def _tick(self):

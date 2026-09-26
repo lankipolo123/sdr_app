@@ -113,7 +113,15 @@ class SensorHeatmap(QWidget):
             painter.drawText(box, align, f"BAY {unit.address}")
             painter.setFont(reading_font)
             painter.setPen(color if unit.has_reading else QColor(theme_colors.TEXT_MUTED))
-            reading_box = QRectF(box.x(), box.y() + 12, box.width(), box.height() - 12)
+            # Stack the reading next to its caption, not on top of it -
+            # a bottom-anchored box re-anchoring both pieces of text to
+            # the SAME bottom edge (the old "always shift down 12" here)
+            # put the reading right on top of "BAY N" for the two
+            # bottom corners.
+            if align & Qt.AlignTop:
+                reading_box = QRectF(box.x(), box.y() + 12, box.width(), box.height() - 12)
+            else:
+                reading_box = QRectF(box.x(), box.y(), box.width(), box.height() - 12)
             if unit.has_reading:
                 text = f"{unit.temperature_c:.1f}°C"
             elif unit.online:

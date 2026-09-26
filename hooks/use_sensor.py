@@ -70,6 +70,7 @@ class SensorController(QObject):
         # rewrite's update_highest_temp_today(), including its real
         # calendar-day reset (not just "since the app started").
         self.highest_temp_today_c = None
+        self.highest_temp_today_bay = None
         self._highest_temp_today_date = None
 
         self._timer = QTimer(self)
@@ -96,11 +97,13 @@ class SensorController(QObject):
         if self._highest_temp_today_date != today:
             self._highest_temp_today_date = today
             self.highest_temp_today_c = None
+            self.highest_temp_today_bay = None
         for unit in self.units:
             if not unit.has_reading:
                 continue
             if self.highest_temp_today_c is None or unit.temperature_c > self.highest_temp_today_c:
                 self.highest_temp_today_c = unit.temperature_c
+                self.highest_temp_today_bay = unit.address
 
     def connect(self, port_name: str) -> bool:
         if serial is None:

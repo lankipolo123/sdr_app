@@ -27,11 +27,15 @@ from utils.app_paths import branding_icon_path, resource_path
 HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
-SIDEBAR_WIDTH = 340
-# sdr_c's own heatmap is a small, fixed-size corner readout, not a
-# panel stretched to fill whatever header space is left over.
-HEATMAP_WIDTH = 220
-HEATMAP_HEIGHT = 110
+SIDEBAR_WIDTH = 420
+# Narrower than a panel stretched to fill whatever header space is
+# left over - but same HEADER_ROW_HEIGHT as its header-row neighbors
+# (sensor card, bulk actions), not shorter: shrinking the height too
+# also shrank the faded emblem watermark drawn inside it (sized off
+# the panel's smaller dimension) and made it look like an odd little
+# card rather than lining up with the row around it.
+HEATMAP_WIDTH = 260
+HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256

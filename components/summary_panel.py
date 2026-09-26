@@ -1,11 +1,21 @@
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QFrame, QFileDialog
-from PySide6.QtCore import Qt, Signal
+import math
+
+from PySide6.QtWidgets import (
+    QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
+    QFrame, QFileDialog, QWidget, QAbstractButton, QSizePolicy,
+)
+from PySide6.QtCore import Qt, Signal, QPointF
+from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, QPainterPath, QLinearGradient
 
 from .card import Card
 from styles import theme_colors
-from styles.thermal_color import temp_band_color
+from styles.thermal_color import vivid_thermal_color
 from utils.channel_store import load_channel_states, save_channel_states
 from state.level_map import LEVEL_TO_HEX
+
+READOUT_H = 72
+MODE_ICON_SIZE = 64
+
 
 def _cmd_btn_style() -> str:
     return (
@@ -26,15 +36,124 @@ def _colored_btn(text: str, bg: str) -> QPushButton:
     return btn
 
 
-def _pill() -> QLabel:
-    pill = QLabel("-")
-    pill.setAlignment(Qt.AlignCenter)
-    pill.setFixedHeight(30)
-    pill.setStyleSheet(
-        f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
-        f"font-size: 13px; font-weight: 700; }}"
-    )
-    return pill
+class _GradientReadout(QWidget):
+    """AVG TEMP / Highest Temp Today's own content block - direct port
+    of avg_temp_block_subclass_proc()/highest_temp_block_subclass_proc()
+    (main.c): no pill/box background (blends straight into the Summary
+    card behind it), the number's own glyph shapes filled with a real
+    cool-to-hot gradient (BeginPath/TextOutA/EndPath -> PathToRegion's
+    glyph-shaped clip there; QPainterPath + setClipPath here), left =
+    vivid_thermal_color(0.0), right = vivid_thermal_color(1.0) -
+    decorative, not actually mapped to the shown temperature. Falls
+    back to small plain muted text (not the gradient treatment - a
+    single "-"/"No Data" run through a glyph-shaped clip rendered as an
+    unreadable smudge, direct report in main.c) when there's no value
+    yet."""
+
+    def __init__(self, point_size: int, parent=None):
+        super().__init__(parent)
+        self._point_size = point_size
+        self._text = ""
+        self._muted = True
+        self.setFixedHeight(READOUT_H)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def set_value(self, text: str, muted: bool):
+        self._text = text
+        self._muted = muted
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._text:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect()
+
+        font = QFont()
+        font.setBold(not self._muted)
+        font.setPointSize(11 if self._muted else self._point_size)
+        metrics = QFontMetrics(font)
+        text_w = metrics.horizontalAdvance(self._text)
+        x = (rect.width() - text_w) / 2
+        y = (rect.height() - metrics.height()) / 2 + metrics.ascent()
+
+        if self._muted:
+            painter.setFont(font)
+            painter.setPen(QColor(theme_colors.TEXT_MUTED))
+            painter.drawText(rect, Qt.AlignCenter, self._text)
+            return
+
+        path = QPainterPath()
+        path.addText(x, y, font, self._text)
+        painter.setClipPath(path)
+        # Spans the TEXT's own width, not the widget's - sdr_c's block
+        # width is close to its g_huge_font text width, so the same
+        # "gradient across the whole rect" reads as a full blue-to-red
+        # sweep there; here the block is much wider than the text, so
+        # doing the same would only ever paint a narrow, mostly-one-
+        # color slice of the gradient.
+        gradient = QLinearGradient(x, 0, x + text_w, 0)
+        r0, g0, b0 = vivid_thermal_color(0.0)
+        r1, g1, b1 = vivid_thermal_color(1.0)
+        gradient.setColorAt(0.0, QColor(r0, g0, b0))
+        gradient.setColorAt(1.0, QColor(r1, g1, b1))
+        painter.fillRect(rect, gradient)
+
+
+class _ModeToggleIcon(QAbstractButton):
+    """Summary card's Mode toggle - icon only, no button background/
+    badge, direct port of the WM_DRAWITEM branch for
+    IDC_THEME_TOGGLE_BTN (main.c): a moon while in Dark mode, a sun
+    while in Light mode - the CURRENT mode, not the destination
+    clicking it switches to (the opposite of the old text-button
+    version's "Light Mode"/"Dark Mode" label, which showed the
+    destination - main.c replaced that button with this same icon,
+    same ID, same on_theme_toggle_clicked(), just redrawn)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(MODE_ICON_SIZE, MODE_ICON_SIZE)
+        self.setToolTip("Switch Light/Dark mode")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        rect = self.rect()
+        icx, icy = rect.center().x(), rect.center().y()
+
+        if theme_colors.is_light_mode():
+            sun_color = QColor(255, 196, 0)
+            painter.setBrush(QBrush(sun_color))
+            body_r = rect.width() * 0.17
+            painter.drawEllipse(QPointF(icx, icy), body_r, body_r)
+            pen = QPen(sun_color)
+            pen.setWidth(max(2, round(rect.width() * 0.045)))
+            pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(pen)
+            ray_lo, ray_hi = rect.width() * 0.23, rect.width() * 0.33
+            for i in range(8):
+                angle = i * math.pi / 4
+                dx, dy = math.cos(angle), math.sin(angle)
+                painter.drawLine(
+                    QPointF(icx + dx * ray_lo, icy + dy * ray_lo),
+                    QPointF(icx + dx * ray_hi, icy + dy * ray_hi),
+                )
+        else:
+            moon_color = QColor(theme_colors.ACCENT_BLUE)
+            painter.setBrush(QBrush(moon_color))
+            main_r = rect.width() * 0.30
+            painter.drawEllipse(QPointF(icx, icy), main_r, main_r)
+            # Mask ellipse painted in the Card's own background color -
+            # same "fake a crescent by overpainting in the bg color"
+            # trick main.c uses, since neither GDI nor QPainter can
+            # subtract one shape from another directly.
+            painter.setBrush(QBrush(QColor(theme_colors.SURFACE)))
+            mask_r = main_r * 1.25
+            offset = main_r * 0.55
+            painter.drawEllipse(QPointF(icx + offset, icy - offset), mask_r, mask_r)
 
 
 class SummaryPanel(Card):
@@ -104,8 +223,8 @@ class SummaryPanel(Card):
         avg_col = QVBoxLayout()
         avg_col.setSpacing(6)
         avg_col.addWidget(_section_label("AVG TEMP"))
-        self.avg_pill = _pill()
-        avg_col.addWidget(self.avg_pill)
+        self.avg_readout = _GradientReadout(point_size=28)
+        avg_col.addWidget(self.avg_readout)
         avg_col.addStretch(1)
         row.addLayout(avg_col, 1)
 
@@ -115,8 +234,8 @@ class SummaryPanel(Card):
         highest_col = QVBoxLayout()
         highest_col.setSpacing(6)
         highest_col.addWidget(_section_label("Highest Temp Today"))
-        self.highest_pill = _pill()
-        highest_col.addWidget(self.highest_pill)
+        self.highest_readout = _GradientReadout(point_size=15)
+        highest_col.addWidget(self.highest_readout)
         highest_col.addStretch(1)
         row.addLayout(highest_col, 1)
 
@@ -126,25 +245,16 @@ class SummaryPanel(Card):
         mode_col = QVBoxLayout()
         mode_col.setSpacing(6)
         mode_col.addWidget(_section_label("Mode"))
-        self.mode_btn = QPushButton()
-        self.mode_btn.setCursor(Qt.PointingHandCursor)
-        self.mode_btn.setStyleSheet(_cmd_btn_style())
-        self.mode_btn.clicked.connect(self._on_mode_toggle_clicked)
-        mode_col.addWidget(self.mode_btn)
+        self.mode_icon = _ModeToggleIcon()
+        self.mode_icon.clicked.connect(self._on_mode_toggle_clicked)
+        mode_col.addWidget(self.mode_icon, 0, alignment=Qt.AlignLeft)
         mode_col.addStretch(1)
-        row.addLayout(mode_col, 1)
+        row.addLayout(mode_col, 0)
 
         self.body_layout.addLayout(row)
 
         self.app.sensor.changed.connect(self.refresh_temps)
         self.refresh_temps()
-        self._refresh_mode_btn()
-
-    def _refresh_mode_btn(self):
-        # Shows the mode you'd SWITCH TO, same label convention as
-        # sdr_c's own g_mode_toggle_btn (main.c): "Dark Mode" while
-        # light, "Light Mode" while dark.
-        self.mode_btn.setText("Light Mode" if not theme_colors.is_light_mode() else "Dark Mode")
 
     def _on_mode_toggle_clicked(self):
         self.theme_toggle_requested.emit()
@@ -152,33 +262,16 @@ class SummaryPanel(Card):
     def refresh_temps(self):
         avg = self.app.sensor.average_temperature()
         if avg is None:
-            self.avg_pill.setText("-")
-            self.avg_pill.setStyleSheet(
-                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
-                f"font-size: 13px; font-weight: 700; }}"
-            )
+            self.avg_readout.set_value("--.-C", muted=True)
         else:
-            r, g, b = temp_band_color(avg)
-            self.avg_pill.setText(f"{avg:.1f}°C")
-            self.avg_pill.setStyleSheet(
-                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
-                f"font-size: 13px; font-weight: 700; }}"
-            )
+            self.avg_readout.set_value(f"{avg:.1f}C", muted=False)
 
         highest = self.app.sensor.highest_temp_today_c
         if highest is None:
-            self.highest_pill.setText("-")
-            self.highest_pill.setStyleSheet(
-                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: {theme_colors.TEXT_MUTED}; border-radius: 6px; "
-                f"font-size: 13px; font-weight: 700; }}"
-            )
+            self.highest_readout.set_value("No Data", muted=True)
         else:
-            r, g, b = temp_band_color(highest)
-            self.highest_pill.setText(f"{highest:.1f}°C")
-            self.highest_pill.setStyleSheet(
-                f"QLabel {{ background: {theme_colors.FIELD_BG}; color: rgb({r},{g},{b}); border-radius: 6px; "
-                f"font-size: 13px; font-weight: 700; }}"
-            )
+            bay = self.app.sensor.highest_temp_today_bay
+            self.highest_readout.set_value(f"{highest:.1f}C - BAY{bay}", muted=False)
 
     def _on_emergency_shutdown(self):
         for controller in self.app.channels.controllers.values():

@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, checkbox_style
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, SURFACE, checkbox_style
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from services.protocol import constants as c
 from utils.time_format import format_uptime
@@ -152,7 +152,7 @@ class ChannelCard(Card):
         else:
             border_color = ACCENT_BLUE if is_on else BORDER_SUBTLE
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 1px solid {border_color}; border-radius: 10px; }}"
+            f"#Card {{ background: {SURFACE}; border: 1px solid {border_color}; border-radius: 10px; }}"
         )
 
     def _style_mode_label(self, is_on: bool):

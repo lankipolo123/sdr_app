@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, STATUS_OK, STATUS_ERROR
+from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, STATUS_OK, STATUS_ERROR, SURFACE
 from state.level_map import LEVEL_LABELS
 
 _BTN_STYLE = f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; padding: 3px 8px; font-size: 11px; }}"
@@ -35,7 +35,7 @@ class BulkActionsBar(QFrame):
         self.setObjectName("BulkActionsBar")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"#BulkActionsBar {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
+            f"#BulkActionsBar {{ background: {SURFACE}; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
         outer = QVBoxLayout(self)

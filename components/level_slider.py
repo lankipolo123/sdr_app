@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QSlider
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import ACCENT_BLUE, STATUS_OK, WARNING_BORDER, STATUS_ERROR, NEUTRAL_TRACK
+from styles.theme_colors import ACCENT_BLUE, STATUS_OK, WARNING_BORDER, STATUS_ERROR, NEUTRAL_TRACK, SLIDER_HANDLE
 
 _GROOVE_BACKGROUNDS = {
     0: f"background: {NEUTRAL_TRACK};",
@@ -27,7 +27,7 @@ _HANDLE_STYLE = f"""
         height: 20px;
         margin: 0 -5px;
         border-radius: 10px;
-        background: #FFFFFF;
+        background: {SLIDER_HANDLE};
         border: 2px solid {ACCENT_BLUE};
     }}
     QSlider::handle:vertical:hover {{

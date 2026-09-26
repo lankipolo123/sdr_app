@@ -1,30 +1,37 @@
+# Dark theme, exact RGB values pulled from sdr_c's own dark-mode
+# palette (main.c's COLOR_APP_* constants, g_light_mode defaults false
+# there too) - not an approximation, the real numbers the C rewrite
+# ships with by default.
 NAVY = "#1F2937"
-SURFACE = "#FFFFFF"
-CONTENT_BG = "#F5F6F8"
-ACCENT_BLUE = "#64AAFF"
-ACCENT_BLUE_DARK = "#4A8AD9"
-BORDER_SUBTLE = "#E2E5EA"
-BORDER_SUBTLE_DARK = "#374151"
-NEUTRAL_TRACK = "#CBD5E1"
+PAGE_BG = "#202124"       # COLOR_APP_PAGE_BG - outer window/scroll background
+SURFACE = "#2B2D31"       # COLOR_APP_PANEL_BG - card/dialog background, raised above PAGE_BG
+FIELD_BG = "#17181A"      # COLOR_APP_FIELD_BG - inputs/combobox/checkbox background
+CONTENT_BG = "#242629"    # between PAGE_BG and SURFACE - insets, read-only fields, heatmap wash
+ACCENT_BLUE = "#3AA8DD"   # COLOR_APP_HEADER - section headers, icons, links
+ACCENT_BLUE_DARK = "#1A85B8"  # COLOR_APP_ACCENT - hover/pressed accent
+BORDER_SUBTLE = "#3F4247"     # COLOR_APP_PANEL_BORDER
+BORDER_SUBTLE_DARK = "#1A1B1D"
+NEUTRAL_TRACK = "#4B4E54"     # empty slider groove, visible against SURFACE
+SLIDER_HANDLE = "#C4C7CC"     # sdr_c's silver_brush RGB(196,199,204)
 
-TEXT_DARK = "#111827"
-TEXT_MUTED = "#6B7280"
+TEXT_DARK = "#E8E9EA"     # COLOR_APP_TEXT - primary text (light, on dark backgrounds)
+TEXT_MUTED = "#9A9CA0"    # COLOR_APP_MUTED
 TEXT_LIGHT = "#E5E7EB"
 SIDEBAR_SELECTED_TEXT = "#1F2937"
 
-STATUS_OK = "#087F23"
-STATUS_OK_DARK = "#066018"
-STATUS_ERROR = "#B00020"
-STATUS_ERROR_DARK = "#8A0018"
+STATUS_OK = "#3AB55E"         # COLOR_APP_CONNECTED
+STATUS_OK_DARK = "#2E9450"
+STATUS_ERROR = "#E05A5A"      # COLOR_APP_DISCONNECTED
+STATUS_ERROR_DARK = "#C24747"
 STATUS_ERROR_LIGHT = "#F87171"
-WARNING_BG = "#FEF3C7"
+WARNING_BG = "#4A3510"
 WARNING_BORDER = "#F59E0B"
-WARNING_TEXT = "#92400E"
+WARNING_TEXT = "#F5C451"
 
 TX_ACCENT = ACCENT_BLUE
 RX_ACCENT = "#10B981"
 
-DIALOG_BG = "#FFFFFF"
+DIALOG_BG = SURFACE
 
 RADIO_BUTTON_STYLE = f"""
 QRadioButton {{ color: {TEXT_DARK}; background: transparent; }}
@@ -60,7 +67,7 @@ def checkbox_style() -> str:
 QCheckBox {{ color: {TEXT_DARK}; background: transparent; spacing: 8px; }}
 QCheckBox::indicator {{
     width: 16px; height: 16px; border-radius: 4px;
-    border: 2px solid {BORDER_SUBTLE}; background: #FFFFFF;
+    border: 2px solid {BORDER_SUBTLE}; background: {FIELD_BG};
 }}
 QCheckBox::indicator:hover {{
     border-color: {ACCENT_BLUE};
@@ -78,12 +85,12 @@ def build_global_qss() -> str:
     spin_down_path = _cached_icon_path("chevron-down.png", ACCENT_BLUE, "spin_down_arrow")
     return f"""
 QChartView {{
-    background: #FFFFFF;
+    background: {SURFACE};
     border: 2px solid {BORDER_SUBTLE};
     border-radius: 8px;
 }}
 QPushButton {{
-    background: #FFFFFF;
+    background: {SURFACE};
     color: {TEXT_DARK};
     border: 1px solid {BORDER_SUBTLE};
     border-radius: 5px;
@@ -108,7 +115,7 @@ QPushButton#PrimaryButton:pressed {{
     background: {ACCENT_BLUE_DARK};
 }}
 QComboBox, QLineEdit, QSpinBox {{
-    background: #FFFFFF;
+    background: {FIELD_BG};
     color: {TEXT_DARK};
     border: 1px solid {BORDER_SUBTLE};
     border-radius: 5px;
@@ -118,7 +125,7 @@ QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{
     border-color: {ACCENT_BLUE};
 }}
 QComboBox QAbstractItemView {{
-    background: #FFFFFF;
+    background: {SURFACE};
     color: {TEXT_DARK};
     border: 1px solid {BORDER_SUBTLE};
     outline: 0;
@@ -175,18 +182,18 @@ QLineEdit:read-only {{
 """
 
 
-def light_palette():
+def app_palette():
     from PySide6.QtGui import QPalette, QColor
 
     p = QPalette()
-    p.setColor(QPalette.Window, QColor("#FFFFFF"))
+    p.setColor(QPalette.Window, QColor(PAGE_BG))
     p.setColor(QPalette.WindowText, QColor(TEXT_DARK))
-    p.setColor(QPalette.Base, QColor("#FFFFFF"))
+    p.setColor(QPalette.Base, QColor(FIELD_BG))
     p.setColor(QPalette.AlternateBase, QColor(CONTENT_BG))
-    p.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
+    p.setColor(QPalette.ToolTipBase, QColor(SURFACE))
     p.setColor(QPalette.ToolTipText, QColor(TEXT_DARK))
     p.setColor(QPalette.Text, QColor(TEXT_DARK))
-    p.setColor(QPalette.Button, QColor("#FFFFFF"))
+    p.setColor(QPalette.Button, QColor(SURFACE))
     p.setColor(QPalette.ButtonText, QColor(TEXT_DARK))
     p.setColor(QPalette.BrightText, QColor(STATUS_ERROR))
     p.setColor(QPalette.Link, QColor(ACCENT_BLUE))

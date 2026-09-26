@@ -4,7 +4,7 @@ from PySide6.QtGui import QPainter, QPainterPath, QPen, QColor, QIcon, QGuiAppli
 
 from styles.theme_colors import (
     TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR_LIGHT,
-    NAVY, ACCENT_BLUE, TEXT_LIGHT, SURFACE,
+    NAVY, ACCENT_BLUE, TEXT_LIGHT, PAGE_BG,
 )
 
 WINDOW_RADIUS = 8
@@ -164,7 +164,7 @@ class ResizableContainer(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("ResizableContainer")
         self.setStyleSheet(
-            f"#ResizableContainer {{ background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
+            f"#ResizableContainer {{ background: {PAGE_BG}; border-radius: {WINDOW_RADIUS}px; "
             f"border: 2px solid {ACCENT_BLUE}; }}"
         )
 

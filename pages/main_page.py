@@ -14,7 +14,7 @@ from components import (
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
-from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE, NAVY, STATUS_ERROR, STATUS_ERROR_DARK
+from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE, NAVY, STATUS_ERROR, STATUS_ERROR_DARK, PAGE_BG
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resource_path
 
@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
         scroll.setStyleSheet(f"""
-            #ChannelsScroll {{ border: none; background: #FFFFFF; }}
+            #ChannelsScroll {{ border: none; background: {PAGE_BG}; }}
             #ChannelsScroll QScrollBar:vertical {{
                 background: transparent;
                 width: 10px;

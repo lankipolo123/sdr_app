@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE
+from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, ACCENT_BLUE, SURFACE
 from utils.app_paths import resource_path
 from .icon_utils import tint_pixmap, standard_icon_pixmap
 
@@ -32,7 +32,7 @@ class Card(QFrame):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("Card")
         self.setStyleSheet(
-            f"#Card {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; "
+            f"#Card {{ background: {SURFACE}; border: 2px solid {BORDER_SUBTLE}; "
             f"border-radius: 10px; }}"
         )
 

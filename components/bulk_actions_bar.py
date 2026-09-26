@@ -1,9 +1,8 @@
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QFrame
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt
 
-from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, NAVY, STATUS_OK, STATUS_ERROR, ACCENT_BLUE
+from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, STATUS_OK, STATUS_ERROR
 from state.level_map import LEVEL_LABELS
-from services.protocol import constants as c
 
 _BTN_STYLE = f"QPushButton {{ border: 1px solid {BORDER_SUBTLE}; border-radius: 5px; padding: 3px 8px; font-size: 11px; }}"
 
@@ -74,21 +73,6 @@ class BulkActionsBar(QFrame):
             btn.clicked.connect(lambda _checked=False, lvl=level: self._on_bulk_level(lvl))
             row.addWidget(btn)
 
-        row.addWidget(self._divider())
-
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(list(c.MODE_NAMES.values()))
-        row.addWidget(self.mode_combo)
-
-        set_mode_btn = QPushButton("Set Mode")
-        set_mode_btn.setCursor(Qt.PointingHandCursor)
-        set_mode_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 5px; padding: 3px 10px; font-size: 11px; font-weight: 600; }}"
-        )
-        set_mode_btn.clicked.connect(self._on_bulk_set_mode)
-        row.addWidget(set_mode_btn)
-
         row.addStretch()
 
         self.app.selection.changed.connect(self._refresh_title)
@@ -132,8 +116,3 @@ class BulkActionsBar(QFrame):
                 controller.set_power(code)
             else:
                 controller.resume_output(code)
-
-    def _on_bulk_set_mode(self):
-        mode = list(c.MODE_NAMES.keys())[self.mode_combo.currentIndex()]
-        for address in self.app.selection.selected:
-            self.app.channels.get_controller(address).set_mode(mode)

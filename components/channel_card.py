@@ -1,13 +1,12 @@
 import contextlib
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QCheckBox, QSizePolicy
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QCheckBox, QSizePolicy
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from .card import Card
 from .power_button import PowerButton
 from .level_slider import LevelSlider
-from .password_dialog import PasswordDialog
-from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, NAVY, TEXT_DARK, checkbox_style
+from styles.theme_colors import TEXT_MUTED, STATUS_OK, STATUS_ERROR, ACCENT_BLUE, BORDER_SUBTLE, TEXT_DARK, checkbox_style
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
 from services.protocol import constants as c
 from utils.time_format import format_uptime
@@ -43,7 +42,7 @@ class ChannelCard(Card):
 
     MIN_WIDTH = 200
 
-    def __init__(self, controller, state, cw_auth, safety, selection, parent=None):
+    def __init__(self, controller, state, safety, selection, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -51,7 +50,6 @@ class ChannelCard(Card):
         self.body_layout.setSpacing(4)
         self.controller = controller
         self.state = state
-        self.cw_auth = cw_auth
         self.safety = safety
         self.selection = selection
         self.address = state.data.address
@@ -81,28 +79,17 @@ class ChannelCard(Card):
         left_col = QVBoxLayout()
         left_col.setSpacing(4)
 
-        self._mode_codes = list(c.MODE_NAMES.keys())
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(list(c.MODE_NAMES.values()))
-        self.mode_combo.setToolTip(self.mode_combo.currentText())
-        self.mode_combo.currentTextChanged.connect(self.mode_combo.setToolTip)
-        self._style_mode_combo(is_on=False)
-        self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mode_set_btn = QPushButton("Set")
-        self.mode_set_btn.setFixedHeight(24)
-        self.mode_set_btn.setCursor(Qt.PointingHandCursor)
-        self.mode_set_btn.setToolTip("Set modulation")
-        self.mode_set_btn.setStyleSheet(
-            f"QPushButton {{ background: {NAVY}; color: {ACCENT_BLUE}; border: 1px solid {NAVY}; "
-            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
-            f"QPushButton:disabled {{ background: transparent; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE}; }}"
-        )
-        self.mode_set_btn.clicked.connect(self._on_mode_set)
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(4)
-        mode_row.addWidget(self.mode_combo, 1)
-        mode_row.addWidget(self.mode_set_btn)
-        left_col.addLayout(mode_row)
+        # Fixed mode indicator - every channel is Pseudo Random Noise
+        # only now (direct decision, removing the Mode combo + Set
+        # button entirely, matching the C rewrite's own card). This
+        # also retires the Continuous Wave password gate (CwAuth/
+        # PasswordDialog) that used to live behind _on_mode_set() - CW
+        # was the one mode it gated, and with mode selection gone
+        # entirely there's nothing left for it to gate.
+        self.mode_label = QLabel(c.MODE_NAMES[c.MODE_WHITE_NOISE])
+        self.mode_label.setFixedHeight(24)
+        self._style_mode_label(is_on=False)
+        left_col.addWidget(self.mode_label)
 
         self.toggle = PowerButton()
         left_col.addWidget(self.toggle)
@@ -168,15 +155,11 @@ class ChannelCard(Card):
             f"#Card {{ background: #FFFFFF; border: 1px solid {border_color}; border-radius: 10px; }}"
         )
 
-    def _style_mode_combo(self, is_on: bool):
+    def _style_mode_label(self, is_on: bool):
         text_color = ACCENT_BLUE if is_on else TEXT_MUTED
-        self.mode_combo.setStyleSheet(
-            f"QComboBox {{ background: #FFFFFF; color: {text_color}; border: 1px solid {BORDER_SUBTLE}; "
-            f"border-radius: 7px; padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
-            f"QComboBox::drop-down {{ border: none; background: transparent; }}"
-            f"QComboBox QAbstractItemView {{ background: #FFFFFF; color: {TEXT_DARK}; "
-            f"border: 1px solid {BORDER_SUBTLE}; border-radius: 8px; outline: 0; "
-            f"selection-background-color: #FFFFFF; selection-color: {ACCENT_BLUE}; }}"
+        self.mode_label.setStyleSheet(
+            f"QLabel {{ background: transparent; color: {text_color}; "
+            f"padding: 2px 6px; font-weight: 600; font-size: 10px; }}"
         )
 
     def _on_toggle(self, checked: bool):
@@ -189,7 +172,7 @@ class ChannelCard(Card):
         else:
             self.controller.turn_output_off()
         self.slider.setEnabled(checked)
-        self._style_mode_combo(is_on=checked)
+        self._style_mode_label(is_on=checked)
         self._style_border(is_on=checked)
         target_level = self.state.data.last_level if checked else 0
         with _signal_lock(self.slider):
@@ -204,7 +187,7 @@ class ChannelCard(Card):
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(should_be_checked)
             self.slider.setEnabled(should_be_checked)
-            self._style_mode_combo(is_on=should_be_checked)
+            self._style_mode_label(is_on=should_be_checked)
             self._style_border(is_on=should_be_checked)
         self._update_status(value)
         self._pending_level = value
@@ -215,51 +198,6 @@ class ChannelCard(Card):
             self._send_level(self._pending_level)
             self._pending_level = None
 
-    def _on_mode_set(self):
-        mode = self._mode_codes[self.mode_combo.currentIndex()]
-        if mode == c.MODE_SINGLE and not self._unlock_cw():
-            self._revert_mode_combo()
-            return
-        self.controller.set_mode(mode)
-
-    def _revert_mode_combo(self):
-        current_mode = self.state.data.mode if self.state.data.mode is not None else c.BLIND_DEFAULT_MODE
-        index = self._mode_codes.index(current_mode)
-        with _signal_lock(self.mode_combo):
-            self.mode_combo.setCurrentIndex(index)
-
-    def _unlock_cw(self) -> bool:
-        """Continuous Wave is a fixed, undithered carrier - the one mode
-        this app gates behind a password (see CwAuth). Shared across every
-        card: unlocking once (or setting the password the first time)
-        covers the rest of the session, so this doesn't re-prompt per
-        channel or per click."""
-        if self.cw_auth.authorized:
-            return True
-
-        if not self.cw_auth.is_set():
-            password = PasswordDialog.set_new(
-                self, "Set Continuous Wave Password",
-                "Continuous Wave (CW) mode needs a password before it can "
-                "be armed. Set one now - you won't be asked again this "
-                "session.",
-            )
-            if not password:
-                return False
-            self.cw_auth.set_password(password)
-            return True
-
-        def _verify(password):
-            ok = self.cw_auth.verify(password)
-            return ok, None if ok else "Wrong password - CW was not armed."
-
-        password = PasswordDialog.ask(
-            self, "Continuous Wave Password",
-            "Enter the Continuous Wave password to arm CW mode.",
-            on_submit=_verify,
-        )
-        return password is not None
-
     def _send_level(self, level: int):
         if level > 0 and not self.safety.allow_power_on(self.address):
             with _signal_lock(self.slider):
@@ -267,7 +205,7 @@ class ChannelCard(Card):
             with _signal_lock(self.toggle):
                 self.toggle.setChecked(False)
             self.slider.setEnabled(False)
-            self._style_mode_combo(is_on=False)
+            self._style_mode_label(is_on=False)
             self._style_border(is_on=False)
             self._update_status(0)
             return
@@ -298,17 +236,12 @@ class ChannelCard(Card):
                 self.toggle.setChecked(d.output_on)
 
         self.slider.setEnabled(d.output_on)
-        self._style_mode_combo(is_on=d.output_on)
+        self._style_mode_label(is_on=d.output_on)
         self._style_border(is_on=d.output_on)
 
         if self.slider.value() != level:
             with _signal_lock(self.slider):
                 self.slider.setValue(level)
-
-        mode_index = self._mode_codes.index(d.mode if d.mode is not None else c.BLIND_DEFAULT_MODE)
-        if self.mode_combo.currentIndex() != mode_index:
-            with _signal_lock(self.mode_combo):
-                self.mode_combo.setCurrentIndex(mode_index)
 
         if level > 0:
             d.last_level = level

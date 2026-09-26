@@ -3,7 +3,7 @@ from .power_button import PowerButton
 from .level_slider import LevelSlider
 from .channel_card import ChannelCard
 from .confirm_dialog import ConfirmDialog
-from .password_dialog import PasswordDialog
+from .close_confirm_dialog import CloseConfirmDialog
 from .logs_dialog import LogsDialog
 from .logs_panel import LogsPanel
 from .controls_bar import ControlsBar
@@ -21,7 +21,7 @@ __all__ = [
     "LevelSlider",
     "ChannelCard",
     "ConfirmDialog",
-    "PasswordDialog",
+    "CloseConfirmDialog",
     "LogsDialog",
     "LogsPanel",
     "ControlsBar",

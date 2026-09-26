@@ -4,11 +4,11 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QInputDialog, QSizePolicy, QPushButton, QFileDialog
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
 
 from components import (
-    ChannelCard, ConfirmDialog, ControlsBar, LogsPanel,
+    ChannelCard, ConfirmDialog, CloseConfirmDialog, ControlsBar, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner,
 )
@@ -18,6 +18,8 @@ from styles.theme_colors import BORDER_SUBTLE, ACCENT_BLUE, NAVY, STATUS_ERROR, 
 from utils.logging_service import clear_log
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resource_path
+from utils.channel_store import load_channel_states, save_channel_states
+from state.level_map import LEVEL_TO_HEX
 
 TOP_ROW_HEIGHT = 90
 CONTROLS_MIN_WIDTH = 220
@@ -94,6 +96,8 @@ class MainWindow(QMainWindow):
         self.controls_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.controls_bar.query_requested.connect(self._on_query)
         self.controls_bar.clear_log_requested.connect(self._on_clear_log)
+        self.controls_bar.load_config_requested.connect(self._on_load_config_clicked)
+        self.controls_bar.save_config_requested.connect(self._on_save_config_clicked)
         top_row.addWidget(self.controls_bar, 3, alignment=Qt.AlignTop)
 
         self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=LOGS_MIN_WIDTH)
@@ -211,6 +215,45 @@ class MainWindow(QMainWindow):
         self.logs_panel.clear()
         self.controls_bar.set_status("Log cleared.")
 
+    def _on_save_config_clicked(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Config", "channels.ini", "Config files (*.ini)"
+        )
+        if not path:
+            return
+        save_channel_states(self.app.channels.states, path)
+        self.controls_bar.set_status("Config saved.")
+
+    def _on_load_config_clicked(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Config", "", "Config files (*.ini)"
+        )
+        if not path:
+            return
+        saved_states = load_channel_states(path)
+        applied = 0
+        skipped = 0
+        for address, entry in saved_states.items():
+            controller = self.app.channels.controllers.get(address)
+            if controller is None:
+                continue
+            output_on = entry.get("output_on", False)
+            level = entry.get("last_level", 0) if output_on else 0
+            code = LEVEL_TO_HEX[level]
+            if code is not None and not self.app.safety.allow_power_on(address):
+                skipped += 1
+                continue
+            if code is None:
+                controller.turn_output_off()
+            elif controller.state.data.output_on:
+                controller.set_power(code)
+            else:
+                controller.resume_output(code)
+            applied += 1
+        status = f"Config loaded: {applied} applied"
+        status += f", {skipped} skipped (kill switch tripped)." if skipped else "."
+        self.controls_bar.set_status(status)
+
     def _refresh_sensor_ports(self):
         from hooks.use_sensor import SensorController
         ports = SensorController.list_ports()
@@ -292,7 +335,7 @@ class MainWindow(QMainWindow):
     def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
-        card = ChannelCard(controller, state, self.app.cw_auth, self.app.safety, self.app.selection)
+        card = ChannelCard(controller, state, self.app.safety, self.app.selection)
         self._cards[address] = card
         self._reflow_grid()
 
@@ -310,15 +353,39 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def _on_close_app_clicked(self):
-        confirmed = ConfirmDialog.ask(
-            self,
-            "Close App",
-            "Close the app? Channel power states are left as they are - "
-            "this does not turn anything off.",
-            confirm_text="Close",
-            cancel_text="Cancel",
-            danger=True,
-        )
-        if not confirmed:
+        choice = CloseConfirmDialog.ask(self)
+        if choice is None:
             return
+        if choice == "turn_off":
+            self._turn_off_all_and_close()
+        else:
+            self.close()
+
+    def _turn_off_all_and_close(self):
+        # Actually waits for every channel's OFF send to settle (busy_changed
+        # -> False) before closing - firing turn_output_off() and quitting
+        # immediately would race AppController.shutdown()'s
+        # channels.shutdown(), which cancels whatever's still pending.
+        pending = set(self.app.channels.controllers.keys())
+        loop = QEventLoop()
+
+        def _on_busy_changed(address, busy):
+            if not busy:
+                pending.discard(address)
+                if not pending:
+                    loop.quit()
+
+        connections = []
+        for address, controller in self.app.channels.controllers.items():
+            slot = lambda busy, addr=address: _on_busy_changed(addr, busy)
+            controller.busy_changed.connect(slot)
+            connections.append((controller, slot))
+            controller.turn_output_off()
+
+        if pending:
+            loop.exec()
+
+        for controller, slot in connections:
+            controller.busy_changed.disconnect(slot)
+
         self.close()

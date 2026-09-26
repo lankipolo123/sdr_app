@@ -9,6 +9,8 @@ class ControlsBar(Card):
 
     query_requested = Signal()
     clear_log_requested = Signal()
+    load_config_requested = Signal()
+    save_config_requested = Signal()
 
     def __init__(self, min_width: int, parent=None):
         super().__init__("Controls", icon="sliders-h.png", parent=parent)
@@ -44,6 +46,32 @@ class ControlsBar(Card):
         )
         clear_log_btn.clicked.connect(self.clear_log_requested.emit)
         status_row.addWidget(clear_log_btn)
+
+        load_config_btn = QPushButton("Load Config")
+        load_config_btn.setToolTip(
+            "Apply a saved channels.ini back onto every channel for real "
+            "(kill switch still applies - a tripped channel is skipped)"
+        )
+        load_config_btn.setCursor(Qt.PointingHandCursor)
+        load_config_btn.setStyleSheet(
+            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
+            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+        )
+        load_config_btn.clicked.connect(self.load_config_requested.emit)
+        status_row.addWidget(load_config_btn)
+
+        save_config_btn = QPushButton("Save Config")
+        save_config_btn.setToolTip("Save every channel's current state to a channels.ini file you pick")
+        save_config_btn.setCursor(Qt.PointingHandCursor)
+        save_config_btn.setStyleSheet(
+            f"QPushButton {{ background: {NAVY}; border: 1px solid {NAVY}; "
+            f"border-radius: 5px; font-size: 11px; padding: 4px 10px; color: {ACCENT_BLUE}; }}"
+            f"QPushButton:hover {{ background: {ACCENT_BLUE}; color: {NAVY}; }}"
+        )
+        save_config_btn.clicked.connect(self.save_config_requested.emit)
+        status_row.addWidget(save_config_btn)
+
         self.body_layout.addLayout(status_row)
 
     def set_status(self, text: str):

@@ -385,7 +385,7 @@ def main():
     window17.close()
     pump(50)
 
-    print("\n=== Modulation dropdown sends Signal Control and persists across restart ===")
+    print("\n=== Mode UI removed - every channel is fixed to Pseudo Random Noise ===")
     mode_sdr = FakeSDR(present=True)
     install_fake_dll(mode_sdr)
 
@@ -393,52 +393,53 @@ def main():
     controller_mode = make_app_controller(mode_work_dir)
     window_mode = MainWindow(controller_mode)
     window_mode.show()
-    check("mode dropdown starts on Pseudo Random Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
-
-    window_mode._cards[0].mode_combo.setCurrentIndex(1)
-    pump(300)
-    check("picking a mode alone does NOT send - Set is required", not mode_sdr.sent_frames)
-    window_mode._cards[0].mode_set_btn.click()
-    pump(WORST_CASE_MS)
-    expected_mode_frame = commands.set_signal(
-        1, c.MODE_LINEAR_SWEEP, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
+    check("card has no mode_combo (dropdown fully removed)", not hasattr(window_mode._cards[0], "mode_combo"))
+    check(
+        "card shows a fixed Pseudo Random Noise label instead",
+        window_mode._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
     )
-    check("Set actually sent the Linear Sweep Signal Control frame", mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame)
-    check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
 
-    window_mode._cards[0].mode_combo.showPopup()
-    pump(50)
-    popup = QApplication.activePopupWidget()
-    check("mode dropdown's popup actually opened", popup is not None)
-    if popup is not None:
-        popup.close()
+    window_mode._cards[0].slider.setValue(1)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
+    expected_mode_frame = commands.set_signal(
+        1, c.MODE_WHITE_NOISE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
+    )
+    check(
+        "turning a channel on sends Pseudo Random Noise, never a guessed mode",
+        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame,
+    )
 
     controller_mode.shutdown()
     window_mode.close()
     pump(50)
 
-    mode_saved = configparser.ConfigParser()
-    mode_saved.read(os.path.join(mode_work_dir, "channels.ini"))
-    check(
-        "mode persisted to channels.ini as a human-readable name",
-        mode_saved.get("CH01", "mode", fallback=None) == "Linear Sweep",
-    )
+    # Simulate a channels.ini left over from before the Mode UI was
+    # removed - a real file a user could still have on disk, carrying a
+    # "mode" this app can no longer produce on its own. The fix under
+    # test: that stale value must never come back to life on relaunch.
+    stale_ini = configparser.ConfigParser()
+    stale_ini.read(os.path.join(mode_work_dir, "channels.ini"))
+    stale_ini.set("CH01", "mode", "Linear Sweep")
+    with open(os.path.join(mode_work_dir, "channels.ini"), "w") as f:
+        stale_ini.write(f)
 
-    print("\n=== Modulation mode restored on relaunch, still no auto-send ===")
+    print("\n=== Stale persisted mode is never restored (no mode-carryover) ===")
     controller_mode2 = make_app_controller(mode_work_dir)
-    mode_messages2 = []
-    controller_mode2.channels.command_timeout.connect(lambda msg: mode_messages2.append(msg))
     window_mode2 = MainWindow(controller_mode2)
     window_mode2.show()
     pump(100)
     check(
-        "dropdown shows the restored mode immediately, before any interaction",
-        window_mode2._cards[0].mode_combo.currentIndex() == 1,
+        "card still shows Pseudo Random Noise despite the stale ini entry",
+        window_mode2._cards[0].mode_label.text() == c.MODE_NAMES[c.MODE_WHITE_NOISE],
     )
+
+    window_mode2._cards[0].slider.setValue(1)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     check(
-        "nothing sent automatically just from restoring - matches the app's no-auto-anything-on-launch design",
-        not mode_messages2,
+        "sending after restore still uses Pseudo Random Noise, not the stale Linear Sweep",
+        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame,
     )
+
     controller_mode2.shutdown()
     window_mode2.close()
     pump(50)

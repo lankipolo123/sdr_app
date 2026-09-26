@@ -4,7 +4,6 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from utils import ConfigService, setup_logger
 from .use_channels import ChannelManager
-from .cw_auth import CwAuth
 from .use_sensor import SensorController
 from .use_safety import SafetyController
 from .use_selection import SelectionManager
@@ -29,7 +28,6 @@ class AppController(QObject):
         self.config = config or ConfigService()
         self.logger = logger or setup_logger(self.config.get("log_folder", "logs"))
         self.channels = ChannelManager(self.config, self.logger)
-        self.cw_auth = CwAuth(self.config)
 
         # Amplifier temperature/humidity sensors - a real, separate raw
         # serial (Modbus RTU) connection, unrelated to the RS-422/

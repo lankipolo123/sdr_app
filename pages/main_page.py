@@ -10,7 +10,7 @@ from PySide6.QtGui import QIcon, QPixmap
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
-    BulkActionsBar, KillSwitchBanner,
+    BulkActionsBar, KillSwitchBanner, SpectrumPanel,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
@@ -115,17 +115,26 @@ class MainWindow(QMainWindow):
         return header_row
 
     def _build_body_row(self) -> QHBoxLayout:
-        # Narrow sidebar (Activity Log) beside the channel grid, same
-        # split sdr_c's Spectrum/Activity Log sidebar makes against its
-        # own channel grid - not a full-width strip above everything.
+        # Narrow sidebar (Spectrum on top, Activity Log below) beside
+        # the channel grid, same split sdr_c's own sidebar makes against
+        # its channel grid - not a full-width strip above everything.
         body_row = QHBoxLayout()
         body_row.setSpacing(16)
 
+        sidebar = QVBoxLayout()
+        sidebar.setSpacing(16)
+
+        self.spectrum_panel = SpectrumPanel(self.app.channels)
+        self.spectrum_panel.setFixedWidth(SIDEBAR_WIDTH)
+        self.spectrum_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        sidebar.addWidget(self.spectrum_panel, 1)
+
         self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=SIDEBAR_WIDTH)
         self.logs_panel.setFixedWidth(SIDEBAR_WIDTH)
-        self.logs_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        body_row.addWidget(self.logs_panel, 0)
+        self.logs_panel.setFixedHeight(180)
+        sidebar.addWidget(self.logs_panel, 0)
 
+        body_row.addLayout(sidebar, 0)
         body_row.addWidget(self._build_channels_scroll(), 1)
 
         return body_row

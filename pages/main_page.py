@@ -28,6 +28,10 @@ HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
 SIDEBAR_WIDTH = 340
+# sdr_c's own heatmap is a small, fixed-size corner readout, not a
+# panel stretched to fill whatever header space is left over.
+HEATMAP_WIDTH = 220
+HEATMAP_HEIGHT = 110
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
@@ -136,8 +140,9 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self.sensor_card, 0, alignment=Qt.AlignTop)
 
         heatmap = SensorHeatmap(self.app.sensor)
-        heatmap.setFixedHeight(HEADER_ROW_HEIGHT)
-        header_row.addWidget(heatmap, 1, alignment=Qt.AlignTop)
+        heatmap.setFixedSize(HEATMAP_WIDTH, HEATMAP_HEIGHT)
+        header_row.addWidget(heatmap, 0, alignment=Qt.AlignTop)
+        header_row.addStretch(1)
 
         self.bulk_actions_bar = BulkActionsBar(self.app)
         self.bulk_actions_bar.setFixedHeight(HEADER_ROW_HEIGHT)
@@ -343,8 +348,12 @@ class MainWindow(QMainWindow):
         for index, address in enumerate(sorted(self._cards)):
             row, col = divmod(index, CHANNELS_PER_ROW)
             self.grid.addWidget(self._cards[address], row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
-        for col in range(CHANNELS_PER_ROW):
-            self.grid.setColumnStretch(col, 1)
+        # No column stretch: with AlignLeft, a stretched column just
+        # leaves blank cell space to the right of each (narrower) card
+        # instead of actually widening it - stretching every column
+        # equal turns that into a big gutter between every card. Left
+        # unstretched, columns size to their own content and the cards
+        # pack together with just the grid's own spacing between them.
 
     def closeEvent(self, event):
         self.app.shutdown()

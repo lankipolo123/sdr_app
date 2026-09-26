@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QFrame
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt
 
 from styles.theme_colors import TEXT_DARK, BORDER_SUBTLE, STATUS_OK, STATUS_ERROR
@@ -19,12 +19,15 @@ def _colored_btn(text: str, bg: str) -> QPushButton:
 
 
 class BulkActionsBar(QFrame):
-    """Direct port of the C rewrite's Bulk Actions bar: check a card's
-    checkbox to select it (see ChannelRow/SelectionManager), then apply
-    ON/OFF/Set-mode/Set-level to every selected channel at once. Loops
-    the same per-channel controller calls a single card already uses -
-    no new subsystem needed, this is purely a convenience over the
-    existing ChannelController API."""
+    """Direct port of the C rewrite's Bulk Actions panel: check a card's
+    checkbox to select it (see ChannelCard/SelectionManager), then apply
+    ON/OFF/level to every selected channel at once. A compact 2-column
+    panel - ON/OFF and Clear/Select All stacked on the left, Off/Low/
+    Med/High stacked on the right - same shape as the C rewrite's own
+    Bulk Actions card, not a single wide row. Loops the same per-channel
+    controller calls a single card already uses - no new subsystem
+    needed, this is purely a convenience over the existing
+    ChannelController API."""
 
     def __init__(self, app_controller, parent=None):
         super().__init__(parent)
@@ -35,45 +38,61 @@ class BulkActionsBar(QFrame):
             f"#BulkActionsBar {{ background: #FFFFFF; border: 2px solid {BORDER_SUBTLE}; border-radius: 10px; }}"
         )
 
-        row = QHBoxLayout(self)
-        row.setContentsMargins(10, 8, 10, 8)
-        row.setSpacing(6)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 10, 12, 10)
+        outer.setSpacing(8)
 
         self.title_label = QLabel("Bulk Actions")
         self.title_label.setStyleSheet(f"color: {TEXT_DARK}; font-weight: 700; font-size: 12px;")
-        row.addWidget(self.title_label)
+        outer.addWidget(self.title_label)
 
+        columns = QHBoxLayout()
+        columns.setSpacing(10)
+
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
+
+        on_off_row = QHBoxLayout()
+        on_off_row.setSpacing(6)
+        on_btn = _colored_btn("ON", STATUS_OK)
+        on_btn.clicked.connect(self._on_bulk_on)
+        on_off_row.addWidget(on_btn)
+        off_btn = _colored_btn("OFF", STATUS_ERROR)
+        off_btn.clicked.connect(self._on_bulk_off)
+        on_off_row.addWidget(off_btn)
+        left_col.addLayout(on_off_row)
+
+        select_row = QHBoxLayout()
+        select_row.setSpacing(6)
         select_all_btn = QPushButton("Select All")
         select_all_btn.setCursor(Qt.PointingHandCursor)
         select_all_btn.setStyleSheet(_BTN_STYLE)
         select_all_btn.clicked.connect(self._on_select_all)
-        row.addWidget(select_all_btn)
-
+        select_row.addWidget(select_all_btn)
         clear_btn = QPushButton("Clear")
         clear_btn.setCursor(Qt.PointingHandCursor)
         clear_btn.setStyleSheet(_BTN_STYLE)
         clear_btn.clicked.connect(self.app.selection.clear)
-        row.addWidget(clear_btn)
+        select_row.addWidget(clear_btn)
+        left_col.addLayout(select_row)
 
-        on_btn = _colored_btn("Bulk ON", STATUS_OK)
-        on_btn.clicked.connect(self._on_bulk_on)
-        row.addWidget(on_btn)
+        left_col.addStretch(1)
+        columns.addLayout(left_col, 1)
+        columns.addWidget(self._divider())
 
-        off_btn = _colored_btn("Bulk OFF", STATUS_ERROR)
-        off_btn.clicked.connect(self._on_bulk_off)
-        row.addWidget(off_btn)
-
-        row.addWidget(self._divider())
-
-        row.addWidget(QLabel("Level:"))
-        for level in (0, 1, 2, 3):
+        right_col = QVBoxLayout()
+        right_col.setSpacing(4)
+        right_col.addWidget(QLabel("Level:"))
+        for level in reversed((0, 1, 2, 3)):
             btn = QPushButton(LEVEL_LABELS[level])
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(_BTN_STYLE)
             btn.clicked.connect(lambda _checked=False, lvl=level: self._on_bulk_level(lvl))
-            row.addWidget(btn)
+            right_col.addWidget(btn)
+        columns.addLayout(right_col)
 
-        row.addStretch()
+        outer.addLayout(columns)
+        outer.addStretch(1)
 
         self.app.selection.changed.connect(self._refresh_title)
         self._refresh_title()

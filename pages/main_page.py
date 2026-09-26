@@ -1,14 +1,14 @@
 import os
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QFrame, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QInputDialog, QSizePolicy, QPushButton, QFileDialog
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
 
 from components import (
-    ChannelRow, ChannelTableHeader, ConfirmDialog, CloseConfirmDialog, ControlsBar, LogsPanel,
+    ChannelCard, ConfirmDialog, CloseConfirmDialog, ControlsBar, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner,
 )
@@ -21,11 +21,18 @@ from utils.app_paths import branding_icon_path, resource_path
 from utils.channel_store import load_channel_states, save_channel_states
 from state.level_map import LEVEL_TO_HEX
 
-TOP_ROW_HEIGHT = 90
-CONTROLS_MIN_WIDTH = 320
+# Layout mirrors sdr_c's actual window (Connection/Sensors + heatmap +
+# Bulk Actions in one header band; a narrow sidebar - Activity Log there
+# - beside the channel grid; Commands as its own full-width panel below
+# the grid, not above it). Same panels sdr_app already had, just placed
+# the way the C rewrite places them instead of everything stacked
+# full-width in one column.
+HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
-HEATMAP_HEIGHT = 150
+BULK_ACTIONS_MIN_WIDTH = 320
+SIDEBAR_WIDTH = 260
 
+CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
 
 
@@ -59,68 +66,79 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
         root.addWidget(content, 1)
 
-        outer.addLayout(self._build_top_row())
-        outer.addWidget(self._build_heatmap())
-        self.bulk_actions_bar = BulkActionsBar(self.app)
-        outer.addWidget(self.bulk_actions_bar)
-        outer.addWidget(self._build_channels_panel(), 1)
+        outer.addLayout(self._build_header_row())
+        outer.addLayout(self._build_body_row(), 1)
+
+        self.controls_bar = ControlsBar(min_width=0)
+        self.controls_bar.query_requested.connect(self._on_query)
+        self.controls_bar.clear_log_requested.connect(self._on_clear_log)
+        self.controls_bar.load_config_requested.connect(self._on_load_config_clicked)
+        self.controls_bar.save_config_requested.connect(self._on_save_config_clicked)
+        outer.addWidget(self.controls_bar)
 
         self.setCentralWidget(central)
 
-        self._rows = {}
+        self._cards = {}
         self.app.channels.raw_tx.connect(self._on_raw_tx)
         self.app.channels.raw_rx.connect(self._on_raw_rx)
 
         for address in range(MAX_CHANNELS):
-            self._build_row(address)
-        self.rows_layout.addStretch(1)
+            self._build_card(address)
 
         self._refresh_sensor_ports()
         self.app.sensor.changed.connect(self._on_sensor_changed)
         self._on_sensor_changed()
 
     def _apply_window_chrome(self):
-        self.resize(1040, 780)
-        self.setMinimumSize(1000, 700)
+        self.resize(1300, 860)
+        self.setMinimumSize(1100, 760)
         self.setWindowFlag(Qt.FramelessWindowHint)
         self.setWindowFlag(Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-    def _build_top_row(self) -> QHBoxLayout:
-        # Only 2 boxes now, not 3 - Logs used to sit here at all times
-        # despite being secondary/diagnostic info; it still accumulates
-        # every TX/RX line in the background (see _on_raw_tx/_on_raw_rx),
-        # it's just reached through the "View Logs" button below instead
-        # of always taking up a third of this row.
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-
-        self.controls_bar = ControlsBar(min_width=CONTROLS_MIN_WIDTH)
-        self.controls_bar.setFixedHeight(TOP_ROW_HEIGHT)
-        self.controls_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.controls_bar.query_requested.connect(self._on_query)
-        self.controls_bar.clear_log_requested.connect(self._on_clear_log)
-        self.controls_bar.load_config_requested.connect(self._on_load_config_clicked)
-        self.controls_bar.save_config_requested.connect(self._on_save_config_clicked)
-        self.controls_bar.view_logs_requested.connect(lambda: self.logs_panel.open_dialog())
-        top_row.addWidget(self.controls_bar, 1, alignment=Qt.AlignTop)
-
-        self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=0, parent=self)
+    def _build_header_row(self) -> QHBoxLayout:
+        # Connection/sensor status, the heatmap, and Bulk Actions all in
+        # one band - direct match for sdr_c's header (Connection &
+        # Settings + Ambient Temperature + heatmap + Bulk Actions all
+        # sitting side by side above the grid).
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
 
         self.sensor_card = SensorCard(min_width=SENSOR_MIN_WIDTH)
-        self.sensor_card.setFixedHeight(TOP_ROW_HEIGHT)
-        self.sensor_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.sensor_card.setFixedHeight(HEADER_ROW_HEIGHT)
+        self.sensor_card.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.sensor_card.connect_requested.connect(self._on_sensor_connect)
         self.sensor_card.disconnect_requested.connect(self.app.sensor.disconnect)
         self.sensor_card.refresh_requested.connect(self._refresh_sensor_ports)
-        top_row.addWidget(self.sensor_card, 1, alignment=Qt.AlignTop)
+        header_row.addWidget(self.sensor_card, 0, alignment=Qt.AlignTop)
 
-        return top_row
-
-    def _build_heatmap(self) -> SensorHeatmap:
         heatmap = SensorHeatmap(self.app.sensor)
-        heatmap.setFixedHeight(HEATMAP_HEIGHT)
-        return heatmap
+        heatmap.setFixedHeight(HEADER_ROW_HEIGHT)
+        header_row.addWidget(heatmap, 1, alignment=Qt.AlignTop)
+
+        self.bulk_actions_bar = BulkActionsBar(self.app)
+        self.bulk_actions_bar.setFixedHeight(HEADER_ROW_HEIGHT)
+        self.bulk_actions_bar.setMinimumWidth(BULK_ACTIONS_MIN_WIDTH)
+        self.bulk_actions_bar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        header_row.addWidget(self.bulk_actions_bar, 0, alignment=Qt.AlignTop)
+
+        return header_row
+
+    def _build_body_row(self) -> QHBoxLayout:
+        # Narrow sidebar (Activity Log) beside the channel grid, same
+        # split sdr_c's Spectrum/Activity Log sidebar makes against its
+        # own channel grid - not a full-width strip above everything.
+        body_row = QHBoxLayout()
+        body_row.setSpacing(16)
+
+        self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=SIDEBAR_WIDTH)
+        self.logs_panel.setFixedWidth(SIDEBAR_WIDTH)
+        self.logs_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        body_row.addWidget(self.logs_panel, 0)
+
+        body_row.addWidget(self._build_channels_scroll(), 1)
+
+        return body_row
 
     def _build_title_bar_actions(self):
         change_logo_btn = QPushButton("Change Logo…")
@@ -159,31 +177,11 @@ class MainWindow(QMainWindow):
         force_trip_btn.clicked.connect(self._on_force_trip_clicked)
         self.title_bar.add_action_widget(force_trip_btn)
 
-    def _build_channels_panel(self) -> QFrame:
-        # One bordered panel - a fixed header row (ChannelTableHeader)
-        # pinned above a scrollable body of ChannelRow widgets, standard
-        # table layout - replacing the old 4-per-row card grid, which at
-        # 16 channels needed scrolling to see everything at once and
-        # gave each channel a lot of vertical chrome (icon, header,
-        # border) for not much information. A row is ~40px; all 16 fit
-        # on screen together without scrolling on the default window size.
-        panel = QFrame()
-        panel.setObjectName("ChannelsPanel")
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet(
-            f"#ChannelsPanel {{ background: #FFFFFF; border: 1px solid {BORDER_SUBTLE}; "
-            f"border-radius: 10px; }}"
-        )
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(0, 0, 0, 0)
-        panel_layout.setSpacing(0)
-
-        panel_layout.addWidget(ChannelTableHeader())
-
+    def _build_channels_scroll(self) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
         scroll.setStyleSheet(f"""
-            #ChannelsScroll {{ border: none; background: #FFFFFF; border-radius: 0 0 10px 10px; }}
+            #ChannelsScroll {{ border: none; background: #FFFFFF; }}
             #ChannelsScroll QScrollBar:vertical {{
                 background: transparent;
                 width: 10px;
@@ -211,15 +209,13 @@ class MainWindow(QMainWindow):
         scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidgetResizable(True)
         self.channels_scroll = scroll
-
-        rows_container = QWidget()
-        self.rows_layout = QVBoxLayout(rows_container)
-        self.rows_layout.setContentsMargins(0, 0, 0, 0)
-        self.rows_layout.setSpacing(0)
-        scroll.setWidget(rows_container)
-        panel_layout.addWidget(scroll, 1)
-
-        return panel
+        grid_container = QWidget()
+        self.grid = QGridLayout(grid_container)
+        self.grid.setContentsMargins(8, 8, 8, 8)
+        self.grid.setSpacing(8)
+        self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        scroll.setWidget(grid_container)
+        return scroll
 
     def _on_uptime_changed(self, seconds: int):
         self.title_bar.set_uptime(f"Uptime {format_uptime(seconds)}")
@@ -356,12 +352,21 @@ class MainWindow(QMainWindow):
         main_display = encoded_value if encoded_value is not None else "[middleware unavailable]"
         self.logs_panel.append_line(f"RX CH{address:02d}: {main_display}")
 
-    def _build_row(self, address: int):
+    def _build_card(self, address: int):
         controller = self.app.channels.get_controller(address)
         state = self.app.channels.get_state(address)
-        row = ChannelRow(controller, state, self.app.safety, self.app.selection, row_index=address)
-        self._rows[address] = row
-        self.rows_layout.addWidget(row)
+        card = ChannelCard(controller, state, self.app.safety, self.app.selection)
+        self._cards[address] = card
+        self._reflow_grid()
+
+    def _reflow_grid(self):
+        if not self._cards:
+            return
+        for index, address in enumerate(sorted(self._cards)):
+            row, col = divmod(index, CHANNELS_PER_ROW)
+            self.grid.addWidget(self._cards[address], row, col)
+        for col in range(CHANNELS_PER_ROW):
+            self.grid.setColumnStretch(col, 1)
 
     def closeEvent(self, event):
         self.app.shutdown()

@@ -28,8 +28,8 @@ from utils.app_paths import branding_icon_path, resource_path
 HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
-SIDEBAR_WIDTH = 460
-SIDEBAR_MAX_WIDTH = 600
+SIDEBAR_WIDTH = 480
+SIDEBAR_MAX_WIDTH = 680
 # Narrower than a panel stretched to fill whatever header space is
 # left over - but same HEADER_ROW_HEIGHT as its header-row neighbors
 # (sensor card, bulk actions), not shorter: shrinking the height too
@@ -124,7 +124,17 @@ class MainWindow(QMainWindow):
 
     def _apply_window_chrome(self):
         self.resize(1300, 960)
-        self.setMinimumSize(1100, 820)
+        # Wide enough that the sidebar's own minimum (SIDEBAR_WIDTH) and
+        # the grid's own 4-column minimum can both actually fit at once -
+        # the old 1100 predates the wider sidebar and let the window
+        # shrink past what the layout truly needs, silently clipping the
+        # 4th column instead of showing a scrollbar for it (a bare
+        # QScrollArea's setWidgetResizable(True) ties its content's size
+        # to the viewport it's GIVEN, so if the window itself shrinks
+        # past the layout's real minimum, there's no leftover space left
+        # for a scrollbar to reveal - the content just gets compressed
+        # along with everything else).
+        self.setMinimumSize(1340, 820)
         self.setWindowFlag(Qt.FramelessWindowHint)
         self.setWindowFlag(Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -182,11 +192,10 @@ class MainWindow(QMainWindow):
         self.logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         sidebar.addWidget(self.logs_panel, 2)
 
-        # 1:3 split, roughly matching sdr_c's own sidebar/grid growth
-        # ratio (sidebar_width_for()'s 25% of extra width vs. the
-        # grid's 75%) - both grow together as the window widens instead
-        # of the grid alone stretching into a mostly-empty scroll area.
-        body_row.addLayout(sidebar, 1)
+        # Sidebar gets a bigger share of the growth than sdr_c's own
+        # 25%/75% split - direct follow-up request, the cards looked
+        # better with less of the extra width pushed into them.
+        body_row.addLayout(sidebar, 2)
         body_row.addWidget(self._build_channels_scroll(), 3)
 
         return body_row
@@ -235,11 +244,50 @@ class MainWindow(QMainWindow):
         scroll.setStyleSheet(f"#ChannelsScroll {{ border: none; background: {theme_colors.PAGE_BG}; }}")
         scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidgetResizable(True)
-        # Grid columns are already sized to fit the available width (see
-        # _reflow_grid()) - a horizontal scrollbar showing at all would
-        # mean cards overflowing sideways, never an intended state, so
-        # it's turned off outright rather than left "as needed".
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # A bare QScrollArea's own minimumSizeHint has no idea its
+        # scrollable content actually needs 4 columns' worth of width -
+        # left unset, body_row's stretch (sidebar:grid) just splits
+        # whatever space exists proportionally with no regard for what
+        # the grid structurally needs, which silently starved it a few
+        # px short of 4 full columns and forced an unwanted horizontal
+        # scrollbar even at the window's normal default size. Setting
+        # this floor makes that need visible to the layout, so stretch
+        # only ever divides genuine leftover space beyond it.
+        scroll.setMinimumWidth(
+            CHANNELS_PER_ROW * ChannelCard.MIN_WIDTH + (CHANNELS_PER_ROW - 1) * 8 + 16 + 20
+        )
+        # Left "as needed", not off - 4 columns at their own MIN_WIDTH
+        # plus the sidebar's own minimum can still outgrow a small
+        # custom window size (turning it off entirely used to just
+        # silently clip the 4th column instead of scrolling to it,
+        # a real regression the widened sidebar surfaced).
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        _HSCROLLBAR_QSS = f"""
+            QScrollBar:horizontal {{
+                background: transparent;
+                height: 10px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {theme_colors.BORDER_SUBTLE};
+                border-radius: 5px;
+                min-width: 24px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {theme_colors.ACCENT_BLUE};
+            }}
+            QScrollBar::add-line:horizontal,
+            QScrollBar::sub-line:horizontal {{
+                width: 0px;
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar::add-page:horizontal,
+            QScrollBar::sub-page:horizontal {{
+                background: transparent;
+            }}
+        """
+        scroll.horizontalScrollBar().setStyleSheet(_HSCROLLBAR_QSS)
         # Styled directly on the scrollbar widget itself, not via a
         # `#ChannelsScroll QScrollBar:vertical` descendant selector on
         # the scroll area - that selector didn't reliably win against
@@ -273,6 +321,17 @@ class MainWindow(QMainWindow):
         """)
         self.channels_scroll = scroll
         grid_container = QWidget()
+        # setWidgetResizable(True) ties this widget's size to the
+        # viewport's, which can shrink it - and everything inside -
+        # below its own layout's true minimum instead of leaving the
+        # excess to a horizontal scrollbar, unless the widget itself
+        # also states that floor explicitly (matches scroll's own
+        # minimumWidth above; belt-and-suspenders, since which one Qt
+        # actually consults isn't consistent across widget/layout
+        # combinations).
+        grid_container.setMinimumWidth(
+            CHANNELS_PER_ROW * ChannelCard.MIN_WIDTH + (CHANNELS_PER_ROW - 1) * 8 + 16
+        )
         self.grid = QGridLayout(grid_container)
         self.grid.setContentsMargins(8, 8, 8, 8)
         self.grid.setSpacing(8)

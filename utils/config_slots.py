@@ -41,3 +41,11 @@ def save_config_slot(config_service, name: str, states: dict) -> bool:
 
 def load_config_slot(config_service, name: str) -> dict:
     return load_channel_states(slot_path(config_service, name))
+
+
+def delete_config_slot(config_service, name: str) -> bool:
+    path = slot_path(config_service, name)
+    if not os.path.exists(path):
+        return False
+    os.remove(path)
+    return True

@@ -6,7 +6,9 @@ from PySide6.QtCore import Qt
 
 from styles import theme_colors
 from state.level_map import LEVEL_LABELS
-from utils.config_slots import list_config_slots, load_config_slot, save_config_slot, MAX_CONFIG_SLOTS
+from utils.config_slots import (
+    list_config_slots, load_config_slot, save_config_slot, delete_config_slot, MAX_CONFIG_SLOTS,
+)
 
 MAX_CHANNELS = 16
 
@@ -58,6 +60,17 @@ class ConfigManagerDialog(QDialog):
         self.list_widget = QListWidget()
         self.list_widget.currentTextChanged.connect(self._on_selection_changed)
         left_col.addWidget(self.list_widget, 1)
+
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_btn.setStyleSheet(
+            f"QPushButton {{ color: {theme_colors.STATUS_ERROR}; border: 1px solid {theme_colors.STATUS_ERROR}; "
+            f"border-radius: 5px; padding: 4px 10px; background: transparent; }}"
+            f"QPushButton:hover {{ background: {theme_colors.STATUS_ERROR}; color: white; }}"
+            f"QPushButton:disabled {{ color: {theme_colors.TEXT_MUTED}; border-color: {theme_colors.BORDER_SUBTLE}; }}"
+        )
+        self.delete_btn.clicked.connect(self._on_delete_clicked)
+        left_col.addWidget(self.delete_btn)
 
         self.name_edit = None
         if mode == "save":
@@ -127,8 +140,10 @@ class ConfigManagerDialog(QDialog):
         self.count_label.setText(f"{self.list_widget.count()}/{MAX_CONFIG_SLOTS} saved")
 
     def _refresh_buttons(self):
+        has_selection = self.list_widget.currentItem() is not None
+        self.delete_btn.setEnabled(has_selection)
         if self.mode == "load":
-            self.action_btn.setEnabled(self.list_widget.currentItem() is not None)
+            self.action_btn.setEnabled(has_selection)
         else:
             self.action_btn.setEnabled(bool(self.name_edit.text().strip()))
 
@@ -146,11 +161,11 @@ class ConfigManagerDialog(QDialog):
         self._set_preview(levels)
 
     def _on_selection_changed(self, name: str):
+        self._refresh_buttons()
         if self.mode == "save":
             if name:
                 self.name_edit.setText(name)
             return
-        self._refresh_buttons()
         if not name:
             self._set_preview({})
             return
@@ -160,6 +175,26 @@ class ConfigManagerDialog(QDialog):
             for address, entry in entries.items()
         }
         self._set_preview(levels)
+
+    def _on_delete_clicked(self):
+        item = self.list_widget.currentItem()
+        if item is None:
+            return
+        name = item.text()
+        confirmed = QMessageBox.question(
+            self, "Delete Config",
+            f'Delete the saved config "{name}"? This can\'t be undone.',
+        )
+        if confirmed != QMessageBox.Yes:
+            return
+        delete_config_slot(self.app.config, name)
+        self._reload_slot_list()
+        if self.mode == "load":
+            self._set_preview({})
+        else:
+            if self.name_edit.text().strip() == name:
+                self.name_edit.clear()
+        self._refresh_buttons()
 
     def _on_action_clicked(self):
         if self.mode == "load":

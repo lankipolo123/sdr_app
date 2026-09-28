@@ -37,6 +37,7 @@ class ConfirmDialog(QWidget):
         panel_layout.setSpacing(10)
 
         title_label = QLabel(title)
+        title_label.setWordWrap(True)
         title_label.setStyleSheet(
             f"color: {theme_colors.TEXT_DARK}; font-size: 17px; font-weight: 700; background: transparent;"
         )

@@ -9,6 +9,7 @@ from .level_slider import LevelSlider
 from styles import theme_colors
 from styles.theme_colors import checkbox_style
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS, LEVEL_LABELS_FULL
+from state.channel_bands import CHANNEL_FREQ_MHZ, CHANNEL_BANDWIDTH_MHZ
 from utils.time_format import format_uptime
 
 SLIDER_SEND_DEBOUNCE_MS = 250
@@ -91,6 +92,19 @@ class ChannelCard(Card):
         status_row.addWidget(self.status_text)
         status_row.addStretch()
         left_col.addLayout(status_row)
+
+        # Real, fixed operating frequency range for this unit - static
+        # per card (never changes), so set once here rather than
+        # refreshed per tick. Same channel_freq_mhz()/
+        # channel_bandwidth_mhz() source the Spectrum plot's own axis
+        # uses, so the two stay consistent. Direct port of main.c's own
+        # per-card frequency label.
+        freq = CHANNEL_FREQ_MHZ[self.address]
+        half_bw = CHANNEL_BANDWIDTH_MHZ[self.address] // 2
+        self.freq_label = QLabel(f"{freq - half_bw}-{freq + half_bw} MHz")
+        self.freq_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 10px;")
+        left_col.addWidget(self.freq_label)
+
         left_col.addStretch()
         main_row.addLayout(left_col, 1)
 

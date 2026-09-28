@@ -382,19 +382,24 @@ class SummaryPanel(Card):
         saved_states = load_config_slot(self.app.config, dialog.result_name)
         applied = 0
         skipped = 0
+        # A config only ever asserts "on" (see save_config_slot()'s own
+        # comment on why) - loading one never turns a channel off, so
+        # any channel not in the file, or saved off, is simply left
+        # exactly as it already is.
         for address, entry in saved_states.items():
+            if not entry.get("output_on"):
+                continue
             controller = self.app.channels.controllers.get(address)
             if controller is None:
                 continue
-            output_on = entry.get("output_on", False)
-            level = entry.get("last_level", 0) if output_on else 0
+            level = entry.get("last_level", 0)
             code = LEVEL_TO_HEX[level]
-            if code is not None and not self.app.safety.allow_power_on(address):
+            if code is None:
+                continue
+            if not self.app.safety.allow_power_on(address):
                 skipped += 1
                 continue
-            if code is None:
-                controller.turn_output_off()
-            elif controller.state.data.output_on:
+            if controller.state.data.output_on:
                 controller.set_power(code)
             else:
                 controller.resume_output(code)

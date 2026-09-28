@@ -14,10 +14,6 @@ from utils.config_slots import (
 MAX_CHANNELS = 16
 
 
-def _level_color(level: int) -> str:
-    return theme_colors.ACCENT_BLUE if level > 0 else theme_colors.TEXT_MUTED
-
-
 class ConfigManagerDialog(QDialog):
     """Custom Load/Save Config dialog: up to MAX_CONFIG_SLOTS saved
     configs listed on the left, and a live per-channel power-level
@@ -110,13 +106,21 @@ class ConfigManagerDialog(QDialog):
         right_header.setStyleSheet(f"color: {theme_colors.TEXT_DARK}; font-weight: 700; font-size: 13px;")
         right_col.addWidget(right_header)
 
+        self.empty_preview_label = QLabel(
+            "No channels are on" if mode == "save" else "This config has no active channels"
+        )
+        self.empty_preview_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 12px;")
+        self.empty_preview_label.setVisible(False)
+        right_col.addWidget(self.empty_preview_label)
+
         preview_grid = QGridLayout()
         preview_grid.setSpacing(4)
         self.channel_labels: list[QLabel] = []
         for address in range(MAX_CHANNELS):
             row_i, col_i = divmod(address, 2)
-            lbl = QLabel(f"CH{address + 1:02d}  -")
-            lbl.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 12px;")
+            lbl = QLabel()
+            lbl.setStyleSheet(f"color: {theme_colors.ACCENT_BLUE}; font-size: 12px; font-weight: 700;")
+            lbl.setVisible(False)
             preview_grid.addWidget(lbl, row_i, col_i)
             self.channel_labels.append(lbl)
         right_col.addLayout(preview_grid)
@@ -166,16 +170,24 @@ class ConfigManagerDialog(QDialog):
             self.action_btn.setEnabled(bool(self.name_edit.text().strip()))
 
     def _set_preview(self, levels: dict[int, int]):
+        # Only ON channels ever appear here - a config is "what to
+        # activate", never "what to turn off" (see save_config_slot()'s
+        # own comment on why), so there's no "Off" row to show at all,
+        # just channels present or absent from the preview entirely.
         for address, lbl in enumerate(self.channel_labels):
-            level = levels.get(address, 0)
-            lbl.setText(f"CH{address + 1:02d}  {LEVEL_LABELS[level]}")
-            lbl.setStyleSheet(f"color: {_level_color(level)}; font-size: 12px; font-weight: {'700' if level else '400'};")
+            if address in levels:
+                lbl.setText(f"CH{address + 1:02d}  {LEVEL_LABELS[levels[address]]}")
+                lbl.setVisible(True)
+            else:
+                lbl.setVisible(False)
+        self.empty_preview_label.setVisible(not levels)
 
     def _show_live_preview(self):
-        levels = {}
-        for address, state in self.app.channels.states.items():
-            d = state.data
-            levels[address] = d.last_level if d.output_on else 0
+        levels = {
+            address: state.data.last_level
+            for address, state in self.app.channels.states.items()
+            if state.data.output_on
+        }
         self._set_preview(levels)
 
     def _on_selection_changed(self, name: str):
@@ -189,8 +201,9 @@ class ConfigManagerDialog(QDialog):
             return
         entries = load_config_slot(self.app.config, name)
         levels = {
-            address: (entry.get("last_level", 0) if entry.get("output_on") else 0)
+            address: entry.get("last_level", 0)
             for address, entry in entries.items()
+            if entry.get("output_on")
         }
         self._set_preview(levels)
 

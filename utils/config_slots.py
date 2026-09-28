@@ -28,14 +28,20 @@ def list_config_slots(config_service) -> list[str]:
 def save_config_slot(config_service, name: str, states: dict) -> bool:
     """Writes `states` (AppController.channels.states - real
     ChannelState objects, same shape save_channel_states() already
-    expects) to the named slot. Returns False without writing if this
-    would create a slot beyond MAX_CONFIG_SLOTS - overwriting an
-    existing slot is always allowed regardless of the cap."""
+    expects) to the named slot, ON channels only - a config is "what
+    to activate", never "what to turn off". Off is always the
+    available default the moment the software isn't actively driving
+    the hardware (disconnect, app close, no laptop at all), so it
+    never needs to be something a saved config asserts. Returns False
+    without writing if this would create a slot beyond
+    MAX_CONFIG_SLOTS - overwriting an existing slot is always allowed
+    regardless of the cap."""
     existing = list_config_slots(config_service)
     if name not in existing and len(existing) >= MAX_CONFIG_SLOTS:
         return False
+    on_states = {address: state for address, state in states.items() if state.data.output_on}
     os.makedirs(config_slots_dir(config_service), exist_ok=True)
-    save_channel_states(states, slot_path(config_service, name))
+    save_channel_states(on_states, slot_path(config_service, name))
     return True
 
 

@@ -14,7 +14,7 @@ from utils.channel_store import load_channel_states, save_channel_states
 from state.level_map import LEVEL_TO_HEX
 
 READOUT_H = 72
-MODE_ICON_SIZE = 64
+MODE_ICON_SIZE = 88
 CMD_ICON_SIZE = 18
 
 
@@ -279,7 +279,7 @@ class SummaryPanel(Card):
         commands_col.addWidget(self.status_label)
         commands_col.addStretch(1)
 
-        row.addLayout(commands_col, 2)
+        row.addLayout(commands_col, 1)
         row.addWidget(_divider())
 
         # ---- AVG TEMP ----
@@ -312,7 +312,7 @@ class SummaryPanel(Card):
         self.mode_icon.clicked.connect(self._on_mode_toggle_clicked)
         mode_col.addWidget(self.mode_icon, 0, alignment=Qt.AlignLeft)
         mode_col.addStretch(1)
-        row.addLayout(mode_col, 0)
+        row.addLayout(mode_col, 1)
 
         self.body_layout.addLayout(row)
 

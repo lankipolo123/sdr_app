@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QFrame, QFileDialog, QWidget, QAbstractButton, QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QPointF
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, QPainterPath, QLinearGradient
+from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QSize
+from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, QPainterPath, QLinearGradient, QIcon, QPixmap
 
 from .card import Card
 from styles import theme_colors
@@ -15,24 +15,67 @@ from state.level_map import LEVEL_TO_HEX
 
 READOUT_H = 72
 MODE_ICON_SIZE = 64
+CMD_ICON_SIZE = 18
+
+
+def _cmd_icon(kind: str, color: QColor) -> QIcon:
+    """Hand-drawn line-art matching main.c's own WM_DRAWITEM glyphs for
+    these exact buttons - Emergency Shutdown/Global Activate's hollow-
+    vs-filled power dot, Load Config's import-into-tray arrow, Save
+    Config's floppy disk, Reset to Default's circular reset arrow.
+    Built as a QIcon (not a static asset) since it needs to be re-tinted
+    per theme."""
+    size = CMD_ICON_SIZE
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    cx, cy = size / 2, size / 2
+    painter.setPen(QPen(color, 1.4))
+    painter.setBrush(Qt.NoBrush)
+
+    if kind == "hollow_circle":
+        painter.drawEllipse(QPointF(cx, cy), 5, 5)
+    elif kind == "filled_circle":
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QPointF(cx, cy), 5, 5)
+    elif kind == "import_arrow":
+        painter.drawLine(QPointF(cx, cy - 6), QPointF(cx, cy + 2))
+        painter.drawLine(QPointF(cx - 4, cy - 2), QPointF(cx, cy + 2))
+        painter.drawLine(QPointF(cx, cy + 2), QPointF(cx + 4, cy - 2))
+        painter.drawLine(QPointF(cx - 6, cy + 6), QPointF(cx + 6, cy + 6))
+    elif kind == "floppy_disk":
+        painter.drawRect(QRectF(cx - 6, cy - 6, 12, 12))
+        painter.drawRect(QRectF(cx - 3, cy - 6, 6, 4))
+        painter.drawLine(QPointF(cx - 4, cy + 1), QPointF(cx + 4, cy + 1))
+    elif kind == "reset_arrow":
+        painter.drawArc(QRectF(cx - 6, cy - 6, 12, 12), 10 * 16, 340 * 16)
+        painter.drawLine(QPointF(cx - 3, cy - 9), QPointF(cx + 2, cy - 6))
+        painter.drawLine(QPointF(cx + 2, cy - 6), QPointF(cx - 2, cy - 3))
+
+    painter.end()
+    return QIcon(pixmap)
 
 
 def _cmd_btn_style() -> str:
     return (
         f"QPushButton {{ background: {theme_colors.NAVY}; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.NAVY}; "
-        f"border-radius: 5px; font-size: 11px; font-weight: 600; padding: 8px 4px; }}"
+        f"border-radius: 5px; font-size: 11px; font-weight: 600; padding: 8px 4px; text-align: left; }}"
         f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: {theme_colors.NAVY}; }}"
     )
 
 
-def _colored_btn(text: str, bg: str) -> QPushButton:
+def _colored_btn(text: str, bg: str, icon_kind: str | None = None) -> QPushButton:
     btn = QPushButton(text)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setStyleSheet(
         f"QPushButton {{ background: {bg}; border: 1px solid {bg}; border-radius: 5px; "
-        f"padding: 8px 4px; font-size: 11px; font-weight: 600; color: white; }}"
+        f"padding: 8px 4px; font-size: 11px; font-weight: 600; color: white; text-align: left; }}"
         f"QPushButton:hover {{ background: {bg}; }}"
     )
+    if icon_kind:
+        btn.setIcon(_cmd_icon(icon_kind, QColor("white")))
+        btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
     return btn
 
 
@@ -182,29 +225,35 @@ class SummaryPanel(Card):
         grid = QGridLayout()
         grid.setSpacing(6)
 
-        shutdown_btn = _colored_btn("Emergency Shutdown", theme_colors.STATUS_ERROR)
+        shutdown_btn = _colored_btn("Emergency Shutdown", theme_colors.STATUS_ERROR, "hollow_circle")
         shutdown_btn.clicked.connect(self._on_emergency_shutdown)
         grid.addWidget(shutdown_btn, 0, 0)
 
-        activate_btn = _colored_btn("Global Activate", theme_colors.STATUS_OK)
+        activate_btn = _colored_btn("Global Activate", theme_colors.STATUS_OK, "filled_circle")
         activate_btn.clicked.connect(self._on_global_activate)
         grid.addWidget(activate_btn, 0, 1)
 
         load_btn = QPushButton("Load Config")
         load_btn.setCursor(Qt.PointingHandCursor)
         load_btn.setStyleSheet(_cmd_btn_style())
+        load_btn.setIcon(_cmd_icon("import_arrow", QColor(theme_colors.ACCENT_BLUE)))
+        load_btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
         load_btn.clicked.connect(self._on_load_config_clicked)
         grid.addWidget(load_btn, 1, 0)
 
         save_btn = QPushButton("Save Config")
         save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.setStyleSheet(_cmd_btn_style())
+        save_btn.setIcon(_cmd_icon("floppy_disk", QColor(theme_colors.ACCENT_BLUE)))
+        save_btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
         save_btn.clicked.connect(self._on_save_config_clicked)
         grid.addWidget(save_btn, 1, 1)
 
         reset_btn = QPushButton("Reset to Default")
         reset_btn.setCursor(Qt.PointingHandCursor)
         reset_btn.setStyleSheet(_cmd_btn_style())
+        reset_btn.setIcon(_cmd_icon("reset_arrow", QColor(theme_colors.ACCENT_BLUE)))
+        reset_btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
         reset_btn.clicked.connect(self._on_reset_to_default)
         grid.addWidget(reset_btn, 2, 0, 1, 2)
 

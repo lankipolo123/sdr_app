@@ -49,3 +49,17 @@ def delete_config_slot(config_service, name: str) -> bool:
         return False
     os.remove(path)
     return True
+
+
+def rename_config_slot(config_service, old_name: str, new_name: str) -> bool:
+    """False on a no-op (missing source) or a collision with a
+    DIFFERENT existing slot - never silently overwrites one, unlike
+    save_config_slot()'s own explicit overwrite path."""
+    if new_name == old_name:
+        return True
+    old_path = slot_path(config_service, old_name)
+    new_path = slot_path(config_service, new_name)
+    if not os.path.exists(old_path) or os.path.exists(new_path):
+        return False
+    os.rename(old_path, new_path)
+    return True

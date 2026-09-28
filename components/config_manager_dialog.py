@@ -1,13 +1,14 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QListWidget,
-    QLabel, QPushButton, QLineEdit, QMessageBox, QFrame,
+    QLabel, QPushButton, QLineEdit, QMessageBox, QFrame, QInputDialog,
 )
 from PySide6.QtCore import Qt
 
 from styles import theme_colors
 from state.level_map import LEVEL_LABELS
 from utils.config_slots import (
-    list_config_slots, load_config_slot, save_config_slot, delete_config_slot, MAX_CONFIG_SLOTS,
+    list_config_slots, load_config_slot, save_config_slot,
+    delete_config_slot, rename_config_slot, MAX_CONFIG_SLOTS,
 )
 
 MAX_CHANNELS = 16
@@ -61,6 +62,20 @@ class ConfigManagerDialog(QDialog):
         self.list_widget.currentTextChanged.connect(self._on_selection_changed)
         left_col.addWidget(self.list_widget, 1)
 
+        slot_actions_row = QHBoxLayout()
+        slot_actions_row.setSpacing(6)
+
+        self.rename_btn = QPushButton("Rename")
+        self.rename_btn.setCursor(Qt.PointingHandCursor)
+        self.rename_btn.setStyleSheet(
+            f"QPushButton {{ color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.ACCENT_BLUE}; "
+            f"border-radius: 5px; padding: 4px 10px; background: transparent; }}"
+            f"QPushButton:hover {{ background: {theme_colors.ACCENT_BLUE}; color: white; }}"
+            f"QPushButton:disabled {{ color: {theme_colors.TEXT_MUTED}; border-color: {theme_colors.BORDER_SUBTLE}; }}"
+        )
+        self.rename_btn.clicked.connect(self._on_rename_clicked)
+        slot_actions_row.addWidget(self.rename_btn)
+
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.setCursor(Qt.PointingHandCursor)
         self.delete_btn.setStyleSheet(
@@ -70,7 +85,9 @@ class ConfigManagerDialog(QDialog):
             f"QPushButton:disabled {{ color: {theme_colors.TEXT_MUTED}; border-color: {theme_colors.BORDER_SUBTLE}; }}"
         )
         self.delete_btn.clicked.connect(self._on_delete_clicked)
-        left_col.addWidget(self.delete_btn)
+        slot_actions_row.addWidget(self.delete_btn)
+
+        left_col.addLayout(slot_actions_row)
 
         self.name_edit = None
         if mode == "save":
@@ -142,6 +159,7 @@ class ConfigManagerDialog(QDialog):
     def _refresh_buttons(self):
         has_selection = self.list_widget.currentItem() is not None
         self.delete_btn.setEnabled(has_selection)
+        self.rename_btn.setEnabled(has_selection)
         if self.mode == "load":
             self.action_btn.setEnabled(has_selection)
         else:
@@ -175,6 +193,30 @@ class ConfigManagerDialog(QDialog):
             for address, entry in entries.items()
         }
         self._set_preview(levels)
+
+    def _on_rename_clicked(self):
+        item = self.list_widget.currentItem()
+        if item is None:
+            return
+        old_name = item.text()
+        new_name, ok = QInputDialog.getText(self, "Rename Config", "New name:", text=old_name)
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == old_name:
+            return
+        if not rename_config_slot(self.app.config, old_name, new_name):
+            QMessageBox.warning(
+                self, "Rename Config",
+                f'A saved config named "{new_name}" already exists - pick a different name.',
+            )
+            return
+        self._reload_slot_list()
+        matches = self.list_widget.findItems(new_name, Qt.MatchExactly)
+        if matches:
+            self.list_widget.setCurrentItem(matches[0])
+        if self.mode == "save" and self.name_edit.text().strip() == old_name:
+            self.name_edit.setText(new_name)
 
     def _on_delete_clicked(self):
         item = self.list_widget.currentItem()

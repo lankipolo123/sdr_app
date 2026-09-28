@@ -1,8 +1,17 @@
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QComboBox
 from PySide6.QtCore import Qt
 
 from styles import theme_colors
 from state.level_map import LEVEL_LABELS
+
+# Matches main_page.py's CHANNELS_PER_ROW - the grid is 4 cards wide,
+# so "1st Row" is addresses 0-3, "2nd Row" 4-7, etc. Direct port of
+# main.c's IDC_BULK_ROWSELECT_COMBO items/bulk_select_row(): picking a
+# row REPLACES the whole selection with exactly that row, not additive.
+ROW_SIZE = 4
+ROW_SELECT_ITEMS = ["1st Row", "2nd Row", "3rd Row", "4th Row", "Select All", "Custom"]
+CUSTOM_INDEX = len(ROW_SELECT_ITEMS) - 1
+
 
 def _btn_style() -> str:
     # A function, not a module-level string - theme_colors.BORDER_SUBTLE
@@ -80,6 +89,12 @@ class BulkActionsBar(QFrame):
         select_row.addWidget(clear_btn)
         left_col.addLayout(select_row)
 
+        self.row_select_combo = QComboBox()
+        self.row_select_combo.addItems(ROW_SELECT_ITEMS)
+        self.row_select_combo.setCurrentIndex(CUSTOM_INDEX)
+        self.row_select_combo.currentIndexChanged.connect(self._on_row_select_changed)
+        left_col.addWidget(self.row_select_combo)
+
         left_col.addStretch(1)
         columns.addLayout(left_col, 1)
         columns.addWidget(self._divider())
@@ -111,6 +126,41 @@ class BulkActionsBar(QFrame):
     def _refresh_title(self):
         count = len(self.app.selection.selected)
         self.title_label.setText(f"Bulk Actions ({count} selected)" if count else "Bulk Actions")
+        self._sync_row_select_combo()
+
+    def _sync_row_select_combo(self):
+        # Keeps the combo's shown choice honest even when the selection
+        # changes some other way (a single checkbox, Clear) - direct
+        # port of main.c's bulk_set_rowselect_combo() callers, which
+        # exist for the same reason: nothing else kept the combo in
+        # sync, so it kept showing a stale preset name.
+        total = len(self.app.channels.controllers)
+        selected = self.app.selection.selected
+        index = CUSTOM_INDEX
+        for row in range(4):
+            row_set = set(a for a in range(row * ROW_SIZE, (row + 1) * ROW_SIZE) if a < total)
+            if selected == row_set:
+                index = row
+                break
+        else:
+            if selected == set(range(total)):
+                index = 4
+        if self.row_select_combo.currentIndex() != index:
+            self.row_select_combo.blockSignals(True)
+            self.row_select_combo.setCurrentIndex(index)
+            self.row_select_combo.blockSignals(False)
+
+    def _on_row_select_changed(self, index: int):
+        total = len(self.app.channels.controllers)
+        if index < 4:
+            lo, hi = index * ROW_SIZE, (index + 1) * ROW_SIZE
+            self.app.selection.select_all(a for a in range(lo, hi) if a < total)
+        elif index == 4:
+            self.app.selection.select_all(range(total))
+        # index == CUSTOM_INDEX ("Custom") is a deliberate no-op, same
+        # as main.c's own handling - it's reached either by picking it
+        # directly (does nothing) or automatically by _sync_row_select_
+        # combo() above when the selection doesn't match any preset.
 
     def _on_select_all(self):
         self.app.selection.select_all(range(len(self.app.channels.controllers)))

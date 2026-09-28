@@ -3,6 +3,7 @@ import time
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from utils import ConfigService, setup_logger
+from utils.sensor_log import SensorLogWriter
 from .use_channels import ChannelManager
 from .use_sensor import SensorController
 from .use_safety import SafetyController
@@ -36,6 +37,7 @@ class AppController(QObject):
         # reading crosses KILL_SWITCH_THRESHOLD_C (use_safety.py).
         self.sensor = SensorController()
         self.safety = SafetyController(self.channels)
+        self.sensor_log = SensorLogWriter(self.config)
         self.sensor.changed.connect(self._on_sensor_changed)
         self.selection = SelectionManager()
 
@@ -51,6 +53,7 @@ class AppController(QObject):
 
     def _on_sensor_changed(self):
         self.safety.on_sensor_reading(self.sensor.average_temperature())
+        self.sensor_log.tick(self.sensor.units)
 
     def _on_uptime_tick(self):
         seconds = self.current_uptime_seconds()

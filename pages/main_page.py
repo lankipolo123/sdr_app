@@ -2,19 +2,20 @@ import os
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QScrollArea, QSizePolicy, QPushButton, QFileDialog
+    QScrollArea, QSizePolicy, QPushButton, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
 
 from components import (
-    ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
+    ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles import theme_colors
+from utils.sensor_log import read_highest_temp_rows
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resource_path
 
@@ -141,6 +142,7 @@ class MainWindow(QMainWindow):
         self.sensor_card.connect_requested.connect(self._on_sensor_connect)
         self.sensor_card.disconnect_requested.connect(self.app.sensor.disconnect)
         self.sensor_card.refresh_requested.connect(self._refresh_sensor_ports)
+        self.sensor_card.highest_temps_requested.connect(self._on_highest_temps_clicked)
         header_row.addWidget(self.sensor_card, 0, alignment=Qt.AlignTop)
 
         heatmap = SensorHeatmap(self.app.sensor)
@@ -280,6 +282,21 @@ class MainWindow(QMainWindow):
         bay_count = len(self.app.sensor.units)
         reading_count = sum(1 for u in self.app.sensor.units if u.has_reading)
         self.sensor_card.set_average_temperature(avg, bay_count, reading_count)
+
+    def _on_highest_temps_clicked(self):
+        # Direct port of on_highest_temp_log_clicked() (main.c): every
+        # logged row's own peak, sorted highest-first, shown in the
+        # same "bigger window" popup View Full already uses - matched
+        # exactly rather than built as a separate one-off dialog.
+        rows = read_highest_temp_rows(self.app.config)
+        if not rows:
+            QMessageBox.information(
+                self, "Highest Temp Log",
+                "No sensor log entries yet - it's written a few seconds after the first sensor reading.",
+            )
+            return
+        lines = [f"{timestamp}   {peak:.1f}C   BAY{bay + 1}" for timestamp, peak, bay in rows]
+        LogsDialog(self, lines, title="Highest Temp Log").exec()
 
     def _on_force_trip_clicked(self):
         confirmed = ConfirmDialog.ask(

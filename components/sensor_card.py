@@ -16,6 +16,7 @@ class SensorCard(Card):
     connect_requested = Signal(str)  # port name
     disconnect_requested = Signal()
     refresh_requested = Signal()
+    highest_temps_requested = Signal()
 
     def __init__(self, min_width: int, parent=None):
         super().__init__("Amplifier Sensors", icon="broadcast-tower.png", parent=parent)
@@ -47,6 +48,11 @@ class SensorCard(Card):
         self.avg_label = QLabel("Avg: -")
         self.avg_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 12px; font-weight: 600;")
         self.body_layout.addWidget(self.avg_label)
+
+        highest_btn = QPushButton("Highest Temps")
+        highest_btn.setCursor(Qt.PointingHandCursor)
+        highest_btn.clicked.connect(self.highest_temps_requested.emit)
+        self.body_layout.addWidget(highest_btn)
 
         self._connected = False
 

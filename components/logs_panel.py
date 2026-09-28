@@ -1,16 +1,15 @@
-from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QListWidget, QPushButton
 from PySide6.QtCore import Qt
 
 from .card import Card
-from .icon_utils import tint_pixmap
 from .logs_dialog import LogsDialog
 from styles import theme_colors
-from utils.app_paths import resource_path
-
-_MAXIMIZE_ICON_PATH = resource_path("assets", "icons", "pages", "expand-alt.png")
 
 LOG_MAX_ENTRIES = 200
+
+
+def _header_btn_style() -> str:
+    return f"QPushButton {{ border: 1px solid {theme_colors.BORDER_SUBTLE}; border-radius: 5px; padding: 2px 8px; font-size: 10px; }}"
 
 
 class LogsPanel(Card):
@@ -23,17 +22,17 @@ class LogsPanel(Card):
         self._max_entries = max_entries
         self._dialog: LogsDialog | None = None
 
-        maximize_btn = QPushButton()
-        maximize_btn.setIcon(QIcon(tint_pixmap(QPixmap(_MAXIMIZE_ICON_PATH), theme_colors.ACCENT_BLUE)))
-        maximize_btn.setFixedSize(20, 20)
-        maximize_btn.setCursor(Qt.PointingHandCursor)
-        maximize_btn.setToolTip(f"Open full scrollable {title.lower()}")
-        maximize_btn.setStyleSheet(
-            "QPushButton { border: none; background: transparent; }"
-            f"QPushButton:hover {{ background: {theme_colors.BORDER_SUBTLE}; border-radius: 4px; }}"
-        )
-        maximize_btn.clicked.connect(self.open_dialog)
-        self.header_layout.addWidget(maximize_btn)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.setStyleSheet(_header_btn_style())
+        clear_btn.clicked.connect(self.clear)
+        self.header_layout.addWidget(clear_btn)
+
+        view_full_btn = QPushButton("View Full")
+        view_full_btn.setCursor(Qt.PointingHandCursor)
+        view_full_btn.setStyleSheet(_header_btn_style())
+        view_full_btn.clicked.connect(self.open_dialog)
+        self.header_layout.addWidget(view_full_btn)
 
         self.list = QListWidget()
         self.list.setStyleSheet(

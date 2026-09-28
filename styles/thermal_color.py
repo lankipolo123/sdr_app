@@ -50,14 +50,17 @@ def temp_band_color(temp_c: float) -> tuple[int, int, int]:
     return (220, 38, 38)  # red
 
 
-def heatmap_scale(temperatures: list[float]) -> tuple[float, float] | None:
+def heatmap_scale(temperatures: list[float]) -> tuple[float, float]:
     """Min/max across every reading, widened to a 2C floor so a near-
     identical set of readings doesn't collapse the whole scale to a
     single color - same rule as the C rewrite's
-    sensor_heatmap_subclass_proc()."""
-    if not temperatures:
-        return None
-    lo, hi = min(temperatures), max(temperatures)
+    sensor_heatmap_subclass_proc(). With no readings at all, main.c's
+    lo/hi both start at 0.0 and never move, so the same 2C-floor
+    widening still applies and yields exactly (-1.0, 1.0) - that's
+    where its idle legend's "-1.0C"/"1.0C" placeholder comes from, not
+    a special no-data string. Always returns a real tuple, matching
+    that (never None)."""
+    lo, hi = (min(temperatures), max(temperatures)) if temperatures else (0.0, 0.0)
     if hi - lo < 2:
         mid = (hi + lo) / 2
         lo, hi = mid - 1, mid + 1

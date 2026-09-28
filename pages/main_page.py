@@ -29,6 +29,7 @@ HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
 SIDEBAR_WIDTH = 460
+SIDEBAR_MAX_WIDTH = 600
 # Narrower than a panel stretched to fill whatever header space is
 # left over - but same HEADER_ROW_HEIGHT as its header-row neighbors
 # (sensor card, bulk actions), not shorter: shrinking the height too
@@ -169,17 +170,24 @@ class MainWindow(QMainWindow):
         sidebar.setSpacing(16)
 
         self.spectrum_panel = SpectrumPanel(self.app.channels)
-        self.spectrum_panel.setFixedWidth(SIDEBAR_WIDTH)
-        self.spectrum_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        sidebar.addWidget(self.spectrum_panel, 1)
+        self.spectrum_panel.setMinimumWidth(SIDEBAR_WIDTH)
+        self.spectrum_panel.setMaximumWidth(SIDEBAR_MAX_WIDTH)
+        self.spectrum_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sidebar.addWidget(self.spectrum_panel, 3)
 
         self.logs_panel = LogsPanel("Logs", icon="list.png", min_width=SIDEBAR_WIDTH)
-        self.logs_panel.setFixedWidth(SIDEBAR_WIDTH)
-        self.logs_panel.setFixedHeight(150)
-        sidebar.addWidget(self.logs_panel, 0)
+        self.logs_panel.setMinimumWidth(SIDEBAR_WIDTH)
+        self.logs_panel.setMaximumWidth(SIDEBAR_MAX_WIDTH)
+        self.logs_panel.setMinimumHeight(150)
+        self.logs_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sidebar.addWidget(self.logs_panel, 2)
 
-        body_row.addLayout(sidebar, 0)
-        body_row.addWidget(self._build_channels_scroll(), 1)
+        # 1:3 split, roughly matching sdr_c's own sidebar/grid growth
+        # ratio (sidebar_width_for()'s 25% of extra width vs. the
+        # grid's 75%) - both grow together as the window widens instead
+        # of the grid alone stretching into a mostly-empty scroll area.
+        body_row.addLayout(sidebar, 1)
+        body_row.addWidget(self._build_channels_scroll(), 3)
 
         return body_row
 
@@ -268,7 +276,11 @@ class MainWindow(QMainWindow):
         self.grid = QGridLayout(grid_container)
         self.grid.setContentsMargins(8, 8, 8, 8)
         self.grid.setSpacing(8)
-        self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        # No blanket AlignLeft|AlignTop on the layout itself - that
+        # pins it to its own minimum content size and dumps ALL leftover
+        # space (a bigger window than the 16 cards strictly need) as one
+        # blank margin, instead of letting column/row stretch actually
+        # grow the cards into it (see _reflow_grid()).
         scroll.setWidget(grid_container)
         return scroll
 
@@ -380,13 +392,19 @@ class MainWindow(QMainWindow):
             return
         for index, address in enumerate(sorted(self._cards)):
             row, col = divmod(index, CHANNELS_PER_ROW)
-            self.grid.addWidget(self._cards[address], row, col, alignment=Qt.AlignLeft | Qt.AlignTop)
-        # No column stretch: with AlignLeft, a stretched column just
-        # leaves blank cell space to the right of each (narrower) card
-        # instead of actually widening it - stretching every column
-        # equal turns that into a big gutter between every card. Left
-        # unstretched, columns size to their own content and the cards
-        # pack together with just the grid's own spacing between them.
+            # No alignment override: a card's own Expanding size policy
+            # plus its maximumWidth/maximumHeight cap (ChannelCard.
+            # MAX_WIDTH/MAX_HEIGHT) is what makes it actually grow to
+            # fill a stretched column/row - forcing AlignLeft|AlignTop
+            # here would pin it back to its natural size and dump the
+            # stretched cell's extra space as blank margin beside it,
+            # the same "big gutter" bug this grid used to have, just
+            # spread across every cell instead of one lump on the right.
+            self.grid.addWidget(self._cards[address], row, col)
+        for col in range(CHANNELS_PER_ROW):
+            self.grid.setColumnStretch(col, 1)
+        for row in range((len(self._cards) + CHANNELS_PER_ROW - 1) // CHANNELS_PER_ROW):
+            self.grid.setRowStretch(row, 1)
 
     def closeEvent(self, event):
         self.app.shutdown()

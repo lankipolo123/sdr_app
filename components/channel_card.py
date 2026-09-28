@@ -41,13 +41,15 @@ def _signal_lock(widget):
 class ChannelCard(Card):
 
     MIN_WIDTH = 180
-    MAX_WIDTH = 240
+    MAX_WIDTH = 300
+    MAX_HEIGHT = 150
 
     def __init__(self, controller, state, safety, selection, parent=None):
         super().__init__(f"CH{state.display_number:02d}", icon="broadcast-tower.png")
         self.setMinimumWidth(self.MIN_WIDTH)
         self.setMaximumWidth(self.MAX_WIDTH)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.setMaximumHeight(self.MAX_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.layout().setContentsMargins(6, 5, 6, 5)
         self.body_layout.setSpacing(3)
         self.controller = controller

@@ -9,7 +9,7 @@ built-in default icon (`assets/icons/app_icon.png`).
 
 In dev, "next to the app" means this folder, at the repo root. In a
 packaged `--onedir` install it means `branding/` next to
-`TX Controller.exe` - the per-user install directory (see
+`Pseudo Random Noise Controller.exe` - the per-user install directory (see
 `installer.iss`'s `PrivilegesRequired=lowest`) is writable without
 elevation, so this works post-install too.
 

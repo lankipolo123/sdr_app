@@ -10,12 +10,12 @@ RS422 - a simplified, customer-facing rebuild of the original
 
 Two ways to get it:
 
-- **Installer** (recommended): run `TX Controller Setup.exe`
+- **Installer** (recommended): run `Pseudo Random Noise Controller Setup.exe`
   (built via `installer.iss` - see "Building it yourself" below) for
   a real install wizard with a Start Menu entry and uninstaller.
 - **Portable zip**: click the download badge above (or go to the repo's
-  [Releases](../../releases) page), download `TX Controller.zip`,
-  and extract it anywhere. Launch `TX Controller.exe` from inside
+  [Releases](../../releases) page), download `Pseudo Random Noise Controller.zip`,
+  and extract it anywhere. Launch `Pseudo Random Noise Controller.exe` from inside
   the extracted folder - no installer, no Start Menu entry, but
   nothing to install either.
 
@@ -25,7 +25,7 @@ code-signed, not a sign anything's wrong. Click "More info" then "Run
 anyway".
 
 No Python, no terminal, nothing else to install. Each release also
-includes `TX Controller.zip.sha256`, a checksum you can compare
+includes `Pseudo Random Noise Controller.zip.sha256`, a checksum you can compare
 against if you want to confirm your download matches exactly what was
 built.
 
@@ -128,9 +128,9 @@ memory at launch (only when frozen - `python main.py` from source
 runs the plain files directly, unaffected). `app_encrypted.pyz` is
 gitignored and regenerated on every build, not something to commit.
 
-Output lands in `dist/TX Controller/` - a folder build (`--onedir`,
+Output lands in `dist/Pseudo Random Noise Controller/` - a folder build (`--onedir`,
 so launch is fast - no self-extraction on every start like
-`--onefile` would need), with `TX Controller.exe`, its icon, and
+`--onefile` would need), with `Pseudo Random Noise Controller.exe`, its icon, and
 `assets/` all alongside each other.
 
 `build_exe.py` doesn't pass PyInstaller its options on the command
@@ -187,7 +187,7 @@ both of which only matter/take effect on Windows:
   something to set up for a local build.
 
 **After building with either of these on**, actually launch
-`dist/TX Controller/TX Controller.exe` and check the basics before
+`dist/Pseudo Random Noise Controller/Pseudo Random Noise Controller.exe` and check the basics before
 trusting the build: the frameless/translucent main window and splash
 screen render normally (no black/blank window - the main risk from
 the ANGLE/plugin pruning above, since this app uses
@@ -204,15 +204,16 @@ python build_exe.py
 iscc installer.iss
 ```
 
-Output lands in `installer_output/TX Controller Setup.exe`. Inno
+Output lands in `installer_output/Pseudo Random Noise Controller Setup.exe`. Inno
 Setup is Windows-only, so this step can't be run or verified from
 Linux/Mac.
 
 ### Releasing automatically
 
-`.github/workflows/release.yml` builds `TX Controller.exe` on a real
-Windows GitHub Actions runner and publishes it to a GitHub Release.
-Two ways to trigger it:
+`.github/workflows/release.yml` builds `Pseudo Random Noise Controller.exe` on a real
+Windows GitHub Actions runner, packages both the portable zip and the
+Inno Setup installer, and publishes both to a GitHub Release. Two ways
+to trigger it:
 
 - **Push a version tag:**
   ```bash
@@ -224,8 +225,6 @@ Two ways to trigger it:
   release Windows .exe" -> **Run workflow**, type the version
   (e.g. `v1.0.0`), and run it. Same build, same release, just
   triggered by a button instead of a tag push.
-The Inno Setup installer isn't part of this workflow yet - see Known
-open items below.
 
 ## Known open items
 
@@ -239,11 +238,10 @@ open items below.
 - **Channel ceiling.** `MAX_CHANNELS = 16` (`hooks/use_channels.py`)
   is a UI/practicality choice - the protocol itself supports up to
   `ADDR_MAX = 199`. Confirm 16 is still the right ceiling.
-- **Installer not in CI yet.** `installer.iss` is written but
-  untested on real Windows and not wired into the release workflow.
-  The reference `sdr_controller` project runs Inno Setup on its CI
-  runner via `choco install innosetup`, which is a viable path here
-  too once someone verifies the installer manually first.
+- **Installer untested on real Windows.** `installer.iss` is now
+  wired into the release workflow (via `choco install innosetup`),
+  but the resulting `Setup.exe` hasn't been manually verified on a
+  real Windows machine yet.
 - **Not code-signed.** Windows SmartScreen will flag the `.exe` as
   from an unknown publisher until a code-signing certificate is
   bought and wired into the build (see Install section above).

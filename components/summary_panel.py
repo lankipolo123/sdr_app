@@ -2,7 +2,7 @@ import math
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QFrame, QFileDialog, QWidget, QAbstractButton, QSizePolicy,
+    QFrame, QFileDialog, QWidget, QAbstractButton, QSizePolicy, QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QSize
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, QPainterPath, QLinearGradient, QIcon, QPixmap
@@ -52,6 +52,12 @@ def _cmd_icon(kind: str, color: QColor) -> QIcon:
         painter.drawArc(QRectF(cx - 6, cy - 6, 12, 12), 10 * 16, 340 * 16)
         painter.drawLine(QPointF(cx - 3, cy - 9), QPointF(cx + 2, cy - 6))
         painter.drawLine(QPointF(cx + 2, cy - 6), QPointF(cx - 2, cy - 3))
+    elif kind == "thermometer":
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QPointF(cx, cy + 5), 3, 3)
+        painter.drawLine(QPointF(cx, cy + 3), QPointF(cx, cy - 6))
+        painter.drawLine(QPointF(cx + 2, cy - 4), QPointF(cx + 4, cy - 4))
+        painter.drawLine(QPointF(cx + 2, cy - 1), QPointF(cx + 4, cy - 1))
 
     painter.end()
     return QIcon(pixmap)
@@ -255,7 +261,15 @@ class SummaryPanel(Card):
         reset_btn.setIcon(_cmd_icon("reset_arrow", QColor(theme_colors.ACCENT_BLUE)))
         reset_btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
         reset_btn.clicked.connect(self._on_reset_to_default)
-        grid.addWidget(reset_btn, 2, 0, 1, 2)
+        grid.addWidget(reset_btn, 2, 0)
+
+        highest_temps_btn = QPushButton("Highest Temps")
+        highest_temps_btn.setCursor(Qt.PointingHandCursor)
+        highest_temps_btn.setStyleSheet(_cmd_btn_style())
+        highest_temps_btn.setIcon(_cmd_icon("thermometer", QColor(theme_colors.ACCENT_BLUE)))
+        highest_temps_btn.setIconSize(QSize(CMD_ICON_SIZE, CMD_ICON_SIZE))
+        highest_temps_btn.clicked.connect(self._on_highest_temps_clicked)
+        grid.addWidget(highest_temps_btn, 2, 1)
 
         commands_col.addLayout(grid)
 
@@ -390,6 +404,20 @@ class SummaryPanel(Card):
         status = f"Config loaded: {applied} applied"
         status += f", {skipped} skipped (kill switch tripped)." if skipped else "."
         self.status_label.setText(status)
+
+    def _on_highest_temps_clicked(self):
+        from .logs_dialog import LogsDialog
+        from utils.sensor_log import read_highest_temp_rows
+
+        rows = read_highest_temp_rows(self.app.config)
+        if not rows:
+            QMessageBox.information(
+                self, "Highest Temp Log",
+                "No sensor log entries yet - it's written a few seconds after the first sensor reading.",
+            )
+            return
+        lines = [f"{timestamp}   {peak:.1f}C   BAY{bay + 1}" for timestamp, peak, bay in rows]
+        LogsDialog(self, lines, title="Highest Temp Log").exec()
 
 
 def _section_label(text: str) -> QLabel:

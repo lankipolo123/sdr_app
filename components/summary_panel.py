@@ -2,7 +2,7 @@ import math
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QFrame, QFileDialog, QWidget, QAbstractButton, QSizePolicy, QMessageBox,
+    QFrame, QDialog, QWidget, QAbstractButton, QSizePolicy, QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QSize
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, QPainterPath, QLinearGradient, QIcon, QPixmap
@@ -10,7 +10,6 @@ from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics, Q
 from .card import Card
 from styles import theme_colors
 from styles.thermal_color import vivid_thermal_color
-from utils.channel_store import load_channel_states, save_channel_states
 from state.level_map import LEVEL_TO_HEX
 
 READOUT_H = 72
@@ -367,21 +366,20 @@ class SummaryPanel(Card):
         self.status_label.setText(status)
 
     def _on_save_config_clicked(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Config", "channels.ini", "Config files (*.ini)"
-        )
-        if not path:
-            return
-        save_channel_states(self.app.channels.states, path)
-        self.status_label.setText("Config saved.")
+        from .config_manager_dialog import ConfigManagerDialog
+
+        dialog = ConfigManagerDialog(self, self.app, mode="save")
+        if dialog.exec() == QDialog.Accepted:
+            self.status_label.setText(f'Config saved as "{dialog.result_name}".')
 
     def _on_load_config_clicked(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Config", "", "Config files (*.ini)"
-        )
-        if not path:
+        from .config_manager_dialog import ConfigManagerDialog
+        from utils.config_slots import load_config_slot
+
+        dialog = ConfigManagerDialog(self, self.app, mode="load")
+        if dialog.exec() != QDialog.Accepted:
             return
-        saved_states = load_channel_states(path)
+        saved_states = load_config_slot(self.app.config, dialog.result_name)
         applied = 0
         skipped = 0
         for address, entry in saved_states.items():

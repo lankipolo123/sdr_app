@@ -2,7 +2,7 @@ import os
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QScrollArea, QSizePolicy, QPushButton, QFileDialog, QMessageBox
+    QScrollArea, QSizePolicy, QPushButton, QFileDialog, QMessageBox, QFrame
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
@@ -223,34 +223,46 @@ class MainWindow(QMainWindow):
     def _build_channels_scroll(self) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setObjectName("ChannelsScroll")
-        scroll.setStyleSheet(f"""
-            #ChannelsScroll {{ border: none; background: {theme_colors.PAGE_BG}; }}
-            #ChannelsScroll QScrollBar:vertical {{
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet(f"#ChannelsScroll {{ border: none; background: {theme_colors.PAGE_BG}; }}")
+        scroll.viewport().setStyleSheet("background: transparent;")
+        scroll.setWidgetResizable(True)
+        # Grid columns are already sized to fit the available width (see
+        # _reflow_grid()) - a horizontal scrollbar showing at all would
+        # mean cards overflowing sideways, never an intended state, so
+        # it's turned off outright rather than left "as needed".
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Styled directly on the scrollbar widget itself, not via a
+        # `#ChannelsScroll QScrollBar:vertical` descendant selector on
+        # the scroll area - that selector didn't reliably win against
+        # the app-wide stylesheet on every platform, leaving a plain
+        # unstyled native-looking bar rather than this thin rounded one
+        # (direct report, with a screenshot showing exactly that).
+        scroll.verticalScrollBar().setStyleSheet(f"""
+            QScrollBar:vertical {{
                 background: transparent;
                 width: 10px;
                 margin: 0px;
             }}
-            #ChannelsScroll QScrollBar::handle:vertical {{
+            QScrollBar::handle:vertical {{
                 background: {theme_colors.BORDER_SUBTLE};
                 border-radius: 5px;
                 min-height: 24px;
             }}
-            #ChannelsScroll QScrollBar::handle:vertical:hover {{
+            QScrollBar::handle:vertical:hover {{
                 background: {theme_colors.ACCENT_BLUE};
             }}
-            #ChannelsScroll QScrollBar::add-line:vertical,
-            #ChannelsScroll QScrollBar::sub-line:vertical {{
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
                 height: 0px;
                 background: transparent;
                 border: none;
             }}
-            #ChannelsScroll QScrollBar::add-page:vertical,
-            #ChannelsScroll QScrollBar::sub-page:vertical {{
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {{
                 background: transparent;
             }}
         """)
-        scroll.viewport().setStyleSheet("background: transparent;")
-        scroll.setWidgetResizable(True)
         self.channels_scroll = scroll
         grid_container = QWidget()
         self.grid = QGridLayout(grid_container)

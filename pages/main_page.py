@@ -27,7 +27,7 @@ from utils.app_paths import branding_icon_path, resource_path
 HEADER_ROW_HEIGHT = 150
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
-SIDEBAR_WIDTH = 420
+SIDEBAR_WIDTH = 460
 # Narrower than a panel stretched to fill whatever header space is
 # left over - but same HEADER_ROW_HEIGHT as its header-row neighbors
 # (sensor card, bulk actions), not shorter: shrinking the height too

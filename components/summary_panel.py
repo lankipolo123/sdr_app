@@ -13,7 +13,7 @@ from styles.thermal_color import vivid_thermal_color
 from state.level_map import LEVEL_TO_HEX
 
 READOUT_H = 72
-MODE_ICON_SIZE = 148
+MODE_ICON_SIZE = 96
 CMD_ICON_SIZE = 18
 
 
@@ -224,11 +224,11 @@ class SummaryPanel(Card):
 
         # ---- Commands ----
         commands_col = QVBoxLayout()
-        commands_col.setSpacing(6)
+        commands_col.setSpacing(4)
         commands_col.addWidget(_section_label("Commands"))
 
         grid = QGridLayout()
-        grid.setSpacing(6)
+        grid.setSpacing(4)
 
         shutdown_btn = _colored_btn("Emergency Shutdown", theme_colors.STATUS_ERROR, "hollow_circle")
         shutdown_btn.clicked.connect(self._on_emergency_shutdown)

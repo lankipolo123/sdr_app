@@ -8,6 +8,7 @@ from .reset_progress_overlay import ResetProgressOverlay
 from .logs_dialog import LogsDialog
 from .logs_panel import LogsPanel
 from .window_chrome import TitleBar, ResizableContainer
+from .connection_status_card import ConnectionStatusCard
 from .sensor_card import SensorCard
 from .sensor_heatmap import SensorHeatmap
 from .bulk_actions_bar import BulkActionsBar
@@ -28,6 +29,7 @@ __all__ = [
     "LogsPanel",
     "TitleBar",
     "ResizableContainer",
+    "ConnectionStatusCard",
     "SensorCard",
     "SensorHeatmap",
     "BulkActionsBar",

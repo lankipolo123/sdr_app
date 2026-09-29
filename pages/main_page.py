@@ -9,7 +9,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, ResetProgressOverlay, LogsPanel,
-    TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
+    TitleBar, ResizableContainer, ConnectionStatusCard, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
 from hooks.use_channels import MAX_CHANNELS
@@ -26,6 +26,7 @@ from utils.app_paths import branding_icon_path, resolve_app_icon_path
 # the way the C rewrite places them instead of everything stacked
 # full-width in one column.
 HEADER_ROW_HEIGHT = 150
+CONNECTION_MIN_WIDTH = 130
 SENSOR_MIN_WIDTH = 260
 BULK_ACTIONS_MIN_WIDTH = 320
 SIDEBAR_WIDTH = 480
@@ -189,6 +190,18 @@ class MainWindow(QMainWindow):
         header_row.setSpacing(16)
 
         header_row.addWidget(self._build_brand_mark(), 0, alignment=Qt.AlignVCenter)
+
+        # sdr_c places its RS422 Connected/Disconnected label + Connect
+        # button (IDC_CONN_STATUS_LBL/IDC_CONNECT_BTN) before the sensor
+        # block - this app never had an equivalent at all: every channel
+        # command already auto-connects silently per-send (see
+        # hooks/use_channel.py), so there was never any visible sign of
+        # whether real hardware was actually there. Direct request.
+        self.connection_status_card = ConnectionStatusCard(min_width=CONNECTION_MIN_WIDTH)
+        self.connection_status_card.setFixedHeight(HEADER_ROW_HEIGHT)
+        self.connection_status_card.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.connection_status_card.connect_requested.connect(self._probe_connection_status)
+        header_row.addWidget(self.connection_status_card, 0, alignment=Qt.AlignTop)
 
         self.sensor_card = SensorCard(min_width=SENSOR_MIN_WIDTH)
         self.sensor_card.setFixedHeight(HEADER_ROW_HEIGHT)
@@ -564,10 +577,9 @@ class MainWindow(QMainWindow):
         # Direct port of sdr_c's conn_on_connected_changed(): the first
         # time this session actually confirms a real hardware
         # connection, power every channel on with Pseudo Random Noise at
-        # High
-        # automatically - so opening the app and having it connect is
-        # enough on its own. Never fires blind: turn_output_on() has no
-        # confirmed-response path (see use_channel.py's
+        # High automatically - so opening the app and having it connect
+        # is enough on its own. Never fires blind: turn_output_on() has
+        # no confirmed-response path (see use_channel.py's
         # _on_response_timeout()) - it applies ON "unconfirmed" after a
         # timeout even when _find_and_open_connection() never found a
         # real port at all, the exact same as a real send that just got
@@ -578,15 +590,10 @@ class MainWindow(QMainWindow):
         #
         # Returns whether a real connection was actually found (and the
         # power-on fired) - start_launch_auto_power_on_retry() below
-        # uses this to know when to stop retrying.
-        from hooks.use_connection import ConnectionController
-
-        probe = ConnectionController()
-        baud = self.app.config.get("baud_rate", 115200)
-        parity = self.app.config.get("parity", "N")
-        data_bits = self.app.config.get("data_bits", 8)
-        hardware_present = probe.connect("DLL", baud, parity, data_bits)
-        probe.disconnect()
+        # uses this to know when to stop retrying. Also updates
+        # connection_status_card - the same probe result is what that
+        # card shows, not a separate/duplicate check.
+        hardware_present = self._probe_connection_status()
         if not hardware_present:
             return False
 
@@ -596,6 +603,31 @@ class MainWindow(QMainWindow):
             skip_if_tripped=True,
         )
         return True
+
+    def _probe_connection_status(self) -> bool:
+        # On-demand check for the RS422/channel bus (used by the launch
+        # auto-power-on flow above, its background retry, and
+        # ConnectionStatusCard's own manual Connect button) - a single
+        # connect-then-immediately-disconnect, not a kept-open
+        # connection (this app's channel commands each open their own
+        # temp connection per send anyway - see
+        # use_channel.py's _find_and_open_connection()). Deliberately
+        # NOT run on an automatic recurring timer - sdr_c's own 100ms
+        # poll only re-invokes AutoConnectSDR() while disconnected, and
+        # stops calling it once connected (repeatedly calling
+        # connect+disconnect on an already-healthy link risked
+        # colliding with real channel commands using the same physical
+        # port). Callers that need it kept fresh call it themselves.
+        from hooks.use_connection import ConnectionController
+
+        probe = ConnectionController()
+        baud = self.app.config.get("baud_rate", 115200)
+        parity = self.app.config.get("parity", "N")
+        data_bits = self.app.config.get("data_bits", 8)
+        connected = probe.connect("DLL", baud, parity, data_bits)
+        probe.disconnect()
+        self.connection_status_card.set_connected(connected)
+        return connected
 
     def start_launch_auto_power_on_retry(self):
         # Direct port of sdr_c's WM_TIMER background retry

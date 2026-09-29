@@ -3,12 +3,12 @@ from PySide6.QtGui import QBrush, QColor
 
 # 4 vertical bars ascending left to right, like a signal-strength/WiFi
 # indicator - fits this app's own RF/signal theme. This is the app's
-# real icon now (window/taskbar/splash - see utils/app_paths.py and
+# real icon now (window/taskbar/title bar/header mark - see
+# utils/app_paths.py's resolve_app_icon_path() and
 # assets/icons/app_icon.png/.ico, regenerated from this exact shape by
-# a one-off script, not hand-drawn separately), not just the header
-# brand mark's icon - both draw from this single shared function so
-# they can never drift apart. Direct request ("the vertical bars...
-# as an icon on helix defender", then "make [it] the main icon").
+# a one-off script, not hand-drawn separately). Direct request ("the
+# vertical bars... as an icon on helix defender", then "make [it] the
+# main icon").
 HEIGHT_FRACTIONS = (0.28, 0.52, 0.76, 1.0)
 
 

@@ -12,12 +12,11 @@ from components import (
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
-from components.signal_bars_icon import paint_signal_bars
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles import theme_colors
 from utils.time_format import format_uptime
-from utils.app_paths import branding_icon_path, resource_path
+from utils.app_paths import branding_icon_path, resolve_app_icon_path
 
 # Layout mirrors sdr_c's actual window (Connection/Sensors + heatmap +
 # Bulk Actions in one header band; a narrow sidebar - Activity Log there
@@ -45,17 +44,30 @@ BRANDING_ICON_SIZE = 256
 BRAND_ICON_SIZE = 108
 
 
-class _SignalBarsIcon(QWidget):
-    """Helix Defense header mark - see components/signal_bars_icon.py's
-    paint_signal_bars() for the actual shape (shared with the app's own
-    generated window/taskbar/splash icon, so both draw the identical
-    mark)."""
+class _BrandMarkIcon(QWidget):
+    """Helix Defense header mark. Shows the SAME resolved icon as the
+    window/taskbar/title bar (utils/app_paths.resolve_app_icon_path()) -
+    a Change Logo/Reset updates this too, not just the OS-level icon.
+    Not the heatmap's separate emblem watermark, which stays its own
+    fixed diamond+triangle design."""
+
+    def __init__(self):
+        super().__init__()
+        self._pixmap = QPixmap()
+
+    def refresh(self, icon_path: str | None):
+        self._pixmap = QPixmap(icon_path) if icon_path else QPixmap()
+        self.update()
 
     def paintEvent(self, event):
+        if self._pixmap.isNull():
+            return
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        paint_signal_bars(painter, 0, 0, self.width(), self.height(), theme_colors.ACCENT_BLUE)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        scaled = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        x = (self.width() - scaled.width()) // 2
+        y = (self.height() - scaled.height()) // 2
+        painter.drawPixmap(x, y, scaled)
 
 
 class MainWindow(QMainWindow):
@@ -204,18 +216,21 @@ class MainWindow(QMainWindow):
         # "HELIX DEFENSE" wordmark in a centered rect directly below
         # it), not the icon-beside-text lockup this had before.
         #
-        # Icon is _SignalBarsIcon (4 ascending vertical bars) - direct
-        # request ("the vertical bars... as an icon on helix defender"),
-        # replacing the app_icon.png/diamond+triangle mark tried before.
+        # Icon is _BrandMarkIcon (4 ascending vertical bars by default) -
+        # direct request ("the vertical bars... as an icon on helix
+        # defender"), replacing the app_icon.png/diamond+triangle mark
+        # tried before - and, like the window/taskbar/title bar icon,
+        # swaps to a custom logo via Change Logo/Reset.
         mark = QWidget()
         layout = QVBoxLayout(mark)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignHCenter)
 
-        icon = _SignalBarsIcon()
-        icon.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
-        layout.addWidget(icon, 0, alignment=Qt.AlignHCenter)
+        self.brand_mark_icon = _BrandMarkIcon()
+        self.brand_mark_icon.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
+        self.brand_mark_icon.refresh(resolve_app_icon_path())
+        layout.addWidget(self.brand_mark_icon, 0, alignment=Qt.AlignHCenter)
 
         text_label = QLabel("HELIX DEFENSE")
         text_label.setAlignment(Qt.AlignCenter)
@@ -260,7 +275,7 @@ class MainWindow(QMainWindow):
     def _build_title_bar_actions(self):
         change_logo_btn = QPushButton("Change Logo…")
         change_logo_btn.setCursor(Qt.PointingHandCursor)
-        change_logo_btn.setToolTip("Pick a custom window/taskbar icon - applies immediately, no restart")
+        change_logo_btn.setToolTip("Pick a custom app icon - applies everywhere immediately, no restart")
         change_logo_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {theme_colors.ACCENT_BLUE}; border: 1px solid {theme_colors.ACCENT_BLUE}; "
             f"border-radius: 4px; font-size: 10px; padding: 3px 8px; }}"
@@ -461,15 +476,14 @@ class MainWindow(QMainWindow):
 
     def _apply_app_icon(self):
         from PySide6.QtWidgets import QApplication
-        path = branding_icon_path()
-        if not os.path.exists(path):
-            path = resource_path("assets", "icons", "app_icon.png")
-        if not os.path.exists(path):
+        path = resolve_app_icon_path()
+        if path is None:
             return
         icon = QIcon(path)
         QApplication.instance().setWindowIcon(icon)
         self.setWindowIcon(icon)
         self.title_bar.set_icon(icon)
+        self.brand_mark_icon.refresh(path)
 
     def _on_raw_tx(self, address: int, data: bytes):
         encoded_value, _ = dll_decode_frame(data)

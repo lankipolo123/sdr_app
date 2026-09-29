@@ -6,7 +6,6 @@ from .confirm_dialog import ConfirmDialog
 from .close_confirm_dialog import CloseConfirmDialog
 from .logs_dialog import LogsDialog
 from .logs_panel import LogsPanel
-from .splash_screen import build_splash
 from .window_chrome import TitleBar, ResizableContainer
 from .sensor_card import SensorCard
 from .sensor_heatmap import SensorHeatmap
@@ -25,7 +24,6 @@ __all__ = [
     "CloseConfirmDialog",
     "LogsDialog",
     "LogsPanel",
-    "build_splash",
     "TitleBar",
     "ResizableContainer",
     "SensorCard",

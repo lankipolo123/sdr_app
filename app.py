@@ -27,5 +27,12 @@ def run():
 
     window = MainWindow(app_controller)
     window.show()
+    # Guarantees the app is always immediately ready on open, regardless
+    # of what happened before this launch (a crash, a killed process, a
+    # fresh install with no channels.ini) - closing already forces this
+    # same reset (see MainWindow.closeEvent()), but that only covers a
+    # clean close. Direct request: opening must do the same thing, not
+    # just trust whatever got persisted last time.
+    window._reset_all_channels_to_default("Activating channels…")
 
     sys.exit(qt_app.exec())

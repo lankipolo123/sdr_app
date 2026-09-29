@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
-    ChannelCard, ConfirmDialog, LogsPanel,
+    ChannelCard, ConfirmDialog, ResetProgressOverlay, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
@@ -533,7 +533,7 @@ class MainWindow(QMainWindow):
         # any close must never require the user to manually re-arm every
         # channel by hand first - that's too slow for what this app is
         # actually for.
-        self._reset_all_channels_to_default()
+        self._reset_all_channels_to_default("Turning channels on before closing…")
         self.app.shutdown()
         event.accept()
 
@@ -546,19 +546,33 @@ class MainWindow(QMainWindow):
         if confirmed:
             self.close()
 
-    def _reset_all_channels_to_default(self):
+    def _reset_all_channels_to_default(self, title: str):
         # Actually waits for every channel's ON send to settle (busy_changed
         # -> False) before returning - firing turn_output_on() and quitting
         # immediately would race AppController.shutdown()'s
         # channels.shutdown(), which cancels whatever's still pending.
+        # Called both here (close) and once from app.py right after
+        # startup (open) - ~16 channels serialized through one shared
+        # port scheduler takes a few real seconds, so ResetProgressOverlay
+        # gives live "N / 16" feedback for both instead of the window
+        # just looking frozen.
+        total = len(self.app.channels.controllers)
+        overlay = ResetProgressOverlay(self, title, total)
+        done = 0
         pending = set(self.app.channels.controllers.keys())
         loop = QEventLoop()
 
+        def _mark_done(address):
+            nonlocal done
+            pending.discard(address)
+            done += 1
+            overlay.set_progress(done)
+            if not pending:
+                loop.quit()
+
         def _on_busy_changed(address, busy):
             if not busy:
-                pending.discard(address)
-                if not pending:
-                    loop.quit()
+                _mark_done(address)
 
         connections = []
         for address, controller in self.app.channels.controllers.items():
@@ -568,7 +582,7 @@ class MainWindow(QMainWindow):
             if self.app.safety.allow_power_on(address):
                 controller.turn_output_on()
             else:
-                pending.discard(address)
+                _mark_done(address)
 
         if pending:
             loop.exec()
@@ -576,4 +590,5 @@ class MainWindow(QMainWindow):
         for controller, slot in connections:
             controller.busy_changed.disconnect(slot)
 
-        self.close()
+        overlay.hide()
+        overlay.deleteLater()

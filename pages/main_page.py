@@ -36,6 +36,7 @@ SIDEBAR_MAX_WIDTH = 680
 # the panel's smaller dimension) and made it look like an odd little
 # card rather than lining up with the row around it.
 HEATMAP_WIDTH = 340
+HEATMAP_MAX_WIDTH = 560
 HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4
@@ -185,11 +186,20 @@ class MainWindow(QMainWindow):
         # right instead of spread across the row - direct follow-up
         # request. Same panels sdr_c's own header has, just pushed to
         # one side so the left corner is free for branding.
+        #
+        # No addStretch() between the brand mark and this group - a
+        # blank spacer there just eats whatever room the window has,
+        # which at a wide window size reads as a big dead gap between
+        # the logo and everything else (direct report: "unnecessary
+        # space"). The heatmap itself takes the stretch instead
+        # (Expanding width, capped at HEATMAP_MAX_WIDTH) so that same
+        # leftover room actually grows a real panel - also the honest
+        # fix for "make the heatmap wider", since it now really does
+        # scale with the window instead of sitting at one fixed size.
         header_row = QHBoxLayout()
         header_row.setSpacing(16)
 
         header_row.addWidget(self._build_brand_mark(), 0, alignment=Qt.AlignVCenter)
-        header_row.addStretch(1)
 
         self.sensor_card = SensorCard(min_width=SENSOR_MIN_WIDTH)
         self.sensor_card.setFixedHeight(HEADER_ROW_HEIGHT)
@@ -200,8 +210,11 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self.sensor_card, 0, alignment=Qt.AlignTop)
 
         heatmap = SensorHeatmap(self.app.sensor)
-        heatmap.setFixedSize(HEATMAP_WIDTH, HEATMAP_HEIGHT)
-        header_row.addWidget(heatmap, 0, alignment=Qt.AlignTop)
+        heatmap.setMinimumSize(HEATMAP_WIDTH, HEATMAP_HEIGHT)
+        heatmap.setMaximumWidth(HEATMAP_MAX_WIDTH)
+        heatmap.setMaximumHeight(HEATMAP_HEIGHT)
+        heatmap.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header_row.addWidget(heatmap, 1, alignment=Qt.AlignTop)
 
         self.bulk_actions_bar = BulkActionsBar(self.app)
         self.bulk_actions_bar.setFixedHeight(HEADER_ROW_HEIGHT)

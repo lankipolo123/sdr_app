@@ -50,6 +50,7 @@ def main():
     from services.protocol import commands, constants as c
     from services.protocol.packet_parser import ParsedFrame
     from state.level_map import LEVEL_LABELS, LEVEL_TO_HEX
+    from state.channel_bands import CHANNEL_FREQ_MHZ, CHANNEL_BANDWIDTH_MHZ
 
     WORST_CASE_MS = RESPONSE_TIMEOUT_MS * RETRY_MAX_ATTEMPTS + 1500
     QUERY_WORST_CASE_MS = QUERY_TIMEOUT_MS * QUERY_MAX_ATTEMPTS + 1000
@@ -109,15 +110,17 @@ def main():
     )
     messages.clear()
 
-    print("\n=== Drag slider to Max (the actual first Signal Control - now with guessed defaults) ===")
+    print("\n=== Drag slider to Max (the actual first Signal Control - CH01's own real band) ===")
     card.slider.setValue(3)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS)
     expected_max_frame = commands.set_signal(
-        1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[3],
+        1, c.BLIND_DEFAULT_MODE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[3],
     )
     check("toggle still checked (L3 is not off)", card.toggle.isChecked())
-    check("the correct Signal Control frame (guessed defaults, L3 power) was sent", sdr.sent_frames and sdr.sent_frames[-1] == expected_max_frame)
-    check("guessed-defaults send logged a warning (no more UI banner for it)", any("GUESSED" in m for m in messages))
+    check(
+        "the Signal Control frame sent CH01's own real frequency/bandwidth, not a shared guessed default",
+        sdr.sent_frames and sdr.sent_frames[-1] == expected_max_frame,
+    )
     messages.clear()
 
     print("\n=== Drag slider to Off (slider -> toggle reactive sync) ===")
@@ -214,7 +217,7 @@ def main():
     window16._cards[0].slider.setValue(2)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_resume_signal = commands.set_signal(
-        1, c.BLIND_DEFAULT_MODE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[2],
+        1, c.BLIND_DEFAULT_MODE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[2],
     )
     check(
         "Output ON was sent before Signal Control, in that order",
@@ -226,6 +229,27 @@ def main():
 
     controller16.shutdown()
     window16.close()
+    pump(50)
+
+    print("\n=== resume_output() called twice rapidly before the first settles doesn't double-enqueue Output ON ===")
+    print("(matches sdr_c's g_last_queued_output dedup - gates on what was last QUEUED,")
+    print(" not on state.data.output_on, which hasn't changed yet at this point)")
+    dedup_sdr = FakeSDR(present=True)
+    install_fake_dll(dedup_sdr)
+    controller_dedup = make_app_controller()
+    ch_dedup = controller_dedup.channels.controllers[0]
+    ch_dedup.resume_output(LEVEL_TO_HEX[1])
+    ch_dedup.resume_output(LEVEL_TO_HEX[2])
+    pump(WORST_CASE_MS * 3)
+    on_count = sum(1 for f in dedup_sdr.sent_frames if f == commands.output_on(1))
+    check("exactly one Output ON was sent, not two, across both rapid resume_output() calls", on_count == 1)
+    expected_power1 = commands.set_signal(1, c.BLIND_DEFAULT_MODE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[1])
+    expected_power2 = commands.set_signal(1, c.BLIND_DEFAULT_MODE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[2])
+    check(
+        "both Set Power frames still went out (dedup only skips the redundant Output ON)",
+        expected_power1 in dedup_sdr.sent_frames and expected_power2 in dedup_sdr.sent_frames,
+    )
+    controller_dedup.shutdown()
     pump(50)
 
     print("\n=== Port scheduler: a second channel's command waits its turn, doesn't collide ===")
@@ -399,7 +423,7 @@ def main():
     window_mode._cards[0].slider.setValue(1)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_mode_frame = commands.set_signal(
-        1, c.MODE_WHITE_NOISE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
+        1, c.MODE_WHITE_NOISE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[1],
     )
     check(
         "turning a channel on sends Pseudo Random Noise, never a guessed mode",

@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from services.middleware import dll_log_text
 from services.protocol import commands, constants as c
 from services.protocol.packet_parser import ParsedFrame, describe_command
+from state.channel_bands import CHANNEL_FREQ_MHZ, CHANNEL_BANDWIDTH_MHZ
 from state.channel_state import ChannelState
 from state.level_map import LEVEL_TO_HEX, HEX_TO_LEVEL, LEVEL_LABELS_FULL
 from .use_connection import ConnectionController
@@ -41,6 +42,16 @@ class ChannelController(QObject):
         self._pending_attempt = 0
         self._queue: deque = deque()
         self._busy = False
+        # What ON/OFF state was last actually QUEUED, updated the
+        # instant a command is enqueued - not what's been confirmed or
+        # even applied yet (self.state.data.output_on only changes once
+        # a command SETTLES). resume_output() reads this to decide
+        # whether Output ON still needs enqueuing, matching sdr_c's
+        # g_last_queued_output (channels.c) rather than gating on
+        # applied state: two rapid resume-from-off calls before the
+        # first settles would otherwise both see output_on=False and
+        # each enqueue a duplicate Output ON + Set Power pair.
+        self._last_queued_output_on: bool | None = None
 
 
     @property
@@ -57,55 +68,49 @@ class ChannelController(QObject):
 
 
     def turn_output_on(self):
+        self._last_queued_output_on = True
         self._enqueue(commands.output_on(self.wire_address), "Output ON", {"output_on": True})
 
     def turn_output_off(self):
+        self._last_queued_output_on = False
         self._enqueue(commands.output_off(self.wire_address), "Output OFF", {"output_on": False})
 
     def set_power(self, power_code: int):
         d = self.state.data
-        blind = d.mode is None or d.frequency_mhz is None or d.bandwidth_mhz is None
+        # Frequency/bandwidth are this channel's own real, fixed hardware
+        # band (state/channel_bands.py) - always sent as-is, never a
+        # shared guessed default, matching sdr_c's channel_set_level()
+        # (always calls channel_freq_mhz(index)/channel_bandwidth_mhz(index),
+        # no blind-default fallback exists on that side at all). Sending
+        # a WRONG channel's frequency here would be a real RF correctness
+        # bug, not a display-only one - direct fix, this used to fall
+        # back to one shared BLIND_DEFAULT_FREQ_MHZ/BANDWIDTH_MHZ
+        # (2450MHz/100MHz) for every channel that hadn't yet received a
+        # confirmed status baseline, which in practice is every channel
+        # (there is no confirmed-response path today - see handle_frame()).
         mode = d.mode if d.mode is not None else c.BLIND_DEFAULT_MODE
-        freq = d.frequency_mhz if d.frequency_mhz is not None else c.BLIND_DEFAULT_FREQ_MHZ
-        bandwidth = d.bandwidth_mhz if d.bandwidth_mhz is not None else c.BLIND_DEFAULT_BANDWIDTH_MHZ
+        freq = CHANNEL_FREQ_MHZ[self.address]
+        bandwidth = CHANNEL_BANDWIDTH_MHZ[self.address]
 
         level_name = LEVEL_LABELS_FULL.get(HEX_TO_LEVEL.get(power_code), "unknown level")
 
-        if blind:
-            msg = (
-                f"{self.display_name}: no status baseline yet - sending level={level_name} "
-                f"with GUESSED mode/frequency/bandwidth defaults (blind, unconfirmed)."
-            )
-            if self.logger:
-                self.logger.warning(msg)
-            self.command_timeout.emit(msg)
-
         frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
-        label = f"Power -> {level_name}" + (" (blind, guessed mode/freq/bw)" if blind else "")
+        label = f"Power -> {level_name}"
         self._enqueue(frame, label, {"power_code": power_code})
 
     def set_mode(self, mode: int):
         d = self.state.data
-        blind = d.frequency_mhz is None or d.bandwidth_mhz is None or d.power_code is None
-        freq = d.frequency_mhz if d.frequency_mhz is not None else c.BLIND_DEFAULT_FREQ_MHZ
-        bandwidth = d.bandwidth_mhz if d.bandwidth_mhz is not None else c.BLIND_DEFAULT_BANDWIDTH_MHZ
+        freq = CHANNEL_FREQ_MHZ[self.address]
+        bandwidth = CHANNEL_BANDWIDTH_MHZ[self.address]
         power_code = d.power_code if d.power_code is not None else LEVEL_TO_HEX[d.last_level]
 
-        if blind:
-            msg = (
-                f"{self.display_name}: no status baseline yet - sending mode={c.MODE_NAMES[mode]} "
-                f"with GUESSED frequency/bandwidth/power defaults (blind, unconfirmed)."
-            )
-            if self.logger:
-                self.logger.warning(msg)
-            self.command_timeout.emit(msg)
-
         frame = commands.set_signal(self.wire_address, mode, freq, bandwidth, power_code)
-        label = f"Mode -> {c.MODE_NAMES[mode]}" + (" (blind, guessed freq/bw/power)" if blind else "")
+        label = f"Mode -> {c.MODE_NAMES[mode]}"
         self._enqueue(frame, label, {"mode": mode})
 
     def resume_output(self, power_code: int):
-        self.turn_output_on()
+        if self._last_queued_output_on is not True:
+            self.turn_output_on()
         self.set_power(power_code)
 
     def read_status(self):
@@ -268,13 +273,13 @@ class ChannelController(QObject):
             if self.logger:
                 self.logger.warning(msg)
             self.command_timeout.emit(msg)
-            self.state.update(**state_update)
+            self.state.update(unconfirmed=True, **state_update)
         else:
             msg = f"{self.display_name}: no response after {RETRY_MAX_ATTEMPTS} attempts for: {label}"
             if self.logger:
                 self.logger.warning(msg)
             self.command_timeout.emit(msg)
-            self.state.update()
+            self.state.update(unconfirmed=True)
         self._send_next()
 
     def handle_frame(self, frame: ParsedFrame):
@@ -307,7 +312,7 @@ class ChannelController(QObject):
         if is_ack:
             if frame.buf[0] == c.RESP_SUCCESS:
                 if pending_update:
-                    self.state.update(**pending_update)
+                    self.state.update(unconfirmed=False, **pending_update)
             else:
                 msg = f"{self.display_name}: device rejected {pending_label or 'command'}"
                 if self.logger:
@@ -322,6 +327,7 @@ class ChannelController(QObject):
             bw_code = frame.buf[4]
             pw_code = frame.buf[5]
             self.state.update(
+                unconfirmed=False,
                 output_on=bool(output),
                 mode=mode,
                 frequency_mhz=freq,

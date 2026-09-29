@@ -14,6 +14,18 @@ class ChannelStateData:
     bandwidth_mhz: int | None = None
     power_code: int | None = None
     last_level: int = DEFAULT_RESUME_LEVEL
+    # Tracked for parity with sdr_c's ChannelState.unconfirmed
+    # (channels.h) - true whenever the last applied state was optimistic
+    # (settled on timeout, never ACKed), false once/if a real confirmed
+    # response is ever received. Deliberately NOT surfaced as a UI badge:
+    # sdr_c's own source comment (main.c, the channel-card repaint path)
+    # explains why it tracks this without ever displaying it - "every
+    # blind send ends up unconfirmed by design... that flag isn't worth
+    # repeating" - since there's currently no confirmed-response path on
+    # either side, this would always read true for every channel and
+    # carry zero information as a badge, exactly the reasoning sdr_c
+    # itself gives for leaving it undisplayed.
+    unconfirmed: bool = False
     # Cumulative ON-time, in seconds, accumulated BEFORE the channel's
     # current ON period (or the whole total, while it's off) - an
     # odometer, not an app-uptime counter. See ChannelState's

@@ -13,7 +13,7 @@ from styles.thermal_color import vivid_thermal_color
 from state.level_map import LEVEL_TO_HEX
 
 READOUT_H = 72
-MODE_ICON_SIZE = 88
+MODE_ICON_SIZE = 148
 CMD_ICON_SIZE = 18
 
 
@@ -309,8 +309,7 @@ class SummaryPanel(Card):
         mode_col.addWidget(_section_label("Mode"))
         self.mode_icon = _ModeToggleIcon()
         self.mode_icon.clicked.connect(self._on_mode_toggle_clicked)
-        mode_col.addWidget(self.mode_icon, 0, alignment=Qt.AlignLeft)
-        mode_col.addStretch(1)
+        mode_col.addWidget(self.mode_icon, 1, alignment=Qt.AlignCenter)
         row.addLayout(mode_col, 1)
 
         self.body_layout.addLayout(row)

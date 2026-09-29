@@ -2,7 +2,7 @@ import os
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame
+    QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
 from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap
@@ -40,6 +40,7 @@ HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
+BRAND_ICON_SIZE = 56
 
 
 class MainWindow(QMainWindow):
@@ -139,12 +140,16 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
 
     def _build_header_row(self) -> QHBoxLayout:
-        # Connection/sensor status, the heatmap, and Bulk Actions all in
-        # one band - direct match for sdr_c's header (Connection &
-        # Settings + Ambient Temperature + heatmap + Bulk Actions all
-        # sitting side by side above the grid).
+        # Brand mark pinned to the left corner; Connection/sensor status,
+        # the heatmap, and Bulk Actions all grouped together on the
+        # right instead of spread across the row - direct follow-up
+        # request. Same panels sdr_c's own header has, just pushed to
+        # one side so the left corner is free for branding.
         header_row = QHBoxLayout()
         header_row.setSpacing(16)
+
+        header_row.addWidget(self._build_brand_mark(), 0, alignment=Qt.AlignTop)
+        header_row.addStretch(1)
 
         self.sensor_card = SensorCard(min_width=SENSOR_MIN_WIDTH)
         self.sensor_card.setFixedHeight(HEADER_ROW_HEIGHT)
@@ -157,7 +162,6 @@ class MainWindow(QMainWindow):
         heatmap = SensorHeatmap(self.app.sensor)
         heatmap.setFixedSize(HEATMAP_WIDTH, HEATMAP_HEIGHT)
         header_row.addWidget(heatmap, 0, alignment=Qt.AlignTop)
-        header_row.addStretch(1)
 
         self.bulk_actions_bar = BulkActionsBar(self.app)
         self.bulk_actions_bar.setFixedHeight(HEADER_ROW_HEIGHT)
@@ -166,6 +170,29 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self.bulk_actions_bar, 0, alignment=Qt.AlignTop)
 
         return header_row
+
+    def _build_brand_mark(self) -> QWidget:
+        mark = QWidget()
+        layout = QHBoxLayout(mark)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        icon_label = QLabel()
+        icon_path = resource_path("assets", "icons", "app_icon_64.png")
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path).scaled(
+                BRAND_ICON_SIZE, BRAND_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            icon_label.setPixmap(pixmap)
+        layout.addWidget(icon_label, 0, alignment=Qt.AlignVCenter)
+
+        text_label = QLabel("HELIX DEFENSE")
+        text_label.setStyleSheet(
+            f"color: {theme_colors.ACCENT_BLUE}; font-size: 18px; font-weight: 700; letter-spacing: 1px;"
+        )
+        layout.addWidget(text_label, 0, alignment=Qt.AlignVCenter)
+
+        return mark
 
     def _build_body_row(self) -> QHBoxLayout:
         # Narrow sidebar (Spectrum on top, Activity Log below) beside

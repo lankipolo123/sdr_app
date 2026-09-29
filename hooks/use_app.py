@@ -40,6 +40,12 @@ class AppController(QObject):
         self.sensor_log = SensorLogWriter(self.config)
         self.sensor.changed.connect(self._on_sensor_changed)
         self.selection = SelectionManager()
+        # Starts with every channel selected, matching the Bulk Actions
+        # combo's own new default ("Select All", not "Custom") - direct
+        # request. BulkActionsBar's _sync_row_select_combo() picks this
+        # up automatically (selected == every address -> "Select All"),
+        # no separate combo-index wiring needed here.
+        self.selection.select_all(self.channels.controllers.keys())
 
         self._uptime_base = self.config.get("total_uptime_seconds", 0) or 0
         self._session_start = time.monotonic()

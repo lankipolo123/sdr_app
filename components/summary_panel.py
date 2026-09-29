@@ -353,14 +353,17 @@ class SummaryPanel(Card):
     def _on_reset_to_default(self):
         # sdr_c's version also force-sets every channel's mode to
         # Pseudo Random Noise - a no-op here, since that's the only
-        # mode this app ever sends.
+        # mode this app ever sends. Power level is forced to High
+        # (LEVEL_TO_HEX[3]) - direct request: "default" means every
+        # channel armed at full power, not whatever level a channel
+        # happened to be left at.
         skipped = 0
         for address, controller in self.app.channels.controllers.items():
             if self.app.safety.allow_power_on(address):
-                controller.turn_output_on()
+                controller.resume_output(LEVEL_TO_HEX[3])
             else:
                 skipped += 1
-        status = "Reset to Default: every channel set to Pseudo Random Noise, ON"
+        status = "Reset to Default: every channel set to Pseudo Random Noise, ON, High"
         status += f" ({skipped} skipped - kill switch tripped)." if skipped else "."
         self.status_label.setText(status)
 

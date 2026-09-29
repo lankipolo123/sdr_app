@@ -14,6 +14,7 @@ from components import (
 )
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
+from state.level_map import LEVEL_TO_HEX
 from styles import theme_colors
 from utils.time_format import format_uptime
 from utils.app_paths import branding_icon_path, resolve_app_icon_path
@@ -548,11 +549,13 @@ class MainWindow(QMainWindow):
         # someone actually clicked is a real, deliberate request, exactly
         # like every other manual control here, and gets the same
         # optimistic-apply-after-timeout treatment they all get.
-        # Kill-switch-tripped channels skipped, matching Reset to
-        # Default's own convention for an ON action.
+        # Kill-switch-tripped channels skipped, power forced to High
+        # (LEVEL_TO_HEX[3]) - both match SummaryPanel's Reset to
+        # Default convention exactly, not just a bare Output ON at
+        # whatever level a channel happened to be left at.
         self._run_bulk_channel_action(
             "Turning channels on before closing…",
-            lambda controller: controller.turn_output_on(),
+            lambda controller: controller.resume_output(LEVEL_TO_HEX[3]),
             skip_if_tripped=True,
         )
         self.close()
@@ -560,7 +563,8 @@ class MainWindow(QMainWindow):
     def _try_launch_auto_power_on(self) -> bool:
         # Direct port of sdr_c's conn_on_connected_changed(): the first
         # time this session actually confirms a real hardware
-        # connection, power every channel on with Pseudo Random Noise
+        # connection, power every channel on with Pseudo Random Noise at
+        # High
         # automatically - so opening the app and having it connect is
         # enough on its own. Never fires blind: turn_output_on() has no
         # confirmed-response path (see use_channel.py's
@@ -588,7 +592,7 @@ class MainWindow(QMainWindow):
 
         self._run_bulk_channel_action(
             "Activating channels…",
-            lambda controller: controller.turn_output_on(),
+            lambda controller: controller.resume_output(LEVEL_TO_HEX[3]),
             skip_if_tripped=True,
         )
         return True

@@ -5,14 +5,13 @@ from PySide6.QtWidgets import (
     QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
 from PySide6.QtCore import Qt, QEventLoop
-from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtGui import QIcon, QPixmap
 
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
-from components.brand_mark import paint_mark
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles import theme_colors
@@ -43,19 +42,6 @@ HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
 BRAND_ICON_SIZE = 108
-
-
-class _BrandMark(QWidget):
-    """sdr_c's real header logo - see components/brand_mark.py's
-    paint_mark() for the actual vector geometry (shared with the
-    heatmap's faded watermark, so both draw the identical shape)."""
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        size = min(self.width(), self.height())
-        paint_mark(painter, self.width() / 2, self.height() / 2, size)
 
 
 class MainWindow(QMainWindow):
@@ -203,15 +189,30 @@ class MainWindow(QMainWindow):
         # layout (main.c draws the mark at a fixed point, then the
         # "HELIX DEFENSE" wordmark in a centered rect directly below
         # it), not the icon-beside-text lockup this had before.
+        #
+        # The icon itself is the app's own app_icon.png - the same
+        # file used for the window/taskbar icon and splash screen -
+        # not a separate vector redraw. Direct reversal: "make the
+        # icon we used on this app the same on the helix defender...
+        # it was the proper use". Kept as a plain image (no halo) since
+        # it's always shown at full opacity here; the heatmap's faded
+        # watermark still needs components/brand_mark.py's vector
+        # paint_mark() for its own low-opacity halo trick, unaffected
+        # by this.
         mark = QWidget()
         layout = QVBoxLayout(mark)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignHCenter)
 
-        logo = _BrandMark()
-        logo.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
-        layout.addWidget(logo, 0, alignment=Qt.AlignHCenter)
+        icon_label = QLabel()
+        icon_path = resource_path("assets", "icons", "app_icon.png")
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path).scaled(
+                BRAND_ICON_SIZE, BRAND_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            icon_label.setPixmap(pixmap)
+        layout.addWidget(icon_label, 0, alignment=Qt.AlignHCenter)
 
         text_label = QLabel("HELIX DEFENSE")
         text_label.setAlignment(Qt.AlignCenter)

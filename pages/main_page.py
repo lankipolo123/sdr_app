@@ -40,7 +40,7 @@ HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
-BRAND_ICON_SIZE = 64
+BRAND_ICON_SIZE = 108
 
 
 class _BrandMark(QWidget):
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         header_row = QHBoxLayout()
         header_row.setSpacing(16)
 
-        header_row.addWidget(self._build_brand_mark(), 0, alignment=Qt.AlignTop)
+        header_row.addWidget(self._build_brand_mark(), 0, alignment=Qt.AlignVCenter)
         header_row.addStretch(1)
 
         self.sensor_card = SensorCard(min_width=SENSOR_MIN_WIDTH)
@@ -219,7 +219,8 @@ class MainWindow(QMainWindow):
         mark = QWidget()
         layout = QVBoxLayout(mark)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignHCenter)
 
         logo = _BrandMark()
         logo.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
@@ -228,7 +229,7 @@ class MainWindow(QMainWindow):
         text_label = QLabel("HELIX DEFENSE")
         text_label.setAlignment(Qt.AlignCenter)
         text_label.setStyleSheet(
-            f"color: {theme_colors.TEXT_DARK}; font-size: 13px; font-weight: 800; letter-spacing: 2px;"
+            f"color: {theme_colors.TEXT_DARK}; font-size: 18px; font-weight: 900; letter-spacing: 3px;"
         )
         layout.addWidget(text_label, 0, alignment=Qt.AlignHCenter)
 

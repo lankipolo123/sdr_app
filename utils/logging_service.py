@@ -19,14 +19,3 @@ def setup_logger(log_folder: str = "logs", name: str = "sdr_controller") -> logg
         logger.addHandler(file_handler)
 
     return logger
-
-
-def clear_log(logger: logging.Logger):
-    for handler in logger.handlers:
-        if isinstance(handler, RotatingFileHandler):
-            handler.acquire()
-            try:
-                handler.stream.close()
-                handler.stream = open(handler.baseFilename, "w")
-            finally:
-                handler.release()

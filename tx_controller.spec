@@ -41,7 +41,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="TX Controller",
+    name="Pseudo Random Noise Controller",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -63,5 +63,5 @@ coll = COLLECT(
     strip=False,
     upx=bool(cfg.UPX_DIR),
     upx_exclude=cfg.UPX_EXCLUDE,
-    name="TX Controller",
+    name="Pseudo Random Noise Controller",
 )

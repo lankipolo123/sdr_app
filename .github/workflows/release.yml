@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           cd dist
-          7z a "TX Controller.zip" "TX Controller"
+          7z a "Pseudo Random Noise Controller.zip" "Pseudo Random Noise Controller"
 
       - name: Compute SHA256 checksum
         # Published alongside the zip so anyone can verify the
@@ -71,7 +71,18 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum "TX Controller.zip" > "TX Controller.zip.sha256"
+          sha256sum "Pseudo Random Noise Controller.zip" > "Pseudo Random Noise Controller.zip.sha256"
+
+      - name: Install Inno Setup
+        # Builds the real "Setup.exe" install wizard (installer.iss) on
+        # top of the --onedir build above - separate from the portable
+        # zip, not a replacement for it. choco ships Inno Setup on the
+        # windows-latest runner's PATH as `iscc`.
+        run: choco install innosetup -y
+
+      - name: Build installer
+        shell: cmd
+        run: iscc installer.iss
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -84,14 +95,20 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
           files: |
-            dist/TX Controller.zip
-            dist/TX Controller.zip.sha256
+            dist/Pseudo Random Noise Controller.zip
+            dist/Pseudo Random Noise Controller.zip.sha256
+            installer_output/Pseudo Random Noise Controller Setup.exe
           body: |
             **Windows SmartScreen note:** this build isn't code-signed
             (no paid certificate), so Windows will show an "Unknown
             Publisher" warning the first time you run it. That's
             expected, not a sign anything is wrong - click "More info"
             then "Run anyway". Verify the download against
-            `TX Controller.zip.sha256` if you want to confirm it
+            `Pseudo Random Noise Controller.zip.sha256` if you want to confirm it
             wasn't corrupted or altered, or build it yourself from
             source with `build_exe.py`.
+
+            **Two downloads:** `Pseudo Random Noise Controller Setup.exe`
+            is a real install wizard (Start Menu entry, uninstaller) -
+            use this unless you specifically want the portable zip
+            instead.

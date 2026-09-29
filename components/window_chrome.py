@@ -2,10 +2,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QToolBu
 from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QColor, QIcon, QGuiApplication, QRegion
 
-from styles.theme_colors import (
-    TEXT_MUTED, BORDER_SUBTLE, STATUS_ERROR_LIGHT,
-    NAVY, ACCENT_BLUE, TEXT_LIGHT, SURFACE,
-)
+from styles import theme_colors
 
 WINDOW_RADIUS = 8
 
@@ -24,9 +21,9 @@ class _CaptionButton(QToolButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.kind == "close_app":
-            color = TEXT_LIGHT if self.underMouse() else STATUS_ERROR_LIGHT
+            color = theme_colors.TEXT_LIGHT if self.underMouse() else theme_colors.STATUS_ERROR_LIGHT
         else:
-            color = TEXT_LIGHT if self.underMouse() else ACCENT_BLUE
+            color = theme_colors.TEXT_LIGHT if self.underMouse() else theme_colors.ACCENT_BLUE
         pen = QPen(QColor(color))
         pen.setWidthF(1.3)
         painter.setPen(pen)
@@ -68,8 +65,8 @@ class TitleBar(QWidget):
         self.setObjectName("TitleBar")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"#TitleBar {{ background: {NAVY}; "
-            f"border: 2px solid {ACCENT_BLUE}; "
+            f"#TitleBar {{ background: {theme_colors.NAVY}; "
+            f"border: 2px solid {theme_colors.ACCENT_BLUE}; "
             f"border-top-left-radius: {WINDOW_RADIUS}px; border-top-right-radius: {WINDOW_RADIUS}px; }}"
         )
 
@@ -82,16 +79,28 @@ class TitleBar(QWidget):
         layout.setContentsMargins(10, 0, 0, 0)
         layout.setSpacing(8)
 
+        self.icon_label = QLabel()
         if icon is not None and not icon.isNull():
-            icon_label = QLabel()
-            icon_label.setPixmap(icon.pixmap(16, 16))
-            layout.addWidget(icon_label)
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
+        layout.addWidget(self.icon_label)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"color: {ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
+        title_label.setStyleSheet(f"color: {theme_colors.ACCENT_BLUE}; font-size: 12px; font-weight: 600;")
         layout.addWidget(title_label)
 
         layout.addStretch()
+
+        # Extra action buttons (Force Trip, Change Logo) get inserted
+        # here, before the uptime label - see add_action_widget().
+        self._action_layout = QHBoxLayout()
+        self._action_layout.setSpacing(6)
+        layout.addLayout(self._action_layout)
+
+        # Live cumulative uptime readout - see AppController.uptime_changed
+        # (hooks/use_app.py) and MainWindow._on_uptime_changed.
+        self.uptime_label = QLabel("")
+        self.uptime_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(self.uptime_label)
 
         self.min_btn = _CaptionButton("minimize")
         self.max_btn = _CaptionButton("maximize")
@@ -106,6 +115,16 @@ class TitleBar(QWidget):
             layout.addWidget(btn)
 
         outer.addWidget(row, 1)
+
+    def set_uptime(self, text: str):
+        self.uptime_label.setText(text)
+
+    def set_icon(self, icon: QIcon):
+        if icon is not None and not icon.isNull():
+            self.icon_label.setPixmap(icon.pixmap(16, 16))
+
+    def add_action_widget(self, widget: QWidget):
+        self._action_layout.addWidget(widget)
 
     def _is_maximized(self) -> bool:
         return self._restore_geometry is not None
@@ -142,8 +161,8 @@ class ResizableContainer(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("ResizableContainer")
         self.setStyleSheet(
-            f"#ResizableContainer {{ background: {SURFACE}; border-radius: {WINDOW_RADIUS}px; "
-            f"border: 2px solid {ACCENT_BLUE}; }}"
+            f"#ResizableContainer {{ background: {theme_colors.PAGE_BG}; border-radius: {WINDOW_RADIUS}px; "
+            f"border: 2px solid {theme_colors.ACCENT_BLUE}; }}"
         )
 
     def resizeEvent(self, event):

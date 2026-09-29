@@ -45,6 +45,15 @@ def load_channel_states(path: str = CHANNEL_STORE_PATH) -> dict[int, dict]:
         if output_str in ("on", "off"):
             entry["output_on"] = output_str == "on"
 
+        uptime_str = parser.get(section, "uptimeseconds", fallback=None)
+        if uptime_str is not None:
+            try:
+                uptime_seconds = float(uptime_str)
+                if uptime_seconds >= 0:
+                    entry["uptime_seconds"] = uptime_seconds
+            except ValueError:
+                pass
+
         if entry:
             result[address] = entry
     return result
@@ -60,6 +69,7 @@ def save_channel_states(states: dict, path: str = CHANNEL_STORE_PATH):
             "mode": c.MODE_NAMES.get(d.mode, c.MODE_NAMES[c.BLIND_DEFAULT_MODE]),
             "power": LEVEL_LABELS[d.last_level],
             "output": "on" if d.output_on else "off",
+            "uptimeseconds": str(int(state.current_uptime_seconds())),
         }
 
     os.makedirs(os.path.dirname(path), exist_ok=True)

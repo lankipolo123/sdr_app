@@ -33,15 +33,15 @@ def main():
 
     app = QApplication.instance() or QApplication([])
     app.setStyle("Fusion")
-    from styles.theme_colors import light_palette, build_global_qss
-    app.setPalette(light_palette())
+    from styles.theme_colors import app_palette, build_global_qss
+    app.setPalette(app_palette())
     app.setStyleSheet(build_global_qss())
 
     from tests.fake_hardware import FakeSDR, install_fake_dll
 
     from utils.config_service import ConfigService
     from utils.logging_service import setup_logger
-    from hooks.use_channels import ChannelManager, MAX_CHANNELS, QUERY_TIMEOUT_MS, QUERY_MAX_ATTEMPTS
+    from hooks.use_channels import MAX_CHANNELS, QUERY_TIMEOUT_MS, QUERY_MAX_ATTEMPTS
     from hooks.use_channel import RESPONSE_TIMEOUT_MS, RETRY_MAX_ATTEMPTS
     from hooks.use_app import AppController
     from pages.main_page import MainWindow
@@ -59,11 +59,10 @@ def main():
 
     def make_app_controller(work_dir: str | None = None):
         work_dir = work_dir or tempfile.mkdtemp(prefix="sdr_dry_run_")
-        controller = AppController.__new__(AppController)
-        controller.config = ConfigService(path=os.path.join(work_dir, "config.json"))
-        controller.logger = setup_logger(os.path.join(work_dir, "logs"))
-        controller.channels = ChannelManager(controller.config, controller.logger)
-        return controller
+        return AppController(
+            config=ConfigService(path=os.path.join(work_dir, "config.json")),
+            logger=setup_logger(os.path.join(work_dir, "logs")),
+        )
 
     print("=== Run 1: every channel already live at launch, no discovery step ===")
     sdr = FakeSDR(present=True)
@@ -386,7 +385,7 @@ def main():
     window17.close()
     pump(50)
 
-    print("\n=== Modulation dropdown sends Signal Control and persists across restart ===")
+    print("\n=== Mode UI removed - every channel is fixed to Pseudo Random Noise ===")
     mode_sdr = FakeSDR(present=True)
     install_fake_dll(mode_sdr)
 
@@ -394,52 +393,46 @@ def main():
     controller_mode = make_app_controller(mode_work_dir)
     window_mode = MainWindow(controller_mode)
     window_mode.show()
-    check("mode dropdown starts on Pseudo Random Noise (the default)", window_mode._cards[0].mode_combo.currentIndex() == 0)
+    check("card has no mode_combo (dropdown fully removed)", not hasattr(window_mode._cards[0], "mode_combo"))
+    check("card has no mode_label either (redundant now the app itself is named for it)", not hasattr(window_mode._cards[0], "mode_label"))
 
-    window_mode._cards[0].mode_combo.setCurrentIndex(1)
-    pump(300)
-    check("picking a mode alone does NOT send - Set is required", not mode_sdr.sent_frames)
-    window_mode._cards[0].mode_set_btn.click()
-    pump(WORST_CASE_MS)
+    window_mode._cards[0].slider.setValue(1)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     expected_mode_frame = commands.set_signal(
-        1, c.MODE_LINEAR_SWEEP, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
+        1, c.MODE_WHITE_NOISE, c.BLIND_DEFAULT_FREQ_MHZ, c.BLIND_DEFAULT_BANDWIDTH_MHZ, LEVEL_TO_HEX[1],
     )
-    check("Set actually sent the Linear Sweep Signal Control frame", mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame)
-    check("card's dropdown still shows Linear Sweep selected", window_mode._cards[0].mode_combo.currentIndex() == 1)
-
-    window_mode._cards[0].mode_combo.showPopup()
-    pump(50)
-    popup = QApplication.activePopupWidget()
-    check("mode dropdown's popup actually opened", popup is not None)
-    if popup is not None:
-        popup.close()
+    check(
+        "turning a channel on sends Pseudo Random Noise, never a guessed mode",
+        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame,
+    )
 
     controller_mode.shutdown()
     window_mode.close()
     pump(50)
 
-    mode_saved = configparser.ConfigParser()
-    mode_saved.read(os.path.join(mode_work_dir, "channels.ini"))
-    check(
-        "mode persisted to channels.ini as a human-readable name",
-        mode_saved.get("CH01", "mode", fallback=None) == "Linear Sweep",
-    )
+    # Simulate a channels.ini left over from before the Mode UI was
+    # removed - a real file a user could still have on disk, carrying a
+    # "mode" this app can no longer produce on its own. The fix under
+    # test: that stale value must never come back to life on relaunch.
+    stale_ini = configparser.ConfigParser()
+    stale_ini.read(os.path.join(mode_work_dir, "channels.ini"))
+    stale_ini.set("CH01", "mode", "Linear Sweep")
+    with open(os.path.join(mode_work_dir, "channels.ini"), "w") as f:
+        stale_ini.write(f)
 
-    print("\n=== Modulation mode restored on relaunch, still no auto-send ===")
+    print("\n=== Stale persisted mode is never restored (no mode-carryover) ===")
     controller_mode2 = make_app_controller(mode_work_dir)
-    mode_messages2 = []
-    controller_mode2.channels.command_timeout.connect(lambda msg: mode_messages2.append(msg))
     window_mode2 = MainWindow(controller_mode2)
     window_mode2.show()
     pump(100)
+
+    window_mode2._cards[0].slider.setValue(1)
+    pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
     check(
-        "dropdown shows the restored mode immediately, before any interaction",
-        window_mode2._cards[0].mode_combo.currentIndex() == 1,
+        "sending after restore still uses Pseudo Random Noise, not the stale Linear Sweep",
+        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame,
     )
-    check(
-        "nothing sent automatically just from restoring - matches the app's no-auto-anything-on-launch design",
-        not mode_messages2,
-    )
+
     controller_mode2.shutdown()
     window_mode2.close()
     pump(50)

@@ -53,12 +53,18 @@ class ChannelManager(QObject):
     def _make_state(self, address: int, saved: dict | None) -> ChannelState:
         state = ChannelState(address)
         if saved:
-            if "mode" in saved:
-                state.data.mode = saved["mode"]
+            # "mode" is intentionally never restored from persistence -
+            # every channel is Pseudo Random Noise only now, and honoring
+            # a stale value from an older channels.ini would silently
+            # bake a different mode into set_power()'s Signal Control
+            # frames again.
             if "last_level" in saved:
                 state.data.last_level = saved["last_level"]
             if "output_on" in saved:
                 state.data.output_on = saved["output_on"]
+            if "uptime_seconds" in saved:
+                state.data.uptime_base_seconds = saved["uptime_seconds"]
+        state.init_uptime_tracking()
         return state
 
     def get_controller(self, address: int) -> ChannelController:

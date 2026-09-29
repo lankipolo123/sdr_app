@@ -134,17 +134,27 @@ class BulkActionsBar(QFrame):
         # port of main.c's bulk_set_rowselect_combo() callers, which
         # exist for the same reason: nothing else kept the combo in
         # sync, so it kept showing a stale preset name.
-        total = len(self.app.channels.controllers)
-        selected = self.app.selection.selected
-        index = CUSTOM_INDEX
-        for row in range(4):
-            row_set = set(a for a in range(row * ROW_SIZE, (row + 1) * ROW_SIZE) if a < total)
-            if selected == row_set:
-                index = row
-                break
+        #
+        # custom_mode is read here, never written - it's real state set
+        # at the point of each action (SelectionManager's toggle()/
+        # select_all()/clear()/set_custom_mode()), not re-derived from
+        # comparing the current set to every preset. Re-deriving it here
+        # used to silently snap an explicit "Custom" pick straight back
+        # to "Select All" the instant the selection still happened to
+        # equal every channel (which it always does right after
+        # startup) - this only ever moves the WIDGET to match already-
+        # known state, it doesn't decide what that state is.
+        if self.app.selection.custom_mode:
+            index = CUSTOM_INDEX
         else:
-            if selected == set(range(total)):
-                index = 4
+            total = len(self.app.channels.controllers)
+            selected = self.app.selection.selected
+            index = 4 if selected == set(range(total)) else CUSTOM_INDEX
+            for row in range(4):
+                row_set = set(a for a in range(row * ROW_SIZE, (row + 1) * ROW_SIZE) if a < total)
+                if selected == row_set:
+                    index = row
+                    break
         if self.row_select_combo.currentIndex() != index:
             self.row_select_combo.blockSignals(True)
             self.row_select_combo.setCurrentIndex(index)
@@ -157,10 +167,14 @@ class BulkActionsBar(QFrame):
             self.app.selection.select_all(a for a in range(lo, hi) if a < total)
         elif index == 4:
             self.app.selection.select_all(range(total))
-        # index == CUSTOM_INDEX ("Custom") is a deliberate no-op, same
-        # as main.c's own handling - it's reached either by picking it
-        # directly (does nothing) or automatically by _sync_row_select_
-        # combo() above when the selection doesn't match any preset.
+        else:
+            # Picking "Custom" directly (not just landing on it because
+            # the selection stopped matching a preset) leaves the
+            # selection itself untouched, same as main.c's own handling -
+            # but it still needs to reveal every card's checkbox, which
+            # select_all()'s selection.changed emit above would have done
+            # for the other branches.
+            self.app.selection.set_custom_mode(True)
 
     def _on_select_all(self):
         self.app.selection.select_all(range(len(self.app.channels.controllers)))

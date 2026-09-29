@@ -68,7 +68,17 @@ class ChannelCard(Card):
         self.select_checkbox = QCheckBox()
         self.select_checkbox.setStyleSheet(checkbox_style())
         self.select_checkbox.setToolTip(f"Select {self.controller.display_name} for bulk actions")
+        # Set BEFORE connecting toggled - selection now starts with every
+        # channel already selected (see AppController), so this has to
+        # prime the checkbox's own checked state from that, and doing it
+        # after connecting would fire toggled -> selection.toggle(),
+        # which FLIPS rather than sets and would immediately deselect
+        # this channel.
+        self.select_checkbox.setChecked(self.selection.is_selected(self.address))
         self.select_checkbox.toggled.connect(lambda: self.selection.toggle(self.address))
+        # Only shown in Custom mode - direct request, see SelectionManager's
+        # own comment on custom_mode for why.
+        self.select_checkbox.setVisible(self.selection.custom_mode)
         self.header_layout.insertWidget(0, self.select_checkbox)
         self.selection.changed.connect(self._on_selection_changed)
 
@@ -282,3 +292,4 @@ class ChannelCard(Card):
         if self.select_checkbox.isChecked() != is_selected:
             with _signal_lock(self.select_checkbox):
                 self.select_checkbox.setChecked(is_selected)
+        self.select_checkbox.setVisible(self.selection.custom_mode)

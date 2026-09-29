@@ -144,6 +144,8 @@ class MainWindow(QMainWindow):
     def _on_theme_toggle_requested(self):
         from PySide6.QtWidgets import QApplication
         theme_colors.set_light_mode(not theme_colors.is_light_mode())
+        self.app.config.set("light_mode", theme_colors.is_light_mode())
+        self.app.config.save()
         qt_app = QApplication.instance()
         qt_app.setPalette(theme_colors.app_palette())
         qt_app.setStyleSheet(theme_colors.build_global_qss())

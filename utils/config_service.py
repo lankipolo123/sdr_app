@@ -17,6 +17,10 @@ DEFAULT_CONFIG = {
     # humidity sensors (hooks/use_sensor.py) - never auto-connected on
     # startup, just pre-selected in the port list.
     "sensor_port": None,
+    # Light/dark theme toggle (styles/theme_colors.py's set_light_mode())
+    # - otherwise pure in-memory state that silently reverted to dark on
+    # every restart no matter what the user last chose.
+    "light_mode": False,
 }
 
 CONFIG_PATH = os.path.join(user_data_dir(), "config", "config.json")

@@ -1,3 +1,4 @@
+import configparser
 import os
 
 from .channel_store import load_channel_states, save_channel_states
@@ -25,7 +26,7 @@ def list_config_slots(config_service) -> list[str]:
     return sorted(names, key=str.lower)
 
 
-def save_config_slot(config_service, name: str, states: dict) -> bool:
+def save_config_slot(config_service, name: str, states: dict, location: str = "") -> bool:
     """Writes `states` (AppController.channels.states - real
     ChannelState objects, same shape save_channel_states() already
     expects) to the named slot, ON channels only - a config is "what
@@ -35,18 +36,38 @@ def save_config_slot(config_service, name: str, states: dict) -> bool:
     never needs to be something a saved config asserts. Returns False
     without writing if this would create a slot beyond
     MAX_CONFIG_SLOTS - overwriting an existing slot is always allowed
-    regardless of the cap."""
+    regardless of the cap.
+
+    `location` is an optional free-text tag (e.g. "Bay 1", "Rack A")
+    describing where this config applies - direct request, stored in
+    its own [Meta] section alongside the per-channel [CHNN] sections
+    save_channel_states() writes, so it travels with the slot without
+    changing that shared function's own format (also used for the
+    app's internal channels.ini, which has no use for a location tag)."""
     existing = list_config_slots(config_service)
     if name not in existing and len(existing) >= MAX_CONFIG_SLOTS:
         return False
     on_states = {address: state for address, state in states.items() if state.data.output_on}
     os.makedirs(config_slots_dir(config_service), exist_ok=True)
-    save_channel_states(on_states, slot_path(config_service, name))
+    path = slot_path(config_service, name)
+    save_channel_states(on_states, path)
+    if location:
+        parser = configparser.ConfigParser()
+        parser.read(path)
+        parser["Meta"] = {"location": location}
+        with open(path, "w") as f:
+            parser.write(f)
     return True
 
 
 def load_config_slot(config_service, name: str) -> dict:
     return load_channel_states(slot_path(config_service, name))
+
+
+def load_config_location(config_service, name: str) -> str:
+    parser = configparser.ConfigParser()
+    parser.read(slot_path(config_service, name))
+    return parser.get("Meta", "location", fallback="")
 
 
 def delete_config_slot(config_service, name: str) -> bool:

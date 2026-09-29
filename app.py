@@ -31,7 +31,12 @@ def run():
     # hardware connection - never a blind assumption - is what powers
     # every channel on automatically. See
     # MainWindow._try_launch_auto_power_on()'s own comment for why this
-    # can't just call turn_output_on() unconditionally.
-    window._try_launch_auto_power_on()
+    # can't just call turn_output_on() unconditionally. If that first
+    # attempt doesn't find hardware right away (a real USB-enumeration
+    # race, or it's just not plugged in yet), the background retry
+    # keeps trying every 5s until it connects - see
+    # start_launch_auto_power_on_retry()'s own comment.
+    if not window._try_launch_auto_power_on():
+        window.start_launch_auto_power_on_retry()
 
     sys.exit(qt_app.exec())

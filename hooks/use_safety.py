@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, Signal
 # dips back under the line - that would let it cycle on/off right at
 # the boundary, and would make the safety trivially self-defeating
 # (turn a channel back on, it trips again next reading, forever).
-KILL_SWITCH_THRESHOLD_C = 60.0
+KILL_SWITCH_THRESHOLD_C = 40.0
 
 
 class SafetyController(QObject):

@@ -1,20 +1,26 @@
-"""Continuous 4-stop cool-to-hot gradient (blue -> orange -> darker
-orange -> red), direct port of the C rewrite's vivid_thermal_color().
-A discrete band function is the wrong tool for the heatmap: 4 real bay
-readings a couple degrees apart (the normal case) usually land in the
-same band, so all 4 corners would get an identical color and the "scan"
-would collapse into one flat fill. t is 0..1 (clamped), not an absolute
-temperature - the heatmap auto-scales to the current spread of the live
-readings (see components/sensor_heatmap.py's heatmap_scale()) so even a
-1C difference between bays stays visibly distinct instead of vanishing
-into one band.
+"""Continuous 5-stop cool-to-hot gradient (green -> yellow -> orange ->
+darker orange -> red), direct port of the C rewrite's real
+vivid_thermal_color() (main.c) - fixed to actually match it: this used
+to be a different, made-up 4-stop blue-start palette that agreed with
+neither sdr_c's real colors nor this app's own LEGEND_STOPS
+(components/sensor_heatmap.py), which already matched sdr_c - so the
+heatmap's legend bar and the blobs it's meant to describe were
+disagreeing with each other. A discrete band function is the wrong tool
+for the heatmap: 4 real bay readings a couple degrees apart (the normal
+case) usually land in the same band, so all 4 corners would get an
+identical color and the "scan" would collapse into one flat fill. t is
+0..1 (clamped), not an absolute temperature - the heatmap auto-scales
+to the current spread of the live readings (see
+components/sensor_heatmap.py's heatmap_scale()) so even a 1C difference
+between bays stays visibly distinct instead of vanishing into one band.
 """
 
 _STOPS = [
-    (58, 133, 224),
+    (70, 170, 90),
+    (210, 190, 60),
     (224, 146, 34),
-    (196, 110, 24),
-    (224, 90, 90),
+    (196, 90, 24),
+    (214, 64, 56),
 ]
 
 

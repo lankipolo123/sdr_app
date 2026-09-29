@@ -450,11 +450,21 @@ def main():
     window_mode2.show()
     pump(100)
 
-    window_mode2._cards[0].slider.setValue(1)
+    # Every close now resets every channel to default (ON) first - see
+    # MainWindow.closeEvent()/_reset_all_channels_to_default() - so CH01
+    # is already ON/level 1 the moment this window opens, before any
+    # interaction. Level 2 (not 1) below so the slider move is a real
+    # change that actually sends a frame, not a same-value no-op Qt
+    # silently drops.
+    check("channel resumes ON after any close, not OFF", window_mode2._cards[0].toggle.isChecked())
+    window_mode2._cards[0].slider.setValue(2)
     pump(SLIDER_SETTLE_MS + WORST_CASE_MS * 2 + 300)
+    expected_mode_frame2 = commands.set_signal(
+        1, c.MODE_WHITE_NOISE, CHANNEL_FREQ_MHZ[0], CHANNEL_BANDWIDTH_MHZ[0], LEVEL_TO_HEX[2],
+    )
     check(
         "sending after restore still uses Pseudo Random Noise, not the stale Linear Sweep",
-        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame,
+        mode_sdr.sent_frames and mode_sdr.sent_frames[-1] == expected_mode_frame2,
     )
 
     controller_mode2.shutdown()

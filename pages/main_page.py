@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
-    ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
+    ChannelCard, ConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
@@ -524,21 +524,31 @@ class MainWindow(QMainWindow):
             self.grid.setRowStretch(row, 1)
 
     def closeEvent(self, event):
+        # Every close - the title bar's confirmed close below, Alt+F4, a
+        # programmatic close, any of them - resets every channel to
+        # Reset to Default first (every channel ON, Pseudo Random Noise,
+        # same as SummaryPanel._on_reset_to_default(), kill-switch-tripped
+        # channels skipped same as that button) before the app actually
+        # goes away. Direct, explicit request: reopening the app after
+        # any close must never require the user to manually re-arm every
+        # channel by hand first - that's too slow for what this app is
+        # actually for.
+        self._reset_all_channels_to_default()
         self.app.shutdown()
         event.accept()
 
     def _on_close_app_clicked(self):
-        choice = CloseConfirmDialog.ask(self)
-        if choice is None:
-            return
-        if choice == "turn_off":
-            self._turn_off_all_and_close()
-        else:
+        confirmed = ConfirmDialog.ask(
+            self, "Close the app?",
+            "Every channel will be reset to default (ON, Pseudo Random Noise) before the app closes.",
+            confirm_text="Close",
+        )
+        if confirmed:
             self.close()
 
-    def _turn_off_all_and_close(self):
-        # Actually waits for every channel's OFF send to settle (busy_changed
-        # -> False) before closing - firing turn_output_off() and quitting
+    def _reset_all_channels_to_default(self):
+        # Actually waits for every channel's ON send to settle (busy_changed
+        # -> False) before returning - firing turn_output_on() and quitting
         # immediately would race AppController.shutdown()'s
         # channels.shutdown(), which cancels whatever's still pending.
         pending = set(self.app.channels.controllers.keys())
@@ -555,7 +565,10 @@ class MainWindow(QMainWindow):
             slot = lambda busy, addr=address: _on_busy_changed(addr, busy)
             controller.busy_changed.connect(slot)
             connections.append((controller, slot))
-            controller.turn_output_off()
+            if self.app.safety.allow_power_on(address):
+                controller.turn_output_on()
+            else:
+                pending.discard(address)
 
         if pending:
             loop.exec()

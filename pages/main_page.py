@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QEventLoop
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
-    ChannelCard, ConfirmDialog, ResetProgressOverlay, LogsPanel,
+    ChannelCard, ConfirmDialog, CloseConfirmDialog, ResetProgressOverlay, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
@@ -524,38 +524,71 @@ class MainWindow(QMainWindow):
             self.grid.setRowStretch(row, 1)
 
     def closeEvent(self, event):
-        # Every close - the title bar's confirmed close below, Alt+F4, a
-        # programmatic close, any of them - resets every channel to
-        # Reset to Default first (every channel ON, Pseudo Random Noise,
-        # same as SummaryPanel._on_reset_to_default(), kill-switch-tripped
-        # channels skipped same as that button) before the app actually
-        # goes away. Direct, explicit request: reopening the app after
-        # any close must never require the user to manually re-arm every
-        # channel by hand first - that's too slow for what this app is
-        # actually for.
-        self._reset_all_channels_to_default("Turning channels on before closing…")
         self.app.shutdown()
         event.accept()
 
     def _on_close_app_clicked(self):
-        confirmed = ConfirmDialog.ask(
-            self, "Close the app?",
-            "Every channel will be reset to default (ON, Pseudo Random Noise) before the app closes.",
-            confirm_text="Close",
-        )
-        if confirmed:
+        choice = CloseConfirmDialog.ask(self)
+        if choice is None:
+            return
+        if choice == "turn_off":
+            self._turn_off_all_and_close()
+        else:
             self.close()
 
-    def _reset_all_channels_to_default(self, title: str):
-        # Actually waits for every channel's ON send to settle (busy_changed
-        # -> False) before returning - firing turn_output_on() and quitting
+    def _turn_off_all_and_close(self):
+        # Direct port of sdr_c's on_app_close_shutdown(): turns every
+        # channel off for real, kill-switch-tripped channels included -
+        # OFF is never unsafe, unlike an ON action (see
+        # _try_launch_auto_power_on()'s own kill-switch check below).
+        self._run_bulk_channel_action(
+            "Turning channels off before closing…",
+            lambda controller: controller.turn_output_off(),
+        )
+        self.close()
+
+    def _try_launch_auto_power_on(self):
+        # Direct port of sdr_c's conn_on_connected_changed(): the first
+        # time this session actually confirms a real hardware
+        # connection, power every channel on with Pseudo Random Noise
+        # automatically - so opening the app and having it connect is
+        # enough on its own. Never fires blind: turn_output_on() has no
+        # confirmed-response path (see use_channel.py's
+        # _on_response_timeout()) - it applies ON "unconfirmed" after a
+        # timeout even when _find_and_open_connection() never found a
+        # real port at all, the exact same as a real send that just got
+        # no reply. Calling it unconditionally would therefore show
+        # every channel ON with zero hardware attached - probing for a
+        # real connection FIRST and skipping entirely when none exists
+        # is the fix. Unlike sdr_c's own background retry (which also
+        # catches a connection that succeeds a few seconds late), this
+        # only probes once at launch - if nothing answers, channels
+        # just start off, same as a fresh install always has.
+        from hooks.use_connection import ConnectionController
+
+        probe = ConnectionController()
+        baud = self.app.config.get("baud_rate", 115200)
+        parity = self.app.config.get("parity", "N")
+        data_bits = self.app.config.get("data_bits", 8)
+        hardware_present = probe.connect("DLL", baud, parity, data_bits)
+        probe.disconnect()
+        if not hardware_present:
+            return
+
+        self._run_bulk_channel_action(
+            "Activating channels…",
+            lambda controller: controller.turn_output_on(),
+            skip_if_tripped=True,
+        )
+
+    def _run_bulk_channel_action(self, title: str, action, skip_if_tripped: bool = False):
+        # Waits for every channel's send to settle (busy_changed ->
+        # False) before returning - firing the action and quitting
         # immediately would race AppController.shutdown()'s
         # channels.shutdown(), which cancels whatever's still pending.
-        # Called both here (close) and once from app.py right after
-        # startup (open) - ~16 channels serialized through one shared
-        # port scheduler takes a few real seconds, so ResetProgressOverlay
-        # gives live "N / 16" feedback for both instead of the window
-        # just looking frozen.
+        # ~16 channels serialized through one shared port scheduler
+        # takes a few real seconds, so ResetProgressOverlay gives live
+        # "N / 16" feedback instead of the window just looking frozen.
         total = len(self.app.channels.controllers)
         overlay = ResetProgressOverlay(self, title, total)
         done = 0
@@ -579,10 +612,10 @@ class MainWindow(QMainWindow):
             slot = lambda busy, addr=address: _on_busy_changed(addr, busy)
             controller.busy_changed.connect(slot)
             connections.append((controller, slot))
-            if self.app.safety.allow_power_on(address):
-                controller.turn_output_on()
-            else:
+            if skip_if_tripped and not self.app.safety.allow_power_on(address):
                 _mark_done(address)
+            else:
+                action(controller)
 
         if pending:
             loop.exec()

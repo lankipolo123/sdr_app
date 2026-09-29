@@ -1,12 +1,10 @@
-import os
-
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QRectF, QPointF
-from PySide6.QtGui import QPainter, QColor, QRadialGradient, QLinearGradient, QBrush, QPen, QPixmap, QFont, QPainterPath
+from PySide6.QtGui import QPainter, QColor, QRadialGradient, QLinearGradient, QBrush, QPen, QFont, QPainterPath
 
 from styles import theme_colors
 from styles.thermal_color import vivid_thermal_color, heatmap_scale
-from utils.app_paths import resource_path
+from .brand_mark import paint_mark
 
 LEGEND_H = 22
 PANEL_RADIUS = 14
@@ -55,15 +53,6 @@ class SensorHeatmap(QWidget):
         self.sensor = sensor_controller
         self.setMinimumHeight(150)
         self.sensor.changed.connect(self.update)
-        self._emblem = self._load_emblem()
-
-    @staticmethod
-    def _load_emblem() -> QPixmap | None:
-        path = resource_path("assets", "icons", "app_icon.png")
-        if not os.path.exists(path):
-            return None
-        pixmap = QPixmap(path)
-        return pixmap if not pixmap.isNull() else None
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -146,22 +135,25 @@ class SensorHeatmap(QWidget):
 
         # Faded emblem watermark, centered over the blend - same idiom
         # the C rewrite's draw_app_logo_faded() uses for its idle
-        # signal-wave area and this heatmap panel. Sized off the panel's
-        # SMALLER dimension (height, pinned to HEADER_ROW_HEIGHT to
-        # match its row neighbors - see main_page.py) rather than width,
-        # so widening the panel alone never grows this - bumped the
-        # factor and opacity instead, direct report that it was barely
-        # visible at the old 0.4/0.12.
-        if self._emblem is not None:
-            size = int(min(blend_rect.width(), blend_rect.height()) * 0.62)
-            scaled = self._emblem.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            painter.setOpacity(0.24)
-            painter.drawPixmap(
-                int(blend_rect.center().x() - scaled.width() / 2),
-                int(blend_rect.center().y() - scaled.height() / 2),
-                scaled,
-            )
-            painter.setOpacity(1.0)
+        # signal-wave area and this heatmap panel. Draws the real
+        # vector mark (paint_mark(), shared with the header brand mark)
+        # rather than fading a flat app_icon.png snapshot of it - a
+        # plain raster has no halo, so at low opacity its dark diamonds
+        # vanished against this panel's dark background and only the
+        # high-contrast blue triangle survived (direct report: "the
+        # icons not even accurate on the emblem" - it was reading as
+        # a lone triangle, not the actual two-diamond mark). The vector
+        # halo keeps the diamonds visible right along with the fade.
+        #
+        # Sized off the panel's SMALLER dimension (height, pinned to
+        # HEADER_ROW_HEIGHT to match its row neighbors - see
+        # main_page.py) rather than width, so widening the panel alone
+        # never grows this - bumped the factor and opacity instead,
+        # direct report that it was barely visible at the old 0.4/0.12.
+        size = min(blend_rect.width(), blend_rect.height()) * 0.62
+        painter.setOpacity(0.35)
+        paint_mark(painter, blend_rect.center().x(), blend_rect.center().y(), size)
+        painter.setOpacity(1.0)
 
         # Sensor location marker - a soft accent-blue halo behind a
         # crisp white dot with an accent-blue ring, drawn on top of the

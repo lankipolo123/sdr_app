@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
-from PySide6.QtCore import Qt, QEventLoop
+from PySide6.QtCore import Qt, QEventLoop, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
@@ -557,7 +557,7 @@ class MainWindow(QMainWindow):
         )
         self.close()
 
-    def _try_launch_auto_power_on(self):
+    def _try_launch_auto_power_on(self) -> bool:
         # Direct port of sdr_c's conn_on_connected_changed(): the first
         # time this session actually confirms a real hardware
         # connection, power every channel on with Pseudo Random Noise
@@ -570,10 +570,11 @@ class MainWindow(QMainWindow):
         # no reply. Calling it unconditionally would therefore show
         # every channel ON with zero hardware attached - probing for a
         # real connection FIRST and skipping entirely when none exists
-        # is the fix. Unlike sdr_c's own background retry (which also
-        # catches a connection that succeeds a few seconds late), this
-        # only probes once at launch - if nothing answers, channels
-        # just start off, same as a fresh install always has.
+        # is the fix.
+        #
+        # Returns whether a real connection was actually found (and the
+        # power-on fired) - start_launch_auto_power_on_retry() below
+        # uses this to know when to stop retrying.
         from hooks.use_connection import ConnectionController
 
         probe = ConnectionController()
@@ -583,13 +584,36 @@ class MainWindow(QMainWindow):
         hardware_present = probe.connect("DLL", baud, parity, data_bits)
         probe.disconnect()
         if not hardware_present:
-            return
+            return False
 
         self._run_bulk_channel_action(
             "Activating channels…",
             lambda controller: controller.turn_output_on(),
             skip_if_tripped=True,
         )
+        return True
+
+    def start_launch_auto_power_on_retry(self):
+        # Direct port of sdr_c's WM_TIMER background retry
+        # (ID_POLL_TIMER's rs422_retry_counter, gated on
+        # !conn_is_connected()): the very first AutoConnectSDR() attempt
+        # at launch can lose a real race against Windows still
+        # enumerating the RS422 dongle's USB device, or the dongle might
+        # not even be plugged in yet. Retrying every 5s while still not
+        # connected covers both that startup race and plugging hardware
+        # in after the app's already open - same interval sdr_c uses (50
+        # ticks @ 100ms). Stops itself the instant a connection succeeds
+        # (channels are powered on right then, inside
+        # _try_launch_auto_power_on() itself) - only called here when
+        # the FIRST attempt (app.py's own call, right after the window
+        # shows) already came back empty-handed.
+        self._auto_power_on_retry_timer = QTimer(self)
+        self._auto_power_on_retry_timer.timeout.connect(self._on_auto_power_on_retry_tick)
+        self._auto_power_on_retry_timer.start(5000)
+
+    def _on_auto_power_on_retry_tick(self):
+        if self._try_launch_auto_power_on():
+            self._auto_power_on_retry_timer.stop()
 
     def _run_bulk_channel_action(self, title: str, action, skip_if_tripped: bool = False):
         # Waits for every channel's send to settle (busy_changed ->

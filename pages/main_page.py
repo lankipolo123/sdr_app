@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
-from PySide6.QtCore import Qt, QEventLoop
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt, QEventLoop, QPointF
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QBrush, QColor, QPolygonF
 
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
@@ -40,7 +40,47 @@ HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
-BRAND_ICON_SIZE = 56
+BRAND_ICON_SIZE = 64
+
+
+class _BrandMark(QWidget):
+    """sdr_c's real header logo, redrawn as vector polygons rather than
+    stretching src/app.ico (only 16x16 - blurs badly scaled up): two
+    dark "signal peak" diamonds flanking a blue upward triangle beam,
+    with a white halo behind so the dark diamonds still read against
+    this app's dark background. Base points measured directly off
+    sdr_c's own draw_app_logo_mark()/LOGO_LEFT_BASE/LOGO_BEAM_BASE
+    (main.c) - a 64x64 box at 1x, same as BRAND_ICON_SIZE here."""
+
+    _LEFT_BASE = [(-16, -32), (-32, 0), (-16, 32), (0, 0)]
+    _BEAM_BASE = [(0, 0), (-16, 32), (16, 32)]
+    _BASE_SPAN = 64.0
+
+    def _poly(self, cx, cy, mult, base) -> QPolygonF:
+        return QPolygonF([QPointF(cx + x * mult, cy + y * mult) for x, y in base])
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        cx, cy = self.width() / 2, self.height() / 2
+        mult = min(self.width(), self.height()) / self._BASE_SPAN
+        right_base = [(-x, y) for x, y in self._LEFT_BASE]
+
+        # White halo, slightly larger (106%) and drawn first, directly
+        # behind the real mark - same "outline right at the shape's own
+        # edges" trick sdr_c uses instead of a separate card/box.
+        painter.setBrush(QBrush(QColor(255, 255, 255)))
+        halo_mult = mult * 1.06
+        for base in (self._LEFT_BASE, right_base, self._BEAM_BASE):
+            painter.drawPolygon(self._poly(cx, cy, halo_mult, base))
+
+        painter.setBrush(QBrush(QColor(66, 66, 66)))
+        painter.drawPolygon(self._poly(cx, cy, mult, self._LEFT_BASE))
+        painter.drawPolygon(self._poly(cx, cy, mult, right_base))
+
+        painter.setBrush(QBrush(QColor(theme_colors.ACCENT_BLUE_DARK)))
+        painter.drawPolygon(self._poly(cx, cy, mult, self._BEAM_BASE))
 
 
 class MainWindow(QMainWindow):
@@ -172,25 +212,25 @@ class MainWindow(QMainWindow):
         return header_row
 
     def _build_brand_mark(self) -> QWidget:
+        # Icon centered, wordmark centered underneath - sdr_c's own
+        # layout (main.c draws the mark at a fixed point, then the
+        # "HELIX DEFENSE" wordmark in a centered rect directly below
+        # it), not the icon-beside-text lockup this had before.
         mark = QWidget()
-        layout = QHBoxLayout(mark)
+        layout = QVBoxLayout(mark)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(6)
 
-        icon_label = QLabel()
-        icon_path = resource_path("assets", "icons", "app_icon_64.png")
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path).scaled(
-                BRAND_ICON_SIZE, BRAND_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            icon_label.setPixmap(pixmap)
-        layout.addWidget(icon_label, 0, alignment=Qt.AlignVCenter)
+        logo = _BrandMark()
+        logo.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
+        layout.addWidget(logo, 0, alignment=Qt.AlignHCenter)
 
         text_label = QLabel("HELIX DEFENSE")
+        text_label.setAlignment(Qt.AlignCenter)
         text_label.setStyleSheet(
-            f"color: {theme_colors.ACCENT_BLUE}; font-size: 18px; font-weight: 700; letter-spacing: 1px;"
+            f"color: {theme_colors.TEXT_DARK}; font-size: 13px; font-weight: 800; letter-spacing: 2px;"
         )
-        layout.addWidget(text_label, 0, alignment=Qt.AlignVCenter)
+        layout.addWidget(text_label, 0, alignment=Qt.AlignHCenter)
 
         return mark
 

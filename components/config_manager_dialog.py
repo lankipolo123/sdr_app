@@ -1,6 +1,9 @@
+import os
+from datetime import datetime
+
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QListWidget,
-    QLabel, QPushButton, QLineEdit, QMessageBox, QFrame, QInputDialog,
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QListWidget, QListWidgetItem,
+    QLabel, QPushButton, QLineEdit, QMessageBox, QFrame, QInputDialog, QWidget,
 )
 from PySide6.QtCore import Qt
 
@@ -8,7 +11,7 @@ from styles import theme_colors
 from state.level_map import LEVEL_LABELS
 from utils.config_slots import (
     list_config_slots, load_config_slot, save_config_slot,
-    delete_config_slot, rename_config_slot, MAX_CONFIG_SLOTS,
+    delete_config_slot, rename_config_slot, slot_path, MAX_CONFIG_SLOTS,
 )
 
 MAX_CHANNELS = 16
@@ -55,7 +58,7 @@ class ConfigManagerDialog(QDialog):
         left_col.addWidget(self.count_label)
 
         self.list_widget = QListWidget()
-        self.list_widget.currentTextChanged.connect(self._on_selection_changed)
+        self.list_widget.currentItemChanged.connect(self._on_selection_changed)
         left_col.addWidget(self.list_widget, 1)
 
         slot_actions_row = QHBoxLayout()
@@ -157,8 +160,59 @@ class ConfigManagerDialog(QDialog):
 
     def _reload_slot_list(self):
         self.list_widget.clear()
-        self.list_widget.addItems(list_config_slots(self.app.config))
+        for name in list_config_slots(self.app.config):
+            # Item TEXT is deliberately left empty - the custom row
+            # widget below (setItemWidget) draws the name itself, and a
+            # non-empty item text painted underneath a widget that
+            # doesn't fully opaque its background double-draws (a real
+            # bug caught in testing: name showed twice, faint text
+            # bleeding through under the bold label). The real name
+            # lives in Qt.UserRole instead - every other method here
+            # (selection/rename/delete/load/the save overwrite check)
+            # reads it from there now, never from item.text().
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, name)
+            self.list_widget.addItem(item)
+            row_widget = self._build_slot_row_widget(name)
+            item.setSizeHint(row_widget.sizeHint())
+            self.list_widget.setItemWidget(item, row_widget)
         self.count_label.setText(f"{self.list_widget.count()}/{MAX_CONFIG_SLOTS} saved")
+
+    def _build_slot_row_widget(self, name: str) -> QWidget:
+        # Direct request: the slot list showed only the bare save name -
+        # "needs more details showing". Each row now also shows how many
+        # channels the config activates and when it was last saved
+        # (the .ini file's own mtime - no separate timestamp field to
+        # keep in sync, and it updates for free on every overwrite/
+        # rename since both touch the file).
+        entries = load_config_slot(self.app.config, name)
+        channel_count = len(entries)
+        plural = "" if channel_count == 1 else "s"
+
+        saved_at = ""
+        try:
+            mtime = os.path.getmtime(slot_path(self.app.config, name))
+            saved_at = datetime.fromtimestamp(mtime).strftime("%b %d, %Y %I:%M %p")
+        except OSError:
+            pass
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(1)
+
+        name_label = QLabel(name)
+        name_label.setStyleSheet(f"color: {theme_colors.TEXT_DARK}; font-size: 13px; font-weight: 700;")
+        layout.addWidget(name_label)
+
+        detail_text = f"{channel_count} channel{plural}"
+        if saved_at:
+            detail_text += f"  ·  {saved_at}"
+        detail_label = QLabel(detail_text)
+        detail_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(detail_label)
+
+        return widget
 
     def _refresh_buttons(self):
         has_selection = self.list_widget.currentItem() is not None
@@ -190,7 +244,8 @@ class ConfigManagerDialog(QDialog):
         }
         self._set_preview(levels)
 
-    def _on_selection_changed(self, name: str):
+    def _on_selection_changed(self, current: QListWidgetItem, previous: QListWidgetItem = None):
+        name = current.data(Qt.UserRole) if current is not None else None
         self._refresh_buttons()
         if self.mode == "save":
             if name:
@@ -207,11 +262,18 @@ class ConfigManagerDialog(QDialog):
         }
         self._set_preview(levels)
 
+    def _find_item_by_name(self, name: str) -> QListWidgetItem | None:
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if item.data(Qt.UserRole) == name:
+                return item
+        return None
+
     def _on_rename_clicked(self):
         item = self.list_widget.currentItem()
         if item is None:
             return
-        old_name = item.text()
+        old_name = item.data(Qt.UserRole)
         new_name, ok = QInputDialog.getText(self, "Rename Config", "New name:", text=old_name)
         if not ok:
             return
@@ -225,9 +287,9 @@ class ConfigManagerDialog(QDialog):
             )
             return
         self._reload_slot_list()
-        matches = self.list_widget.findItems(new_name, Qt.MatchExactly)
-        if matches:
-            self.list_widget.setCurrentItem(matches[0])
+        match = self._find_item_by_name(new_name)
+        if match is not None:
+            self.list_widget.setCurrentItem(match)
         if self.mode == "save" and self.name_edit.text().strip() == old_name:
             self.name_edit.setText(new_name)
 
@@ -235,7 +297,7 @@ class ConfigManagerDialog(QDialog):
         item = self.list_widget.currentItem()
         if item is None:
             return
-        name = item.text()
+        name = item.data(Qt.UserRole)
         confirmed = QMessageBox.question(
             self, "Delete Config",
             f'Delete the saved config "{name}"? This can\'t be undone.',
@@ -256,7 +318,7 @@ class ConfigManagerDialog(QDialog):
             item = self.list_widget.currentItem()
             if item is None:
                 return
-            self.result_name = item.text()
+            self.result_name = item.data(Qt.UserRole)
             self.accept()
             return
 

@@ -4,14 +4,15 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
-from PySide6.QtCore import Qt, QEventLoop, QRectF
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QBrush, QColor
+from PySide6.QtCore import Qt, QEventLoop
+from PySide6.QtGui import QIcon, QPixmap, QPainter
 
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
     TitleBar, ResizableContainer, SensorCard, SensorHeatmap,
     BulkActionsBar, KillSwitchBanner, SpectrumPanel, SummaryPanel,
 )
+from components.signal_bars_icon import paint_signal_bars
 from hooks.use_channels import MAX_CHANNELS
 from services.middleware import dll_decode_frame
 from styles import theme_colors
@@ -45,35 +46,16 @@ BRAND_ICON_SIZE = 108
 
 
 class _SignalBarsIcon(QWidget):
-    """Helix Defense header mark: 4 vertical bars ascending left to
-    right, like a signal-strength/WiFi indicator - fits the app's own
-    RF/signal theme. Direct replacement for the earlier diamond+
-    triangle mark, direct request ("the vertical bars... as an icon
-    on helix defender")."""
-
-    _HEIGHT_FRACTIONS = (0.28, 0.52, 0.76, 1.0)
+    """Helix Defense header mark - see components/signal_bars_icon.py's
+    paint_signal_bars() for the actual shape (shared with the app's own
+    generated window/taskbar/splash icon, so both draw the identical
+    mark)."""
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor(theme_colors.ACCENT_BLUE)))
-
-        w, h = self.width(), self.height()
-        n = len(self._HEIGHT_FRACTIONS)
-        bar_w = w * 0.16
-        gap = w * 0.08
-        total_w = n * bar_w + (n - 1) * gap
-        x0 = (w - total_w) / 2
-        baseline = h * 0.92
-        max_bar_h = h * 0.8
-        radius = bar_w * 0.25
-
-        for i, frac in enumerate(self._HEIGHT_FRACTIONS):
-            bar_h = max_bar_h * frac
-            x = x0 + i * (bar_w + gap)
-            y = baseline - bar_h
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), radius, radius)
+        paint_signal_bars(painter, 0, 0, self.width(), self.height(), theme_colors.ACCENT_BLUE)
 
 
 class MainWindow(QMainWindow):

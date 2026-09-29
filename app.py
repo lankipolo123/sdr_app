@@ -1,15 +1,11 @@
 import sys
-import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 
-from components import build_splash
 from hooks import AppController
 from pages.main_page import MainWindow
 from styles.theme_colors import app_palette, build_global_qss
-from utils.app_paths import resource_path
-
-ICON_PATH = resource_path("assets", "icons", "app_icon.png")
+from utils.app_paths import resolve_app_icon_path
 
 
 def run():
@@ -17,16 +13,13 @@ def run():
     qt_app.setStyle("Fusion")
     qt_app.setPalette(app_palette())
     qt_app.setStyleSheet(build_global_qss())
-    if os.path.exists(ICON_PATH):
-        qt_app.setWindowIcon(QIcon(ICON_PATH))
 
-    splash = build_splash(ICON_PATH)
-    splash.show()
-    qt_app.processEvents()
+    icon_path = resolve_app_icon_path()
+    if icon_path is not None:
+        qt_app.setWindowIcon(QIcon(icon_path))
 
     app_controller = AppController()
     window = MainWindow(app_controller)
     window.show()
-    splash.finish(window)
 
     sys.exit(qt_app.exec())

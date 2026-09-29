@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QScrollArea, QSizePolicy, QPushButton, QFileDialog, QFrame, QLabel
 )
-from PySide6.QtCore import Qt, QEventLoop
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt, QEventLoop, QRectF
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QBrush, QColor
 
 from components import (
     ChannelCard, ConfirmDialog, CloseConfirmDialog, LogsPanel,
@@ -42,6 +42,38 @@ HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 CHANNELS_PER_ROW = 4
 BRANDING_ICON_SIZE = 256
 BRAND_ICON_SIZE = 108
+
+
+class _SignalBarsIcon(QWidget):
+    """Helix Defense header mark: 4 vertical bars ascending left to
+    right, like a signal-strength/WiFi indicator - fits the app's own
+    RF/signal theme. Direct replacement for the earlier diamond+
+    triangle mark, direct request ("the vertical bars... as an icon
+    on helix defender")."""
+
+    _HEIGHT_FRACTIONS = (0.28, 0.52, 0.76, 1.0)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(theme_colors.ACCENT_BLUE)))
+
+        w, h = self.width(), self.height()
+        n = len(self._HEIGHT_FRACTIONS)
+        bar_w = w * 0.16
+        gap = w * 0.08
+        total_w = n * bar_w + (n - 1) * gap
+        x0 = (w - total_w) / 2
+        baseline = h * 0.92
+        max_bar_h = h * 0.8
+        radius = bar_w * 0.25
+
+        for i, frac in enumerate(self._HEIGHT_FRACTIONS):
+            bar_h = max_bar_h * frac
+            x = x0 + i * (bar_w + gap)
+            y = baseline - bar_h
+            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), radius, radius)
 
 
 class MainWindow(QMainWindow):
@@ -190,29 +222,18 @@ class MainWindow(QMainWindow):
         # "HELIX DEFENSE" wordmark in a centered rect directly below
         # it), not the icon-beside-text lockup this had before.
         #
-        # The icon itself is the app's own app_icon.png - the same
-        # file used for the window/taskbar icon and splash screen -
-        # not a separate vector redraw. Direct reversal: "make the
-        # icon we used on this app the same on the helix defender...
-        # it was the proper use". Kept as a plain image (no halo) since
-        # it's always shown at full opacity here; the heatmap's faded
-        # watermark still needs components/brand_mark.py's vector
-        # paint_mark() for its own low-opacity halo trick, unaffected
-        # by this.
+        # Icon is _SignalBarsIcon (4 ascending vertical bars) - direct
+        # request ("the vertical bars... as an icon on helix defender"),
+        # replacing the app_icon.png/diamond+triangle mark tried before.
         mark = QWidget()
         layout = QVBoxLayout(mark)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignHCenter)
 
-        icon_label = QLabel()
-        icon_path = resource_path("assets", "icons", "app_icon.png")
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path).scaled(
-                BRAND_ICON_SIZE, BRAND_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            icon_label.setPixmap(pixmap)
-        layout.addWidget(icon_label, 0, alignment=Qt.AlignHCenter)
+        icon = _SignalBarsIcon()
+        icon.setFixedSize(BRAND_ICON_SIZE, BRAND_ICON_SIZE)
+        layout.addWidget(icon, 0, alignment=Qt.AlignHCenter)
 
         text_label = QLabel("HELIX DEFENSE")
         text_label.setAlignment(Qt.AlignCenter)

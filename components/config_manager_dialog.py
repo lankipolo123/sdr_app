@@ -1,6 +1,3 @@
-import os
-from datetime import datetime
-
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QListWidget, QListWidgetItem,
     QLabel, QPushButton, QLineEdit, QMessageBox, QFrame, QInputDialog, QWidget,
@@ -10,8 +7,8 @@ from PySide6.QtCore import Qt
 from styles import theme_colors
 from state.level_map import LEVEL_LABELS
 from utils.config_slots import (
-    list_config_slots, load_config_slot, save_config_slot,
-    delete_config_slot, rename_config_slot, slot_path, MAX_CONFIG_SLOTS,
+    list_config_slots, load_config_slot, load_config_location, save_config_slot,
+    delete_config_slot, rename_config_slot, MAX_CONFIG_SLOTS,
 )
 
 MAX_CHANNELS = 16
@@ -89,11 +86,30 @@ class ConfigManagerDialog(QDialog):
         left_col.addLayout(slot_actions_row)
 
         self.name_edit = None
+        self.location_edit = None
         if mode == "save":
+            name_label = QLabel("Name")
+            name_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px; font-weight: 600;")
+            left_col.addWidget(name_label)
+
             self.name_edit = QLineEdit()
             self.name_edit.setPlaceholderText("Config name")
             self.name_edit.textChanged.connect(self._refresh_buttons)
             left_col.addWidget(self.name_edit)
+
+            # Direct request: a persistent caption, not just a
+            # placeholder that disappears once you start typing - and
+            # an optional tag describing where this config applies
+            # (e.g. "Bay 1", "Rack A"), shown in the slot list instead
+            # of channel-count/save-date, which weren't considered
+            # useful detail.
+            location_label = QLabel("Location")
+            location_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px; font-weight: 600;")
+            left_col.addWidget(location_label)
+
+            self.location_edit = QLineEdit()
+            self.location_edit.setPlaceholderText("e.g. Bay 1 (optional)")
+            left_col.addWidget(self.location_edit)
 
         row.addLayout(left_col, 1)
 
@@ -180,21 +196,20 @@ class ConfigManagerDialog(QDialog):
 
     def _build_slot_row_widget(self, name: str) -> QWidget:
         # Direct request: the slot list showed only the bare save name -
-        # "needs more details showing". Each row now also shows how many
-        # channels the config activates and when it was last saved
-        # (the .ini file's own mtime - no separate timestamp field to
-        # keep in sync, and it updates for free on every overwrite/
-        # rename since both touch the file).
-        entries = load_config_slot(self.app.config, name)
-        channel_count = len(entries)
-        plural = "" if channel_count == 1 else "s"
-
-        saved_at = ""
-        try:
-            mtime = os.path.getmtime(slot_path(self.app.config, name))
-            saved_at = datetime.fromtimestamp(mtime).strftime("%b %d, %Y %I:%M %p")
-        except OSError:
-            pass
+        # "needs more details showing", later refined to specifically
+        # want a location tag ("Bay 1", "Rack A" - set via
+        # location_edit in Save mode) rather than channel-count/save-
+        # date, which weren't considered useful. Location is the
+        # primary detail shown; channel count is the fallback for a
+        # slot saved without one, so a row is never blank.
+        location = load_config_location(self.app.config, name)
+        if location:
+            detail_text = location
+        else:
+            entries = load_config_slot(self.app.config, name)
+            channel_count = len(entries)
+            plural = "" if channel_count == 1 else "s"
+            detail_text = f"{channel_count} channel{plural}"
 
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -204,10 +219,6 @@ class ConfigManagerDialog(QDialog):
         name_label = QLabel(name)
         name_label.setStyleSheet(f"color: {theme_colors.TEXT_DARK}; font-size: 13px; font-weight: 700;")
         layout.addWidget(name_label)
-
-        detail_text = f"{channel_count} channel{plural}"
-        if saved_at:
-            detail_text += f"  ·  {saved_at}"
         detail_label = QLabel(detail_text)
         detail_label.setStyleSheet(f"color: {theme_colors.TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(detail_label)
@@ -250,6 +261,7 @@ class ConfigManagerDialog(QDialog):
         if self.mode == "save":
             if name:
                 self.name_edit.setText(name)
+                self.location_edit.setText(load_config_location(self.app.config, name))
             return
         if not name:
             self._set_preview({})
@@ -333,7 +345,8 @@ class ConfigManagerDialog(QDialog):
             )
             if confirmed != QMessageBox.Yes:
                 return
-        ok = save_config_slot(self.app.config, name, self.app.channels.states)
+        location = self.location_edit.text().strip()
+        ok = save_config_slot(self.app.config, name, self.app.channels.states, location)
         if not ok:
             QMessageBox.warning(
                 self, "Save Config",

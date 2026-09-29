@@ -35,7 +35,7 @@ SIDEBAR_MAX_WIDTH = 680
 # also shrank the faded emblem watermark drawn inside it (sized off
 # the panel's smaller dimension) and made it look like an odd little
 # card rather than lining up with the row around it.
-HEATMAP_WIDTH = 260
+HEATMAP_WIDTH = 340
 HEATMAP_HEIGHT = HEADER_ROW_HEIGHT
 
 CHANNELS_PER_ROW = 4

@@ -146,11 +146,16 @@ class SensorHeatmap(QWidget):
 
         # Faded emblem watermark, centered over the blend - same idiom
         # the C rewrite's draw_app_logo_faded() uses for its idle
-        # signal-wave area and this heatmap panel.
+        # signal-wave area and this heatmap panel. Sized off the panel's
+        # SMALLER dimension (height, pinned to HEADER_ROW_HEIGHT to
+        # match its row neighbors - see main_page.py) rather than width,
+        # so widening the panel alone never grows this - bumped the
+        # factor and opacity instead, direct report that it was barely
+        # visible at the old 0.4/0.12.
         if self._emblem is not None:
-            size = int(min(blend_rect.width(), blend_rect.height()) * 0.4)
+            size = int(min(blend_rect.width(), blend_rect.height()) * 0.62)
             scaled = self._emblem.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            painter.setOpacity(0.12)
+            painter.setOpacity(0.24)
             painter.drawPixmap(
                 int(blend_rect.center().x() - scaled.width() / 2),
                 int(blend_rect.center().y() - scaled.height() / 2),

@@ -531,19 +531,29 @@ class MainWindow(QMainWindow):
         choice = CloseConfirmDialog.ask(self)
         if choice is None:
             return
-        if choice == "turn_off":
-            self._turn_off_all_and_close()
+        if choice == "turn_on":
+            self._turn_on_all_and_close()
         else:
             self.close()
 
-    def _turn_off_all_and_close(self):
-        # Direct port of sdr_c's on_app_close_shutdown(): turns every
-        # channel off for real, kill-switch-tripped channels included -
-        # OFF is never unsafe, unlike an ON action (see
-        # _try_launch_auto_power_on()'s own kill-switch check below).
+    def _turn_on_all_and_close(self):
+        # "Turn On and Close" - a deliberate, manual user click, same as
+        # every other manual ON action in this app (a channel card's own
+        # toggle, Bulk Actions ON, SummaryPanel's Reset to Default
+        # button) - so this is NOT connection-probed the way
+        # _try_launch_auto_power_on() below is. That probe exists only
+        # because THAT trigger fires with no user action at all, purely
+        # from the window existing - firing it blind would silently
+        # claim every channel is on with nobody having asked. A button
+        # someone actually clicked is a real, deliberate request, exactly
+        # like every other manual control here, and gets the same
+        # optimistic-apply-after-timeout treatment they all get.
+        # Kill-switch-tripped channels skipped, matching Reset to
+        # Default's own convention for an ON action.
         self._run_bulk_channel_action(
-            "Turning channels off before closing…",
-            lambda controller: controller.turn_output_off(),
+            "Turning channels on before closing…",
+            lambda controller: controller.turn_output_on(),
+            skip_if_tripped=True,
         )
         self.close()
 

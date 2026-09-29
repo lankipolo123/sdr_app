@@ -8,12 +8,13 @@ _OVERLAY_COLOR = QColor(31, 41, 55, 90)
 
 
 class CloseConfirmDialog(QWidget):
-    """Direct port of sdr_c's IDD_CLOSE_CONFIRM: "Turn Off and Close"
-    (default - on_app_close_shutdown(): saves state, then commands every
-    channel off for real, kill-switch-tripped channels included since
-    OFF is never unsafe), "Keep Running and Close"
-    (on_close_keep_running(): saves state, sends nothing - whatever's
-    transmitting keeps transmitting after the app exits), "Cancel"
+    """3 close choices: "Turn On and Close" (default - commands every
+    channel on with Pseudo Random Noise for real, kill-switch-tripped
+    channels skipped, same as SummaryPanel's Reset to Default button -
+    direct app-specific request, not sdr_c's own on_app_close_shutdown()
+    which turns off instead), "Keep Running and Close" (saves state,
+    sends nothing - whatever's transmitting keeps transmitting after
+    the app exits, matches sdr_c's on_close_keep_running()), "Cancel"
     (stays open). Channel state is saved to channels.ini either way by
     AppController.shutdown(), so that isn't a 4th choice."""
 
@@ -64,17 +65,17 @@ class CloseConfirmDialog(QWidget):
         btn_col = QVBoxLayout()
         btn_col.setSpacing(8)
 
-        turn_off_btn = QPushButton("Turn Off and Close")
-        turn_off_btn.setCursor(Qt.PointingHandCursor)
-        turn_off_btn.setMinimumHeight(32)
-        turn_off_btn.setStyleSheet(
-            f"QPushButton {{ background: {theme_colors.STATUS_ERROR}; color: white; "
+        turn_on_btn = QPushButton("Turn On and Close")
+        turn_on_btn.setCursor(Qt.PointingHandCursor)
+        turn_on_btn.setMinimumHeight(32)
+        turn_on_btn.setStyleSheet(
+            f"QPushButton {{ background: {theme_colors.STATUS_OK}; color: white; "
             f"border: none; border-radius: 4px; padding: 6px 16px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {theme_colors.STATUS_ERROR_DARK}; }}"
-            f"QPushButton:pressed {{ background: {theme_colors.STATUS_ERROR_DARK}; }}"
+            f"QPushButton:hover {{ background: {theme_colors.STATUS_OK_DARK}; }}"
+            f"QPushButton:pressed {{ background: {theme_colors.STATUS_OK_DARK}; }}"
         )
-        turn_off_btn.clicked.connect(self._on_turn_off)
-        btn_col.addWidget(turn_off_btn)
+        turn_on_btn.clicked.connect(self._on_turn_on)
+        btn_col.addWidget(turn_on_btn)
 
         keep_running_btn = QPushButton("Keep Running and Close")
         keep_running_btn.setCursor(Qt.PointingHandCursor)
@@ -112,8 +113,8 @@ class CloseConfirmDialog(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), _OVERLAY_COLOR)
 
-    def _on_turn_off(self):
-        self._choice = "turn_off"
+    def _on_turn_on(self):
+        self._choice = "turn_on"
         self._close()
 
     def _on_keep_running(self):
@@ -130,7 +131,7 @@ class CloseConfirmDialog(QWidget):
 
     @staticmethod
     def ask(parent) -> str | None:
-        """Returns "turn_off", "keep_running", or None (Cancel)."""
+        """Returns "turn_on", "keep_running", or None (Cancel)."""
         dialog = CloseConfirmDialog(parent)
         dialog.show()
         dialog.raise_()

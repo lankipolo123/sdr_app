@@ -3,6 +3,7 @@ from .power_button import PowerButton
 from .level_slider import LevelSlider
 from .channel_card import ChannelCard
 from .confirm_dialog import ConfirmDialog
+from .reset_progress_overlay import ResetProgressOverlay
 from .logs_dialog import LogsDialog
 from .logs_panel import LogsPanel
 from .window_chrome import TitleBar, ResizableContainer
@@ -20,6 +21,7 @@ __all__ = [
     "LevelSlider",
     "ChannelCard",
     "ConfirmDialog",
+    "ResetProgressOverlay",
     "LogsDialog",
     "LogsPanel",
     "TitleBar",

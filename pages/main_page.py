@@ -142,6 +142,12 @@ class MainWindow(QMainWindow):
 
         self._refresh_sensor_ports()
         self._on_sensor_changed()
+        # Same reason as the two lines above: a theme toggle tears down
+        # and rebuilds the whole header, including a fresh
+        # ConnectionStatusCard that starts back at its default
+        # "Disconnected" display - re-probing keeps it honest instead
+        # of silently showing stale/wrong status after a rebuild.
+        self._probe_connection_status()
 
     def _on_theme_toggle_requested(self):
         from PySide6.QtWidgets import QApplication
